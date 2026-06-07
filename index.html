@@ -1,0 +1,1807 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GMJ Legal Partners — Plataforma de Gestión</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --navy:#0f1f3d; --navy2:#16294d; --slate:#1e293b; --slate2:#334155;
+  --muted:#64748b; --line:#e2e8f0; --line2:#cbd5e1; --bg:#f1f5f9; --card:#ffffff;
+  --gold:#c0972f; --gold-soft:#f7efda; --primary:#1f4e8c; --primary-d:#163a69;
+  --green:#15803d; --green-bg:#dcfce7; --amber:#b45309; --amber-bg:#fef3c7;
+  --red:#b91c1c; --red-bg:#fee2e2; --blue:#1d4ed8; --blue-bg:#dbeafe;
+  --grey-bg:#f1f5f9; --text:#0f172a; --shadow:0 1px 3px rgba(15,31,61,.08),0 1px 2px rgba(15,31,61,.06);
+  --shadow-lg:0 10px 30px rgba(15,31,61,.12); --radius:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+button{font-family:inherit;cursor:pointer;border:none;background:none}
+input,select,textarea{font-family:inherit;font-size:14px}
+a{color:var(--primary);text-decoration:none}
+.hidden{display:none!important}
+
+/* LOGIN */
+#login{position:fixed;inset:0;background:linear-gradient(135deg,var(--navy),var(--navy2) 60%,var(--primary-d));display:flex;align-items:center;justify-content:center;z-index:100}
+.login-card{background:#fff;border-radius:18px;padding:42px 40px;width:420px;max-width:92vw;box-shadow:var(--shadow-lg);text-align:center}
+.brand-mark{width:86px;height:100px;margin:0 auto 16px;display:flex;align-items:center;justify-content:center}
+.login-card h1{font-size:20px;color:var(--navy);letter-spacing:.5px}
+.login-card .sub{color:var(--muted);font-size:13px;margin-top:4px;margin-bottom:26px}
+.role-opt{display:flex;gap:12px;align-items:center;text-align:left;border:1.5px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px;transition:.15s;width:100%}
+.role-opt:hover{border-color:var(--primary);background:#f8fafc;transform:translateY(-1px)}
+.role-opt .ico{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.role-opt .t{font-weight:600;color:var(--navy)}
+.role-opt .d{font-size:12px;color:var(--muted)}
+.usersel{margin-top:6px}
+
+/* LAYOUT */
+#app{display:flex;min-height:100vh}
+.sidebar{width:248px;background:var(--navy);color:#cdd7e6;display:flex;flex-direction:column;position:fixed;top:0;bottom:0;left:0;z-index:20}
+.sidebar .logo{padding:20px 20px 16px;display:flex;align-items:center;gap:11px;border-bottom:1px solid rgba(255,255,255,.08)}
+.sidebar .logo .m{width:40px;height:44px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.sidebar .logo .n{font-weight:700;color:#fff;font-size:14px;line-height:1.1}
+.sidebar .logo .n small{display:block;font-weight:400;color:#8ba0bf;font-size:11px;margin-top:2px}
+.nav{padding:14px 12px;flex:1;overflow-y:auto}
+.nav .sec{font-size:10.5px;text-transform:uppercase;letter-spacing:1px;color:#6f86a8;padding:14px 12px 6px}
+.nav a{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:9px;color:#cdd7e6;font-size:13.5px;font-weight:500;margin-bottom:2px;transition:.12s}
+.nav a:hover{background:rgba(255,255,255,.07);color:#fff}
+.nav a.active{background:var(--primary);color:#fff;box-shadow:0 2px 8px rgba(31,78,140,.4)}
+.nav a .i{width:18px;text-align:center;font-size:15px}
+.sidebar .foot{padding:14px;border-top:1px solid rgba(255,255,255,.08)}
+.userbox{display:flex;align-items:center;gap:10px;padding:8px;border-radius:10px}
+.userbox .av{width:36px;height:36px;border-radius:50%;background:var(--gold);color:#3a2c06;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+.userbox .nm{font-size:13px;color:#fff;font-weight:600}
+.userbox .rl{font-size:11px;color:#8ba0bf}
+.logout{margin-top:8px;width:100%;padding:8px;border-radius:8px;color:#9fb1cc;font-size:12px;background:rgba(255,255,255,.05)}
+.logout:hover{background:rgba(255,255,255,.1);color:#fff}
+
+.main{margin-left:248px;flex:1;min-width:0}
+.topbar{background:#fff;border-bottom:1px solid var(--line);padding:0 28px;height:62px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:15}
+.topbar .crumb{font-size:13px;color:var(--muted)}
+.topbar .crumb b{color:var(--navy);font-weight:600;font-size:16px;display:block}
+.content{padding:26px 28px 60px}
+
+/* COMPONENTS */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:9px 16px;border-radius:9px;font-size:13px;font-weight:600;transition:.13s;border:1px solid transparent}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:hover{background:var(--primary-d)}
+.btn-gold{background:var(--gold);color:#fff}
+.btn-gold:hover{filter:brightness(.94)}
+.btn-ghost{background:#fff;border:1px solid var(--line2);color:var(--slate)}
+.btn-ghost:hover{background:#f8fafc;border-color:var(--muted)}
+.btn-danger{background:#fff;border:1px solid var(--red);color:var(--red)}
+.btn-danger:hover{background:var(--red-bg)}
+.btn-sm{padding:6px 11px;font-size:12px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+.card-h{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+.card-h h3{font-size:15px;color:var(--navy)}
+.card-b{padding:20px}
+
+.grid{display:grid;gap:16px}
+.g2{grid-template-columns:repeat(2,1fr)}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:1100px){.g4{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:1fr}}
+
+.stat{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow)}
+.stat .lab{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.5px}
+.stat .val{font-size:28px;font-weight:700;color:var(--navy);margin-top:6px}
+.stat .sub{font-size:12px;color:var(--muted);margin-top:4px}
+.stat.accent{border-left:4px solid var(--primary)}
+.stat.gold{border-left:4px solid var(--gold)}
+.stat.green{border-left:4px solid var(--green)}
+.stat.amber{border-left:4px solid var(--amber)}
+
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:600;padding:11px 14px;border-bottom:1px solid var(--line);background:#fafbfc}
+td{padding:13px 14px;border-bottom:1px solid var(--line);font-size:13.5px;vertical-align:middle}
+tr.clickable{cursor:pointer;transition:.1s}
+tr.clickable:hover{background:#f8fafc}
+
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.b-grey{background:var(--grey-bg);color:var(--slate2)}
+.b-blue{background:var(--blue-bg);color:var(--blue)}
+.b-green{background:var(--green-bg);color:var(--green)}
+.b-amber{background:var(--amber-bg);color:var(--amber)}
+.b-red{background:var(--red-bg);color:var(--red)}
+.b-gold{background:var(--gold-soft);color:var(--gold)}
+.dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+
+.field{margin-bottom:15px}
+.field label{display:block;font-size:12.5px;font-weight:600;color:var(--slate);margin-bottom:6px}
+.field label .req{color:var(--red)}
+.field input,.field select,.field textarea{width:100%;padding:9px 12px;border:1px solid var(--line2);border-radius:8px;background:#fff;color:var(--text);transition:.12s}
+.field input:focus,.field select:focus,.field textarea:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(31,78,140,.12)}
+.field textarea{resize:vertical;min-height:80px}
+.field .hint{font-size:11.5px;color:var(--muted);margin-top:4px}
+.field.invalid input,.field.invalid select,.field.invalid textarea{border-color:var(--red)}
+.frow{display:grid;gap:14px}
+.fr2{grid-template-columns:1fr 1fr}
+.fr3{grid-template-columns:1fr 1fr 1fr}
+@media(max-width:760px){.fr2,.fr3{grid-template-columns:1fr}}
+.check{display:flex;align-items:center;gap:9px;padding:8px 0}
+.check input{width:auto}
+
+/* tabs */
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);overflow-x:auto;margin-bottom:22px;padding-bottom:0}
+.tabs button{padding:11px 15px;font-size:13px;font-weight:600;color:var(--muted);border-bottom:2.5px solid transparent;white-space:nowrap}
+.tabs button:hover{color:var(--slate)}
+.tabs button.active{color:var(--primary);border-bottom-color:var(--primary)}
+.tabs button .pill{display:inline-block;margin-left:6px;background:var(--grey-bg);color:var(--slate2);border-radius:10px;padding:0 7px;font-size:11px}
+
+/* modal */
+.overlay{position:fixed;inset:0;background:rgba(15,31,61,.55);display:flex;align-items:flex-start;justify-content:center;z-index:50;padding:40px 16px;overflow-y:auto}
+.modal{background:#fff;border-radius:14px;width:760px;max-width:96vw;box-shadow:var(--shadow-lg);animation:pop .18s ease}
+.modal.sm{width:480px}.modal.lg{width:920px}
+@keyframes pop{from{transform:translateY(12px) scale(.98);opacity:0}to{transform:none;opacity:1}}
+.modal-h{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
+.modal-h h3{font-size:16px;color:var(--navy)}
+.modal-h .x{font-size:22px;color:var(--muted);width:30px;height:30px;border-radius:7px}
+.modal-h .x:hover{background:var(--grey-bg)}
+.modal-b{padding:22px;max-height:68vh;overflow-y:auto}
+.modal-f{padding:16px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px}
+
+.section-title{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--gold);margin:6px 0 12px;padding-bottom:6px;border-bottom:1px dashed var(--line2)}
+.kv{display:grid;grid-template-columns:180px 1fr;gap:6px 16px;font-size:13.5px}
+.kv dt{color:var(--muted);font-weight:500}
+.kv dd{color:var(--text);font-weight:500}
+.empty{text-align:center;padding:44px 20px;color:var(--muted)}
+.empty .ico{font-size:38px;opacity:.4;margin-bottom:10px}
+
+.toast{position:fixed;bottom:24px;right:24px;background:var(--navy);color:#fff;padding:13px 20px;border-radius:10px;box-shadow:var(--shadow-lg);z-index:200;font-size:13.5px;display:flex;align-items:center;gap:10px;animation:slidein .25s ease}
+.toast.err{background:var(--red)}
+.toast.ok .i{color:#86efac}
+@keyframes slidein{from{transform:translateX(20px);opacity:0}to{transform:none;opacity:1}}
+
+.pagehead{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px}
+.pagehead h2{font-size:20px;color:var(--navy)}
+.pagehead .sub{font-size:13px;color:var(--muted);margin-top:2px}
+.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:18px}
+.filters input,.filters select{padding:8px 12px;border:1px solid var(--line2);border-radius:8px;background:#fff}
+.search{position:relative;flex:1;min-width:200px;max-width:340px}
+.search input{width:100%;padding-left:34px}
+.search .si{position:absolute;left:11px;top:8px;color:var(--muted)}
+
+.timeline{position:relative;padding-left:24px}
+.timeline:before{content:"";position:absolute;left:7px;top:4px;bottom:4px;width:2px;background:var(--line)}
+.tl-item{position:relative;padding:0 0 18px}
+.tl-item .d{position:absolute;left:-21px;top:3px;width:12px;height:12px;border-radius:50%;background:var(--primary);border:2px solid #fff;box-shadow:0 0 0 2px var(--line)}
+.tl-item .act{font-weight:600;color:var(--navy);font-size:13.5px}
+.tl-item .meta{font-size:12px;color:var(--muted);margin-top:2px}
+
+.alert{padding:12px 15px;border-radius:9px;font-size:13px;display:flex;gap:10px;align-items:flex-start;margin-bottom:14px}
+.alert-warn{background:var(--amber-bg);color:#92400e;border:1px solid #fde68a}
+.alert-info{background:var(--blue-bg);color:#1e40af;border:1px solid #bfdbfe}
+.alert-ok{background:var(--green-bg);color:#166534;border:1px solid #bbf7d0}
+.alert ul{margin:6px 0 0 18px}
+
+.progress{height:7px;background:var(--line);border-radius:5px;overflow:hidden;margin-top:8px}
+.progress > i{display:block;height:100%;background:linear-gradient(90deg,var(--primary),var(--gold));border-radius:5px;transition:.3s}
+
+.doc-row{display:flex;align-items:center;justify-content:space-between;padding:13px 16px;border:1px solid var(--line);border-radius:10px;margin-bottom:10px;background:#fff}
+.doc-row .ic{width:40px;height:40px;border-radius:9px;background:var(--gold-soft);color:var(--gold);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.doc-row .meta small{color:var(--muted);font-size:12px}
+.driveitem{display:flex;align-items:center;gap:11px;padding:11px 14px;border-radius:9px;transition:.1s}
+.driveitem:hover{background:#f8fafc}
+.driveitem .fi{font-size:18px}
+.fileinput{border:1.5px dashed var(--line2);border-radius:10px;padding:16px;text-align:center;color:var(--muted);font-size:12.5px}
+
+.copy-link{display:flex;gap:8px;align-items:center;background:#f8fafc;border:1px solid var(--line);border-radius:9px;padding:8px 8px 8px 14px}
+.copy-link input{flex:1;border:none;background:none;font-size:13px;color:var(--slate);outline:none}
+
+/* checklist / tablero de avance */
+.av-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.av-block{background:#fff;border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
+.av-block .h{padding:13px 16px;background:var(--navy);color:#fff;font-weight:600;font-size:13.5px;display:flex;align-items:center;justify-content:space-between}
+.av-block .h .pct{font-size:12px;font-weight:700;color:#cbb06a}
+.av-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 16px;border-bottom:1px solid var(--line);font-size:13px}
+.av-item:last-child{border-bottom:none}
+.av-item .lab{display:flex;align-items:center;gap:8px}
+.av-item .ic{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;color:#fff}
+.st-completo{background:var(--green)}.st-pendiente{background:#cbd5e1;color:#475569}.st-nc{background:#94a3b8}.st-revision{background:var(--blue)}.st-observado{background:var(--amber)}
+.av-item select{font-size:11.5px;padding:3px 6px;border:1px solid var(--line2);border-radius:6px;background:#fff;color:var(--slate)}
+.av-item.auto select{display:none}
+.av-item .autoflag{font-size:10px;color:var(--muted);font-style:italic}
+
+/* print / document preview */
+.docview{font-family:"Times New Roman",Georgia,serif;color:#000;background:#fff;line-height:1.5}
+.docview h1{text-align:center;font-size:15px;margin-bottom:2px}
+.docview h2{text-align:center;font-size:14px;margin-bottom:18px}
+.docview p{margin-bottom:11px;text-align:justify;font-size:13px}
+.docview .sig{margin-top:50px;display:flex;justify-content:space-around;text-align:center;font-size:12.5px}
+
+@media(max-width:860px){.sidebar{width:64px}.sidebar .logo .n,.nav .sec,.nav a span:not(.i),.userbox .nm,.userbox .rl,.logout{display:none}.main{margin-left:64px}.nav a{justify-content:center}}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login">
+  <div class="login-card">
+    <div class="brand-mark" id="loginLogo"></div>
+    <h1>GMJ LEGAL PARTNERS</h1>
+    <div class="sub">Plataforma interna de gestión de casos</div>
+    <div id="roleList"></div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app" class="hidden">
+  <aside class="sidebar">
+    <div class="logo">
+      <div class="m" id="sideLogo"></div>
+      <div class="n">GMJ Legal Partners<small>Gestión de cuentas digitales</small></div>
+    </div>
+    <nav class="nav" id="nav"></nav>
+    <div class="foot">
+      <div class="userbox">
+        <div class="av" id="uav">–</div>
+        <div><div class="nm" id="unm">–</div><div class="rl" id="url">–</div></div>
+      </div>
+      <button class="logout" onclick="logout()">Cerrar sesión</button>
+    </div>
+  </aside>
+  <div class="main">
+    <div class="topbar">
+      <div class="crumb" id="crumb"><b>Panel</b></div>
+      <div id="topActions"></div>
+    </div>
+    <div class="content" id="view"></div>
+  </div>
+</div>
+
+<div id="modalRoot"></div>
+<div id="toastRoot"></div>
+
+<script>
+/* ============================================================
+   GMJ LEGAL PARTNERS — Plataforma interna
+   MODO DUAL:
+   - Si SUPABASE_URL y SUPABASE_ANON_KEY están vacíos -> modo LOCAL (localStorage).
+   - Si están completos -> modo NUBE (datos compartidos en vivo + login + Calendar).
+   Pegá tus claves de Supabase abajo para activar la versión multiusuario.
+   ============================================================ */
+const SUPABASE_URL = "https://ybczeovebtsqdkgckcul.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_2cMt9Q29MthejwnnDeWvzQ_Ibn_NLmt";
+const CLOUD = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
+const FUNCTIONS_URL = SUPABASE_URL ? SUPABASE_URL.replace(".supabase.co", ".functions.supabase.co") : "";
+let sb = null;
+if (CLOUD && window.supabase) { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
+let RT_BOUND = false;
+
+/* ---------- CONSTANTES ---------- */
+const ESTADOS = [
+  "Nuevo caso","Formulario enviado al cliente","Formulario completado","Documentación pendiente",
+  "Documentación completa","Contrato enviado","Contrato firmado","Poder enviado","Poder firmado",
+  "Notificación pendiente","Notificación abonada","Mediación pendiente","Mediación solicitada",
+  "Audiencia fijada","Audiencia realizada","En seguimiento","Cuenta rehabilitada",
+  "Resultado negativo","Cerrado","Pausado"
+];
+const ESTADO_COLOR = {
+  "Nuevo caso":"b-grey","Formulario enviado al cliente":"b-blue","Formulario completado":"b-blue",
+  "Documentación pendiente":"b-amber","Documentación completa":"b-blue","Contrato enviado":"b-blue",
+  "Contrato firmado":"b-green","Poder enviado":"b-blue","Poder firmado":"b-green",
+  "Notificación pendiente":"b-amber","Notificación abonada":"b-green","Mediación pendiente":"b-amber",
+  "Mediación solicitada":"b-blue","Audiencia fijada":"b-gold","Audiencia realizada":"b-blue",
+  "En seguimiento":"b-blue","Cuenta rehabilitada":"b-green","Resultado negativo":"b-red",
+  "Cerrado":"b-grey","Pausado":"b-grey"
+};
+const TIPO_CUENTA = ["Personal","Comercial","Profesional","Creador de contenido","Negocio"];
+const DEFAULT_REQUERIDOS = [
+  {nombre:"META PLATFORMS INC (Instagram)", cuit:"EIN 20-1665019", domicilio:"7300 Gateway Boulevard, Shipping & Receiving Dock 15, Newark, CA 94560, United States of America."},
+  {nombre:"FACEBOOK ARGENTINA S.R.L.", cuit:"30-71213255-4", domicilio:"Cecilia Grierson 255, Piso 6, Ciudad Autónoma de Buenos Aires, CP 1107."}
+];
+const DEFAULT_OBJETO = "Daños y perjuicios derivados de la inhabilitación, suspensión o bloqueo de cuenta de Instagram / Facebook, incluyendo, en caso de corresponder, la afectación de actividad comercial, pérdida de acceso a la cuenta, imposibilidad de comunicación con seguidores/clientes, afectación reputacional y/o retención de fondos de anuncios publicitarios.";
+const GASTOS_DEFAULT = ["Mediación","Honorarios del mediador"];
+
+/* ---------- LOGO (SVG vectorial GMJ) ---------- */
+const LOGO_FULL = `<svg viewBox="0 0 120 142" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block">
+<path d="M14 30 Q14 16 28 16 L92 16 Q106 16 106 30 L106 80 Q106 117 60 135 Q14 117 14 80 Z" fill="#16294d"/>
+<text x="60" y="60" font-family="Georgia,'Times New Roman',serif" font-size="34" font-weight="700" fill="#ffffff" text-anchor="middle" letter-spacing="1">GMJ</text>
+<g stroke="#ffffff" stroke-width="2.2" fill="none" stroke-linecap="round">
+<line x1="60" y1="70" x2="60" y2="94"/><line x1="44" y1="74" x2="76" y2="74"/>
+<line x1="44" y1="74" x2="38" y2="84"/><line x1="44" y1="74" x2="50" y2="84"/>
+<line x1="76" y1="74" x2="70" y2="84"/><line x1="76" y1="74" x2="82" y2="84"/>
+<path d="M37 84 Q44 93 51 84"/><path d="M69 84 Q76 93 83 84"/></g>
+<circle cx="60" cy="69" r="2.5" fill="#fff"/><rect x="54" y="94" width="12" height="2.4" rx="1" fill="#fff"/><rect x="50" y="98" width="20" height="2.6" rx="1.2" fill="#fff"/>
+<text x="60" y="116" font-family="Arial,Helvetica,sans-serif" font-size="9" font-weight="700" fill="#c9a227" text-anchor="middle" letter-spacing="2.5">LEGAL</text>
+<text x="60" y="127" font-family="Arial,Helvetica,sans-serif" font-size="7" font-weight="600" fill="#ffffff" text-anchor="middle" letter-spacing="1.5">PARTNERS</text></svg>`;
+const LOGO_MINI = `<svg viewBox="0 0 120 132" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block">
+<path d="M12 28 Q12 12 28 12 L92 12 Q108 12 108 28 L108 80 Q108 120 60 138 Q12 120 12 80 Z" fill="#16294d" stroke="#c9a227" stroke-width="3"/>
+<text x="60" y="66" font-family="Georgia,'Times New Roman',serif" font-size="44" font-weight="700" fill="#ffffff" text-anchor="middle" letter-spacing="1">GMJ</text>
+<g stroke="#ffffff" stroke-width="3" fill="none" stroke-linecap="round">
+<line x1="60" y1="80" x2="60" y2="104"/><line x1="42" y1="84" x2="78" y2="84"/>
+<path d="M34 84 Q42 96 50 84"/><path d="M70 84 Q78 96 86 84"/></g>
+<rect x="52" y="104" width="16" height="3" rx="1.4" fill="#fff"/></svg>`;
+function setLogos(){
+  const a=document.getElementById("loginLogo"); if(a) a.innerHTML=LOGO_FULL;
+  const b=document.getElementById("sideLogo"); if(b) b.innerHTML=LOGO_MINI;
+}
+
+/* ---------- SEED ---------- */
+function seed(){
+  return {
+    config:{
+      estudio:{nombre:"GMJ LEGAL PARTNERS", repr:"Ivo Julián y/o Nazareno Gómez Melé", mail:"contacto@gmj-abogados.com.ar", domicilio:"Moliere 130, CABA", jurisdiccion:"Ciudad de Buenos Aires"},
+      asistenteMail:"asistente@gmj-abogados.com.ar",
+      mediador:"Dr. Felipe THUMIM",
+      requeridos:JSON.parse(JSON.stringify(DEFAULT_REQUERIDOS)),
+      objeto:DEFAULT_OBJETO
+    },
+    abogados:[
+      {id:"ab1", nombre:"Ivo Julián", domicilio:"Moliere 130, ZIP 1407, CABA", tomo:"127", folio:"39", matricula:"C.P.A.C.F.", tel:"+54 9 11 7372-1488", mail:"ivo.julian@gmj-abogados.com.ar"},
+      {id:"ab2", nombre:"Nazareno Gómez Melé", domicilio:"Moliere 130, ZIP 1407, CABA", tomo:"145", folio:"914", matricula:"C.P.A.C.F.", tel:"+54 9 11 7372-1488", mail:"nazareno.gmele@gmj-abogados.com.ar"}
+    ],
+    usuarios:[
+      {id:"u1", nombre:"Ivo Julián", rol:"socio"},
+      {id:"u2", nombre:"Nazareno Gómez Melé", rol:"socio"},
+      {id:"u3", nombre:"Asistente Estudio", rol:"empleado"}
+    ],
+    casos:[ demoCase() ],
+    counter:2
+  };
+}
+function demoCase(){
+  return {
+    id:"C-0001", tipo:"Rehabilitación de cuenta digital", estado:"Documentación pendiente",
+    fechaAlta:"2026-05-28", responsable:"u1", abogadoPatrocinante:"ab1",
+    proximaAccion:"Solicitar DNI dorso al cliente", fechaLimite:"2026-06-12",
+    cliente:{apellido:"LAWSON", nombre:"Alejandro", dni:"17.572.801", cuit:"20-17572801-3", nacionalidad:"Argentina", fechaNac:"", estadoCivil:"", conyuge:"", domicilio:"Arce 367", localidad:"CABA", provincia:"CABA", cp:"", tel:"1167436697", email:"info@gong.com.ar"},
+    cuenta:{plataforma:"Instagram", url:"https://www.instagram.com/gong.om_argentina", handle:"@gong.om_argentina", emailVinc:"info@gong.com.ar", telVinc:"", tipo:"Negocio", pautaActiva:true, saldoRetenido:false, cuentasVinc:"", businessManager:true, metodoPago:true, campanasActivas:false, hackeo:false},
+    relato:{fechaSusp:"2026-05-10", mensaje:"Se ha suspendido tu cuenta porque no cumple las Normas comunitarias.", tipoSusp:"Definitiva", apelo:true, recibioResp:true, hackeo:false, recupParcial:false, volvioSusp:false, perdida:"Seguidores, mensajes y campañas", original:"El cliente relata que su cuenta comercial fue inhabilitada permanentemente tras promocionar contenido.", sintesis:""},
+    finanzas:{moneda:"USD", montoTotal:600, adelanto:300, saldo:300, fechaAdelanto:"2026-05-28", fechaSaldo:"", devolucion:200, estadoPago:"parcial", medioPago:"Transferencia", obs:""},
+    pagos:[{id:"p1", fecha:"2026-05-28", importe:300, moneda:"USD", medio:"Transferencia", obs:"Adelanto inicial", esAdelanto:true}],
+    gastos:[
+      {id:"g1", nombre:"Mediación", estado:"pendiente", importe:0, moneda:"ARS", fecha:"", medio:"", obs:"", adjunto:""},
+      {id:"g2", nombre:"Honorarios del mediador", estado:"pendiente", importe:0, moneda:"ARS", fecha:"", medio:"", obs:"", adjunto:""}
+    ],
+    docs:[], tareas:[{id:"t1", texto:"Revisar documentación recibida", hecha:false, vence:"2026-06-10"}],
+    adjuntos:[{tipo:"DNI frente", nombre:"dni_frente.jpg", fecha:"2026-05-29"}],
+    drive:{link:"", creada:false},
+    objeto:DEFAULT_OBJETO, citarFacebook:true, audiencia:null, avance:{},
+    historial:[{accion:"Caso creado", usuario:"u1", fecha:"2026-05-28 10:12"}],
+    formToken:null, observaciones:"Cliente con actividad comercial. Prioridad media."
+  };
+}
+
+/* ---------- STORE ---------- */
+let DB, SESSION=null, CURRENT=null, ACTIVE_TAB="resumen";
+function loadLocal(){ const r=localStorage.getItem("gmj_db_v1"); DB = r?JSON.parse(r):seed(); migrate(); if(!r) saveLocal(); }
+function migrate(){
+  let changed=false;
+  // actualizar domicilio de Meta a la nueva sede
+  (DB.config.requeridos||[]).forEach(q=>{ if(/meta/i.test(q.nombre) && /menlo park|1 meta way/i.test(q.domicilio||"")){ q.domicilio="7300 Gateway Boulevard, Shipping & Receiving Dock 15, Newark, CA 94560, United States of America."; changed=true; } });
+  if(DB.config.asistenteMail===undefined){ DB.config.asistenteMail="asistente@gmj-abogados.com.ar"; changed=true; }
+  // asegurar campos nuevos en casos existentes
+  (DB.casos||[]).forEach(c=>{ if(c.citarFacebook===undefined){ c.citarFacebook=true; changed=true; } if(c.avance===undefined){ c.avance={}; changed=true; } if(c.audiencia===undefined){ c.audiencia=null; changed=true; } });
+  if(changed) save();
+}
+function cobradoDe(c){ const f=c.finanzas; return (c.pagos||[]).reduce((s,p)=>s+(p.moneda===f.moneda?Number(p.importe||0):0),0); }
+function syncAdelanto(c){
+  const f=c.finanzas; const ade=Number(f.adelanto||0); c.pagos=c.pagos||[];
+  let p=c.pagos.find(x=>x.esAdelanto);
+  if(ade>0){
+    if(p){ p.importe=ade; p.moneda=f.moneda; p.fecha=f.fechaAdelanto||p.fecha||new Date().toISOString().slice(0,10); p.medio=f.medioPago||p.medio; }
+    else { c.pagos.push({id:uid("p"),importe:ade,moneda:f.moneda,fecha:f.fechaAdelanto||new Date().toISOString().slice(0,10),medio:f.medioPago,obs:"Adelanto inicial",esAdelanto:true}); }
+  } else if(p){ c.pagos=c.pagos.filter(x=>!x.esAdelanto); }
+}
+function recalcEstadoPago(c){ const f=c.finanzas; if(f.estadoPago==='vencido') return; const cob=cobradoDe(c); const tot=Number(f.montoTotal||0); f.estadoPago = cob<=0?'pendiente':(tot>0&&cob>=tot?'completo':'parcial'); }
+function saveLocal(){ localStorage.setItem("gmj_db_v1", JSON.stringify(DB)); }
+function save(){ if(CLOUD){ cloudSave(); } else { saveLocal(); } }
+function uid(p){ return p+Math.random().toString(36).slice(2,8); }
+
+/* ---------- CAPA DE NUBE (Supabase) ---------- */
+function isSocioRole(){ return SESSION && SESSION.rol==="socio"; }
+async function cloudLoad(){
+  const [st, profs, cs, fin] = await Promise.all([
+    sb.from("settings").select("data").eq("id",1).maybeSingle(),
+    sb.from("profiles").select("id,nombre,rol"),
+    sb.from("casos").select("id,data,form_token"),
+    sb.from("case_finance").select("*")
+  ]);
+  const cfg = (st.data && st.data.data) || {};
+  DB = {
+    config:{ estudio:cfg.estudio||{}, asistenteMail:cfg.asistenteMail||"", mediador:cfg.mediador||"", requeridos:cfg.requeridos||[], objeto:cfg.objeto||"" },
+    abogados: cfg.abogados||[],
+    usuarios: (profs.data||[]).map(p=>({id:p.id,nombre:p.nombre,rol:p.rol})),
+    casos: [],
+    counter: cfg.counter||0
+  };
+  const finMap={}; (fin.data||[]).forEach(f=>finMap[f.caso_id]=f);
+  DB.casos = (cs.data||[]).map(row=>{
+    const c = row.data||{}; c.id=row.id; c.formToken=row.form_token||c.formToken||null;
+    const ff=finMap[row.id];
+    if(ff){ c.finanzas=ff.finanzas||c.finanzas; c.pagos=ff.pagos||c.pagos; }
+    else if(!isSocioRole()){ c.finanzas={moneda:"USD",montoTotal:"",adelanto:"",saldo:"",devolucion:"",estadoPago:"",fechaAdelanto:"",fechaSaldo:"",medioPago:"",obs:""}; c.pagos=[]; }
+    return c;
+  });
+  DB.casos.sort((a,b)=>(b.id||"").localeCompare(a.id||""));
+}
+let _saveTimer=null;
+function cloudSave(){ if(!sb) return; if(_saveTimer) clearTimeout(_saveTimer); _saveTimer=setTimeout(doCloudSave,350); }
+async function doCloudSave(){
+  try{
+    const cfg={ estudio:DB.config.estudio, asistenteMail:DB.config.asistenteMail, mediador:DB.config.mediador, requeridos:DB.config.requeridos, objeto:DB.config.objeto, abogados:DB.abogados, counter:DB.counter };
+    await sb.from("settings").upsert({id:1, data:cfg, updated_at:new Date().toISOString()});
+    const c = CURRENT;
+    if(c){
+      const noFin = JSON.parse(JSON.stringify(c)); delete noFin.finanzas; delete noFin.pagos;
+      await sb.from("casos").upsert({ id:c.id, data:noFin, cliente_nombre:clienteFull(c), estado:c.estado, form_token:c.formToken||null, updated_at:new Date().toISOString(), updated_by:SESSION.id });
+      if(isSocio()) await sb.from("case_finance").upsert({ caso_id:c.id, finanzas:c.finanzas||{}, pagos:c.pagos||[], updated_at:new Date().toISOString() });
+    }
+  }catch(e){ console.error("cloudSave",e); toast("Error guardando en la nube","err"); }
+}
+async function cloudInsertCase(c){
+  const noFin = JSON.parse(JSON.stringify(c)); delete noFin.finanzas; delete noFin.pagos;
+  await sb.from("casos").insert({ id:c.id, data:noFin, cliente_nombre:clienteFull(c), estado:c.estado, form_token:c.formToken||null, updated_by:SESSION.id });
+  if(isSocio()) await sb.from("case_finance").upsert({ caso_id:c.id, finanzas:c.finanzas||{}, pagos:c.pagos||[] });
+  const cfg={ estudio:DB.config.estudio, asistenteMail:DB.config.asistenteMail, mediador:DB.config.mediador, requeridos:DB.config.requeridos, objeto:DB.config.objeto, abogados:DB.abogados, counter:DB.counter };
+  await sb.from("settings").upsert({id:1, data:cfg});
+}
+function bindRealtime(){
+  if(!sb || RT_BOUND) return; RT_BOUND=true;
+  sb.channel("gmj-db")
+    .on("postgres_changes",{event:"*",schema:"public",table:"casos"}, cloudRefresh)
+    .on("postgres_changes",{event:"*",schema:"public",table:"case_finance"}, cloudRefresh)
+    .on("postgres_changes",{event:"*",schema:"public",table:"settings"}, cloudRefresh)
+    .subscribe();
+}
+let _refreshTimer=null;
+function cloudRefresh(){
+  if(_refreshTimer) clearTimeout(_refreshTimer);
+  _refreshTimer=setTimeout(async()=>{
+    if(document.getElementById("modalRoot").innerHTML.trim()) return; // no interrumpir edición
+    const curId = CURRENT ? CURRENT.id : null; const tab = ACTIVE_TAB;
+    await cloudLoad();
+    if(ROUTE==="caso" && curId){ CURRENT=DB.casos.find(c=>c.id===curId)||null; ACTIVE_TAB=tab; if(CURRENT) renderCaso(); else go("casos"); }
+    else if(ROUTE) go(ROUTE);
+  }, 250);
+}
+function isSocio(){ return SESSION && SESSION.rol==="socio"; }
+function userName(id){ const u=DB.usuarios.find(x=>x.id===id); return u?u.nombre:"—"; }
+function abLabel(id){ const a=DB.abogados.find(x=>x.id===id); return a?a.nombre:"—"; }
+function now(){ const d=new Date(); const p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`; }
+function logAction(c, accion){ c.historial.unshift({accion, usuario:SESSION.id, fecha:now()}); }
+
+/* ---------- HELPERS ---------- */
+function esc(s){ return (s==null?"":String(s)).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m])); }
+function money(n,m){ if(n==null||n==="") return "—"; const sym=m==="USD"?"USD ":"$ "; return sym+Number(n).toLocaleString("es-AR"); }
+function fdate(s){ if(!s) return "—"; const p=s.split("-"); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:s; }
+function toast(msg, type){ const r=document.getElementById("toastRoot"); const t=document.createElement("div"); t.className="toast "+(type||"ok"); t.innerHTML=`<span class="i">${type==="err"?"⚠":"✓"}</span>${esc(msg)}`; r.appendChild(t); setTimeout(()=>t.remove(),2800); }
+function clienteFull(c){ return ((c.cliente.apellido||"")+" "+(c.cliente.nombre||"")).trim()||"Sin nombre"; }
+function driveFolderName(c){ const ap=(c.cliente.apellido||"APELLIDO").toUpperCase(); const no=c.cliente.nombre||"Nombre"; const plat=c.cuenta.plataforma||"Instagram"; return `${ap}, ${no} - Cuenta ${plat} - Reclamo Meta`; }
+
+/* ============================================================
+   LOGIN
+   ============================================================ */
+function renderLogin(){
+  if(CLOUD){ renderCloudLogin(); return; }
+  const icons={socio:"⚖️",empleado:"👤"};
+  let h="";
+  DB.usuarios.forEach(u=>{
+    const col = u.rol==="socio" ? "background:var(--gold-soft);color:var(--gold)" : "background:var(--blue-bg);color:var(--blue)";
+    h+=`<button class="role-opt" onclick="doLogin('${u.id}')">
+      <div class="ico" style="${col}">${icons[u.rol]}</div>
+      <div style="flex:1"><div class="t">${esc(u.nombre)}</div><div class="d">${u.rol==="socio"?"Socio / Administrador — acceso completo":"Empleado — sin módulo financiero"}</div></div>
+      <div style="color:var(--muted)">→</div>
+    </button>`;
+  });
+  document.getElementById("roleList").innerHTML=h;
+  setLogos();
+}
+function renderCloudLogin(){
+  document.getElementById("roleList").innerHTML=`
+    <div class="field" style="text-align:left"><label>Email</label><input id="lg_email" type="email" placeholder="tu@correo.com" autocomplete="username"></div>
+    <div class="field" style="text-align:left"><label>Contraseña</label><input id="lg_pass" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')cloudSignIn()"></div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="cloudSignIn()">Ingresar</button>
+    <div id="lg_msg" style="color:var(--red);font-size:12.5px;margin-top:10px;min-height:16px"></div>`;
+  setLogos();
+}
+async function cloudSignIn(){
+  const email=val("lg_email").trim(), pass=val("lg_pass");
+  const msg=document.getElementById("lg_msg"); msg.textContent="Ingresando…";
+  const {data,error}=await sb.auth.signInWithPassword({email,password:pass});
+  if(error){ msg.textContent="No pudimos ingresar: "+error.message; return; }
+  await afterAuth();
+}
+async function afterAuth(){
+  const {data:{user}}=await sb.auth.getUser();
+  if(!user){ renderCloudLogin(); return; }
+  const {data:prof}=await sb.from("profiles").select("*").eq("id",user.id).maybeSingle();
+  SESSION={ id:user.id, nombre:(prof&&prof.nombre)||user.email, rol:(prof&&prof.rol)||"empleado" };
+  await cloudLoad();
+  bindRealtime();
+  document.getElementById("login").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  initApp();
+  handleGoogleHash();
+}
+function doLogin(uidv){ SESSION=DB.usuarios.find(u=>u.id===uidv); document.getElementById("login").classList.add("hidden"); document.getElementById("app").classList.remove("hidden"); initApp(); }
+async function logout(){ if(CLOUD&&sb){ await sb.auth.signOut(); } SESSION=null; CURRENT=null; document.getElementById("app").classList.add("hidden"); document.getElementById("login").classList.remove("hidden"); renderLogin(); }
+
+/* ============================================================
+   NAV + ROUTER
+   ============================================================ */
+let ROUTE="dashboard";
+function initApp(){
+  document.getElementById("uav").textContent = SESSION.nombre.split(" ").map(s=>s[0]).slice(0,2).join("");
+  document.getElementById("unm").textContent = SESSION.nombre;
+  document.getElementById("url").textContent = isSocio()?"Socio / Administrador":"Empleado";
+  setLogos(); buildNav(); go("dashboard");
+}
+function buildNav(){
+  const items=[
+    {k:"dashboard", i:"▦", t:"Panel"},
+    {k:"casos", i:"📁", t:"Casos"},
+  ];
+  if(isSocio()) items.push({k:"finanzas", i:"💰", t:"Finanzas global"});
+  items.push({k:"config", i:"⚙️", t:"Configuración"});
+  if(isSocio()) items.push({k:"usuarios", i:"👥", t:"Usuarios y abogados"});
+  let h=`<div class="sec">General</div>`;
+  items.forEach(it=>{ h+=`<a id="nav-${it.k}" onclick="go('${it.k}')"><span class="i">${it.i}</span><span>${it.t}</span></a>`; });
+  document.getElementById("nav").innerHTML=h;
+}
+function setActiveNav(k){ document.querySelectorAll(".nav a").forEach(a=>a.classList.remove("active")); const el=document.getElementById("nav-"+k); if(el) el.classList.add("active"); }
+function setCrumb(t, sub){ document.getElementById("crumb").innerHTML = (sub?`${esc(sub)} `:"")+`<b>${esc(t)}</b>`; }
+function topActions(html){ document.getElementById("topActions").innerHTML=html||""; }
+
+function go(route, arg){
+  ROUTE=route; topActions("");
+  if(route==="dashboard"){ setActiveNav("dashboard"); renderDashboard(); }
+  else if(route==="casos"){ setActiveNav("casos"); renderCasos(); }
+  else if(route==="caso"){ setActiveNav("casos"); CURRENT=DB.casos.find(c=>c.id===arg); ACTIVE_TAB="resumen"; renderCaso(); }
+  else if(route==="finanzas"){ setActiveNav("finanzas"); renderFinanzasGlobal(); }
+  else if(route==="config"){ setActiveNav("config"); renderConfig(); }
+  else if(route==="usuarios"){ setActiveNav("usuarios"); renderUsuarios(); }
+  else if(route==="form"){ renderClientForm(arg); }
+  window.scrollTo(0,0);
+}
+
+/* ============================================================
+   DASHBOARD
+   ============================================================ */
+function renderDashboard(){
+  setCrumb("Panel de control");
+  const cs=DB.casos;
+  const activos=cs.filter(c=>!["Cerrado","Resultado negativo"].includes(c.estado)).length;
+  const rehab=cs.filter(c=>c.estado==="Cuenta rehabilitada").length;
+  const pendDoc=cs.filter(c=>c.estado==="Documentación pendiente").length;
+  // próximas acciones
+  const today=new Date().toISOString().slice(0,10);
+  const venc=cs.filter(c=>c.fechaLimite).sort((a,b)=>a.fechaLimite.localeCompare(b.fechaLimite));
+  let finCards="";
+  if(isSocio()){
+    let totalUSD=0, cobradoUSD=0, totalARS=0, cobradoARS=0;
+    cs.forEach(c=>{ const f=c.finanzas; const pagado=(c.pagos||[]).reduce((s,p)=>s+(p.moneda===f.moneda?Number(p.importe||0):0),0);
+      if(f.moneda==="USD"){ totalUSD+=Number(f.montoTotal||0); cobradoUSD+=pagado; } else { totalARS+=Number(f.montoTotal||0); cobradoARS+=pagado; } });
+    finCards=`
+      <div class="stat gold"><div class="lab">Facturación pactada (USD)</div><div class="val">${money(totalUSD,"USD")}</div><div class="sub">Cobrado: ${money(cobradoUSD,"USD")} · Pendiente: ${money(totalUSD-cobradoUSD,"USD")}</div></div>
+      <div class="stat green"><div class="lab">Facturación pactada (ARS)</div><div class="val">${money(totalARS,"ARS")}</div><div class="sub">Cobrado: ${money(cobradoARS,"ARS")}</div></div>`;
+  }
+  let estadoBreak={};
+  cs.forEach(c=>estadoBreak[c.estado]=(estadoBreak[c.estado]||0)+1);
+  const estadoRows=Object.entries(estadoBreak).sort((a,b)=>b[1]-a[1]).map(([e,n])=>`<tr><td><span class="badge ${ESTADO_COLOR[e]||'b-grey'}"><span class="dot"></span>${esc(e)}</span></td><td style="text-align:right;font-weight:600">${n}</td></tr>`).join("");
+
+  let vencRows = venc.slice(0,8).map(c=>{
+    const late = c.fechaLimite < today;
+    return `<tr class="clickable" onclick="go('caso','${c.id}')">
+      <td><b>${esc(clienteFull(c))}</b><br><small style="color:var(--muted)">${esc(c.id)}</small></td>
+      <td>${esc(c.proximaAccion||"—")}</td>
+      <td><span class="badge ${late?'b-red':'b-amber'}">${fdate(c.fechaLimite)}</span></td>
+      <td><span class="badge ${ESTADO_COLOR[c.estado]||'b-grey'}">${esc(c.estado)}</span></td>
+    </tr>`;
+  }).join("") || `<tr><td colspan="4" class="empty">Sin fechas límite cargadas</td></tr>`;
+
+  document.getElementById("view").innerHTML=`
+    <div class="pagehead"><div><h2>Hola, ${esc(SESSION.nombre.split(" ")[0])} 👋</h2><div class="sub">${isSocio()?"Vista completa del estudio":"Vista operativa"} · ${cs.length} casos en total</div></div>
+      <button class="btn btn-primary" onclick="openNewCase()">＋ Nuevo caso</button></div>
+    <div class="grid g4" style="margin-bottom:18px">
+      <div class="stat accent"><div class="lab">Casos activos</div><div class="val">${activos}</div><div class="sub">de ${cs.length} totales</div></div>
+      <div class="stat amber"><div class="lab">Documentación pendiente</div><div class="val">${pendDoc}</div><div class="sub">requieren seguimiento</div></div>
+      ${isSocio()?finCards:`<div class="stat green"><div class="lab">Cuentas rehabilitadas</div><div class="val">${rehab}</div><div class="sub">resultados positivos</div></div><div class="stat"><div class="lab">Tareas abiertas</div><div class="val">${cs.reduce((s,c)=>s+(c.tareas||[]).filter(t=>!t.hecha).length,0)}</div></div>`}
+    </div>
+    <div class="grid" style="grid-template-columns:1.6fr 1fr">
+      <div class="card"><div class="card-h"><h3>Próximas acciones y vencimientos</h3></div>
+        <table><thead><tr><th>Cliente</th><th>Próxima acción</th><th>Fecha límite</th><th>Estado</th></tr></thead><tbody>${vencRows}</tbody></table></div>
+      <div class="card"><div class="card-h"><h3>Casos por estado</h3></div>
+        <table><tbody>${estadoRows||'<tr><td class="empty">Sin casos</td></tr>'}</tbody></table></div>
+    </div>`;
+}
+
+/* ============================================================
+   CASOS LIST
+   ============================================================ */
+let FILTER={q:"",estado:""};
+function renderCasos(){
+  setCrumb("Casos");
+  topActions(`<button class="btn btn-primary" onclick="openNewCase()">＋ Nuevo caso</button>`);
+  const opts=ESTADOS.map(e=>`<option ${FILTER.estado===e?'selected':''}>${e}</option>`).join("");
+  let list=DB.casos.filter(c=>{
+    const matchQ=!FILTER.q || (clienteFull(c)+c.id+(c.cuenta.handle||"")).toLowerCase().includes(FILTER.q.toLowerCase());
+    const matchE=!FILTER.estado || c.estado===FILTER.estado;
+    return matchQ && matchE;
+  });
+  const rows=list.map(c=>{
+    const prog=caseProgress(c);
+    return `<tr class="clickable" onclick="go('caso','${c.id}')">
+      <td><b style="color:var(--navy)">${esc(clienteFull(c))}</b><br><small style="color:var(--muted)">${esc(c.id)} · ${fdate(c.fechaAlta)}</small></td>
+      <td>${esc(c.cuenta.handle||"—")}<br><small style="color:var(--muted)">${esc(c.cuenta.plataforma||"")}</small></td>
+      <td><span class="badge ${ESTADO_COLOR[c.estado]||'b-grey'}"><span class="dot"></span>${esc(c.estado)}</span></td>
+      <td>${esc(abLabel(c.abogadoPatrocinante))}</td>
+      <td style="width:130px"><div style="font-size:11px;color:var(--muted)">${prog}% completo</div><div class="progress"><i style="width:${prog}%"></i></div></td>
+      <td>${c.fechaLimite?`<span class="badge ${c.fechaLimite<new Date().toISOString().slice(0,10)?'b-red':'b-grey'}">${fdate(c.fechaLimite)}</span>`:'—'}</td>
+    </tr>`;
+  }).join("");
+  document.getElementById("view").innerHTML=`
+    <div class="pagehead"><div><h2>Casos</h2><div class="sub">${list.length} de ${DB.casos.length} casos</div></div></div>
+    <div class="filters">
+      <div class="search"><span class="si">🔎</span><input id="fq" placeholder="Buscar por cliente, ID o usuario…" value="${esc(FILTER.q)}" oninput="FILTER.q=this.value;renderCasos();document.getElementById('fq').focus()"></div>
+      <select onchange="FILTER.estado=this.value;renderCasos()"><option value="">Todos los estados</option>${opts}</select>
+      ${FILTER.estado||FILTER.q?`<button class="btn btn-ghost btn-sm" onclick="FILTER={q:'',estado:''};renderCasos()">Limpiar</button>`:''}
+    </div>
+    <div class="card">
+      <table><thead><tr><th>Cliente</th><th>Cuenta</th><th>Estado</th><th>Patrocinante</th><th>Avance</th><th>Límite</th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="6"><div class="empty"><div class="ico">📁</div>No hay casos que coincidan</div></td></tr>'}</tbody></table>
+    </div>`;
+  setTimeout(()=>{const fq=document.getElementById('fq');if(fq){fq.focus();fq.setSelectionRange(fq.value.length,fq.value.length);}},0);
+}
+function caseProgress(c){
+  let done=0,total=7;
+  if(c.cliente.dni) done++;
+  if(c.cuenta.url) done++;
+  if(c.relato.original||c.relato.sintesis) done++;
+  if((c.adjuntos||[]).some(a=>a.tipo==="DNI frente")) done++;
+  if(c.docs.some(d=>d.tipo==="contrato")) done++;
+  if(c.docs.some(d=>d.tipo==="carta_poder")) done++;
+  if(c.docs.some(d=>d.tipo==="mediacion")) done++;
+  return Math.round(done/total*100);
+}
+
+/* ---------- NEW CASE ---------- */
+function openNewCase(){
+  modal({title:"Nuevo caso", size:"", body:`
+    <div class="alert alert-info"><span>ℹ️</span><div>Cargá los datos mínimos. Después podés generar un link de formulario para que el cliente complete el resto.</div></div>
+    <div class="frow fr2">
+      <div class="field"><label>Apellido <span class="req">*</span></label><input id="nc_ap" placeholder="PEREZ"></div>
+      <div class="field"><label>Nombre <span class="req">*</span></label><input id="nc_no" placeholder="Juan"></div>
+    </div>
+    <div class="frow fr2">
+      <div class="field"><label>Teléfono</label><input id="nc_tel" placeholder="11..."></div>
+      <div class="field"><label>Email</label><input id="nc_email" placeholder="cliente@mail.com"></div>
+    </div>
+    <div class="frow fr2">
+      <div class="field"><label>Plataforma</label><select id="nc_plat"><option>Instagram</option><option>Facebook</option><option>Otra</option></select></div>
+      <div class="field"><label>Usuario / handle</label><input id="nc_handle" placeholder="@usuario"></div>
+    </div>
+    <div class="frow fr2">
+      <div class="field"><label>Responsable interno</label><select id="nc_resp">${DB.usuarios.map(u=>`<option value="${u.id}">${esc(u.nombre)}</option>`).join("")}</select></div>
+      <div class="field"><label>Abogado patrocinante</label><select id="nc_ab">${DB.abogados.map(a=>`<option value="${a.id}">${esc(a.nombre)}</option>`).join("")}</select></div>
+    </div>`,
+    footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="createCase()">Crear caso</button>`});
+}
+function createCase(){
+  const ap=val("nc_ap").trim(), no=val("nc_no").trim();
+  if(!ap||!no){ toast("Apellido y nombre son obligatorios","err"); return; }
+  DB.counter=(DB.counter||0)+1;
+  const id="C-"+String(DB.counter).padStart(4,"0");
+  const c=demoCase(); // base shape
+  Object.assign(c,{
+    id, estado:"Nuevo caso", fechaAlta:new Date().toISOString().slice(0,10),
+    responsable:val("nc_resp"), abogadoPatrocinante:val("nc_ab"),
+    proximaAccion:"Enviar formulario al cliente", fechaLimite:"",
+    cliente:{apellido:ap.toUpperCase(), nombre:no, dni:"", cuit:"", nacionalidad:"Argentina", fechaNac:"", estadoCivil:"", conyuge:"", domicilio:"", localidad:"", provincia:"", cp:"", tel:val("nc_tel"), email:val("nc_email")},
+    cuenta:{plataforma:val("nc_plat"), url:"", handle:val("nc_handle"), emailVinc:"", telVinc:"", tipo:"", pautaActiva:false, saldoRetenido:false, cuentasVinc:"", businessManager:false, metodoPago:false, campanasActivas:false, hackeo:false},
+    relato:{fechaSusp:"",mensaje:"",tipoSusp:"",apelo:false,recibioResp:false,hackeo:false,recupParcial:false,volvioSusp:false,perdida:"",original:"",sintesis:""},
+    finanzas:{moneda:"USD",montoTotal:"",adelanto:"",saldo:"",fechaAdelanto:"",fechaSaldo:"",devolucion:"",estadoPago:"pendiente",medioPago:"",obs:""},
+    pagos:[],
+    gastos:GASTOS_DEFAULT.map(n=>({id:uid("g"),nombre:n,estado:"pendiente",importe:"",moneda:"ARS",fecha:"",medio:"",obs:"",adjunto:""})),
+    docs:[], tareas:[], adjuntos:[], drive:{link:"",creada:false}, objeto:DB.config.objeto, citarFacebook:true, audiencia:null, avance:{},
+    historial:[], formToken:null, observaciones:""
+  });
+  logAction(c,"Caso creado");
+  DB.casos.unshift(c);
+  if(CLOUD){ CURRENT=c; cloudInsertCase(c); } else { save(); }
+  closeModal(); toast("Caso "+id+" creado");
+  go("caso", id);
+}
+
+/* ============================================================
+   CASO DETAIL
+   ============================================================ */
+function renderCaso(){
+  const c=CURRENT; if(!c){ go("casos"); return; }
+  setCrumb(clienteFull(c), "Casos /");
+  topActions(`<button class="btn btn-ghost btn-sm" onclick="go('casos')">← Volver</button>`);
+  let tabs=[
+    ["resumen","Resumen"],["avance","Avance"],["cliente","Cliente"],["cuenta","Cuenta afectada"],["relato","Relato"],
+    ["doc","Documentación"],["drive","Drive"],["docs","Documentos"],["mediacion","Mediación"],["gastos","Gastos"]
+  ];
+  if(isSocio()) tabs.push(["finanzas","Finanzas"]);
+  tabs.push(["tareas","Tareas"],["historial","Historial"],["obs","Observaciones"]);
+  const tabBtns=tabs.map(([k,t])=>{
+    let pill="";
+    if(k==="docs"&&c.docs.length) pill=`<span class="pill">${c.docs.length}</span>`;
+    if(k==="tareas"){const n=(c.tareas||[]).filter(t=>!t.hecha).length; if(n)pill=`<span class="pill">${n}</span>`;}
+    if(k==="doc"&&(c.adjuntos||[]).length) pill=`<span class="pill">${c.adjuntos.length}</span>`;
+    return `<button class="${ACTIVE_TAB===k?'active':''}" onclick="ACTIVE_TAB='${k}';renderCaso()">${t}${pill}</button>`;
+  }).join("");
+
+  const header=`
+    <div class="card" style="margin-bottom:18px"><div class="card-b" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px">
+      <div>
+        <div style="font-size:19px;font-weight:700;color:var(--navy)">${esc(clienteFull(c))}</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:3px">${esc(c.id)} · ${esc(c.cuenta.handle||"sin cuenta")} · Alta ${fdate(c.fechaAlta)}</div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <select onchange="changeEstado(this.value)" style="padding:8px 12px;border:1px solid var(--line2);border-radius:8px;font-weight:600">
+          ${ESTADOS.map(e=>`<option ${c.estado===e?'selected':''}>${e}</option>`).join("")}
+        </select>
+      </div>
+    </div></div>`;
+
+  document.getElementById("view").innerHTML = header + `<div class="tabs">${tabBtns}</div><div id="tabBody"></div>`;
+  renderTab();
+}
+function changeEstado(e){ CURRENT.estado=e; logAction(CURRENT,"Estado cambiado a: "+e); save(); toast("Estado actualizado"); }
+
+function renderTab(){
+  const c=CURRENT, t=ACTIVE_TAB, el=document.getElementById("tabBody");
+  if(t==="resumen") el.innerHTML=tabResumen(c);
+  else if(t==="avance") el.innerHTML=tabAvance(c);
+  else if(t==="cliente") el.innerHTML=tabCliente(c);
+  else if(t==="cuenta") el.innerHTML=tabCuenta(c);
+  else if(t==="relato") el.innerHTML=tabRelato(c);
+  else if(t==="doc") el.innerHTML=tabDoc(c);
+  else if(t==="drive") el.innerHTML=tabDrive(c);
+  else if(t==="docs") el.innerHTML=tabDocs(c);
+  else if(t==="mediacion") el.innerHTML=tabMediacion(c);
+  else if(t==="gastos") el.innerHTML=tabGastos(c);
+  else if(t==="finanzas") el.innerHTML= isSocio()?tabFinanzas(c):lockedMsg();
+  else if(t==="tareas") el.innerHTML=tabTareas(c);
+  else if(t==="historial") el.innerHTML=tabHistorial(c);
+  else if(t==="obs") el.innerHTML=tabObs(c);
+}
+function lockedMsg(){ return `<div class="card"><div class="empty"><div class="ico">🔒</div>Módulo financiero restringido a socios.</div></div>`; }
+
+/* ---------- TAB: RESUMEN ---------- */
+function tabResumen(c){
+  const prog=caseProgress(c);
+  const finBlock = isSocio() ? `
+    <div class="card"><div class="card-h"><h3>Resumen financiero</h3><span class="badge ${pagoBadge(c.finanzas.estadoPago)}">${esc(c.finanzas.estadoPago)}</span></div><div class="card-b">
+      <dl class="kv">
+        <dt>Monto total</dt><dd>${money(c.finanzas.montoTotal,c.finanzas.moneda)}</dd>
+        <dt>Adelanto</dt><dd>${money(c.finanzas.adelanto,c.finanzas.moneda)}</dd>
+        <dt>Saldo</dt><dd>${money(c.finanzas.saldo,c.finanzas.moneda)}</dd>
+        <dt>Devolución pactada</dt><dd>${money(c.finanzas.devolucion,c.finanzas.moneda)}</dd>
+      </dl></div></div>` : "";
+  return `<div class="grid g2">
+    <div class="card"><div class="card-h"><h3>Datos del caso</h3></div><div class="card-b">
+      <dl class="kv">
+        <dt>Tipo</dt><dd>${esc(c.tipo)}</dd>
+        <dt>Estado</dt><dd><span class="badge ${ESTADO_COLOR[c.estado]||'b-grey'}">${esc(c.estado)}</span></dd>
+        <dt>Responsable</dt><dd>${esc(userName(c.responsable))}</dd>
+        <dt>Patrocinante</dt><dd>${esc(abLabel(c.abogadoPatrocinante))}</dd>
+        <dt>Próxima acción</dt><dd>${esc(c.proximaAccion||"—")}</dd>
+        <dt>Fecha límite</dt><dd>${fdate(c.fechaLimite)}</dd>
+      </dl>
+      <div style="margin-top:14px"><div style="font-size:12px;color:var(--muted)">Avance del expediente: ${prog}%</div><div class="progress"><i style="width:${prog}%"></i></div></div>
+    </div></div>
+    <div class="card"><div class="card-h"><h3>Cuenta afectada</h3></div><div class="card-b">
+      <dl class="kv">
+        <dt>Plataforma</dt><dd>${esc(c.cuenta.plataforma||"—")}</dd>
+        <dt>Usuario</dt><dd>${esc(c.cuenta.handle||"—")}</dd>
+        <dt>URL</dt><dd>${c.cuenta.url?`<a href="${esc(c.cuenta.url)}" target="_blank">ver cuenta ↗</a>`:"—"}</dd>
+        <dt>Tipo de cuenta</dt><dd>${esc(c.cuenta.tipo||"—")}</dd>
+        <dt>Pauta publicitaria</dt><dd>${c.cuenta.pautaActiva?"Sí":"No"}</dd>
+        <dt>Saldo retenido</dt><dd>${c.cuenta.saldoRetenido?"Sí":"No"}</dd>
+      </dl></div></div>
+    ${finBlock}
+    <div class="card"><div class="card-h"><h3>Acciones rápidas</h3></div><div class="card-b" style="display:flex;flex-wrap:wrap;gap:10px">
+      <button class="btn btn-ghost" onclick="ACTIVE_TAB='doc';renderCaso()">📨 Generar link de formulario</button>
+      <button class="btn btn-ghost" onclick="ACTIVE_TAB='docs';renderCaso()">📄 Generar documentos</button>
+      <button class="btn btn-ghost" onclick="ACTIVE_TAB='drive';renderCaso()">📁 Carpeta Drive</button>
+    </div></div>
+  </div>`;
+}
+function pagoBadge(e){ return {pendiente:"b-amber",parcial:"b-blue",completo:"b-green",vencido:"b-red"}[e]||"b-grey"; }
+
+/* ---------- TAB: AVANCE (tablero / checklist) ---------- */
+const AV_STATUS={completo:{c:'st-completo',i:'✓',t:'Completo'},pendiente:{c:'st-pendiente',i:'•',t:'Pendiente'},nc:{c:'st-nc',i:'–',t:'No corresponde'},revision:{c:'st-revision',i:'?',t:'En revisión'},observado:{c:'st-observado',i:'!',t:'Observado'}};
+function avBlocks(c){
+  const cl=c.cliente,cu=c.cuenta,re=c.relato,f=c.finanzas;
+  const adj=t=>(c.adjuntos||[]).some(a=>a.tipo===t);
+  const doc=t=>c.docs.filter(d=>d.tipo===t).sort((a,b)=>b.version-a.version)[0];
+  const dmin=(t,es)=>{const d=doc(t);return !!(d&&es.includes(d.estado));};
+  const b=v=>v?'completo':'pendiente';
+  const blocks=[
+    {t:"Datos del cliente", items:[
+      ["cli_pers","Datos personales completos",b(cl.nombre&&cl.apellido&&cl.dni)],
+      ["cli_dom","Domicilio completo",b(cl.domicilio&&cl.localidad&&cl.provincia)],
+      ["cli_tel","Teléfono",b(cl.tel)],["cli_mail","Mail",b(cl.email)],
+      ["cli_dnif","DNI frente",b(adj("DNI frente"))],["cli_dnid","DNI dorso",b(adj("DNI dorso"))],
+    ]},
+    {t:"Cuenta afectada", items:[
+      ["cu_url","URL de la cuenta",b(cu.url)],["cu_handle","Usuario / handle",b(cu.handle)],
+      ["cu_mail","Mail vinculado",b(cu.emailVinc)],["cu_tel","Teléfono vinculado",b(cu.telVinc)],
+      ["cu_relato","Relato de hechos",b(re.original||re.sintesis)],
+      ["cu_capt","Capturas de suspensión",b(adj("Captura aviso de suspensión"))],
+      ["cu_pru","Pruebas adicionales",b(adj("Otra documentación")||adj("Conversaciones / pruebas")||adj("Captura de la cuenta"))],
+    ]},
+    {t:"Documentación legal", items:[
+      ["dl_cg","Contrato generado",b(doc("contrato"))],
+      ["dl_ce","Contrato enviado",b(dmin("contrato",["enviado","firmado","final"]))],
+      ["dl_cf","Contrato firmado",b(dmin("contrato",["firmado","final"]))],
+      ["dl_pg","Carta poder generada",b(doc("carta_poder"))],
+      ["dl_pe","Carta poder enviada",b(dmin("carta_poder",["enviado","firmado","final"]))],
+      ["dl_pf","Carta poder firmada",b(dmin("carta_poder",["firmado","final"]))],
+      ["dl_mg","Planilla de mediación generada",b(doc("mediacion"))],
+    ]},
+    {t:"Mediación", items:[
+      ["me_med","Mediador asignado",b(DB.config.mediador)],
+      ["me_gen","Solicitud de mediación generada",b(doc("mediacion"))],
+      ["me_env","Solicitud enviada",b(dmin("mediacion",["enviado","firmado","final"]))],
+      ["me_fec","Fecha de audiencia",b(c.audiencia&&c.audiencia.fecha)],
+      ["me_cal","Audiencia cargada en calendario",b(c.audiencia&&c.audiencia.calCreado)],
+      ["me_real","Audiencia realizada",b(c.audiencia&&c.audiencia.realizada)],
+    ]},
+  ];
+  if(isSocio()){
+    blocks.splice(3,0,{t:"Finanzas", items:[
+      ["fi_comp","Comprobante de pago recibido",b(adj("Comprobante de pago"))],
+      ["fi_adel","Adelanto abonado",b(Number(f.adelanto||0)>0)],
+      ["fi_sal","Saldo cancelado",f.montoTotal!==""?b(Number(f.saldo||0)<=0):'pendiente'],
+      ["fi_full","Pago completo",b(f.estadoPago==='completo')],
+    ]});
+  }
+  return blocks;
+}
+function avEff(c,key,auto){ return (c.avance&&c.avance[key])?c.avance[key]:auto; }
+function setAv(key,v){ CURRENT.avance=CURRENT.avance||{}; if(v==="auto"){delete CURRENT.avance[key];}else{CURRENT.avance[key]=v;} save(); renderTab(); }
+function tabAvance(c){
+  const html=avBlocks(c).map(bl=>{
+    const total=bl.items.length;
+    const nc=bl.items.filter(([k,l,a])=>avEff(c,k,a)==='nc').length;
+    const done=bl.items.filter(([k,l,a])=>avEff(c,k,a)==='completo').length;
+    const pct=(total-nc)>0?Math.round(done/(total-nc)*100):100;
+    const items=bl.items.map(([k,l,a])=>{
+      const st=avEff(c,k,a); const s=AV_STATUS[st]||AV_STATUS.pendiente; const ov=c.avance&&c.avance[k];
+      return `<div class="av-item"><div class="lab"><span class="ic ${s.c}">${s.i}</span>${esc(l)}</div>
+        <select onchange="setAv('${k}',this.value)"><option value="auto" ${!ov?'selected':''}>Auto · ${AV_STATUS[a].t}</option>
+        ${Object.entries(AV_STATUS).map(([v,o])=>`<option value="${v}" ${ov===v?'selected':''}>${o.t}</option>`).join("")}</select></div>`;
+    }).join("");
+    return `<div class="av-block"><div class="h">${esc(bl.t)}<span class="pct">${pct}%</span></div>${items}</div>`;
+  }).join("");
+  return `<div class="alert alert-info"><span>🧭</span><div>Cada bloque es independiente y avanza por separado. El estado se calcula solo según los datos cargados; podés sobrescribirlo manualmente (En revisión, Observado, No corresponde).</div></div>
+    <div class="av-grid">${html}</div>`;
+}
+
+/* ---------- TAB: CLIENTE ---------- */
+function tabCliente(c){
+  const f=c.cliente;
+  return formCard("Datos del titular / damnificado", [
+    inp("cl_ap","Apellido",f.apellido), inp("cl_no","Nombre",f.nombre),
+    inp("cl_dni","DNI",f.dni), inp("cl_cuit","CUIT / CUIL",f.cuit),
+    inp("cl_nac","Nacionalidad",f.nacionalidad), inp("cl_fnac","Fecha de nacimiento",f.fechaNac,"date"),
+    sel("cl_ec","Estado civil",["","Soltero/a","Casado/a","Divorciado/a","Viudo/a","Unión convivencial"],f.estadoCivil), inp("cl_con","Cónyuge (si corresponde)",f.conyuge),
+    inp("cl_dom","Domicilio completo",f.domicilio), inp("cl_loc","Localidad / partido",f.localidad),
+    inp("cl_prov","Provincia",f.provincia), inp("cl_cp","Código postal",f.cp),
+    inp("cl_tel","Teléfono celular",f.tel), inp("cl_email","Email de contacto",f.email)
+  ], "saveCliente()");
+}
+function saveCliente(){
+  const f=CURRENT.cliente;
+  f.apellido=val("cl_ap").toUpperCase(); f.nombre=val("cl_no"); f.dni=val("cl_dni"); f.cuit=val("cl_cuit");
+  f.nacionalidad=val("cl_nac"); f.fechaNac=val("cl_fnac"); f.estadoCivil=val("cl_ec"); f.conyuge=val("cl_con");
+  f.domicilio=val("cl_dom"); f.localidad=val("cl_loc"); f.provincia=val("cl_prov"); f.cp=val("cl_cp");
+  f.tel=val("cl_tel"); f.email=val("cl_email");
+  logAction(CURRENT,"Datos del cliente actualizados"); save(); toast("Cliente guardado"); renderCaso();
+}
+
+/* ---------- TAB: CUENTA ---------- */
+function tabCuenta(c){
+  const f=c.cuenta;
+  return `<div class="card"><div class="card-h"><h3>Datos de la cuenta afectada</h3></div><div class="card-b">
+    <div class="frow fr2">
+      ${sel("cu_plat","Plataforma",["Instagram","Facebook","Otra"],f.plataforma)}
+      ${inp("cu_handle","Usuario / handle",f.handle)}
+    </div>
+    ${inp("cu_url","URL completa de la cuenta",f.url)}
+    <div class="frow fr2">${inp("cu_em","Email vinculado",f.emailVinc)}${inp("cu_tel","Teléfono vinculado",f.telVinc)}</div>
+    <div class="frow fr2">${sel("cu_tipo","Tipo de cuenta",["",...TIPO_CUENTA],f.tipo)}${inp("cu_vinc","Cuentas vinculadas",f.cuentasVinc)}</div>
+    <div class="section-title">Características</div>
+    <div class="frow fr3">
+      ${chk("cu_pauta","Tenía pauta publicitaria activa",f.pautaActiva)}
+      ${chk("cu_saldo","Saldo retenido / fondos de anuncios",f.saldoRetenido)}
+      ${chk("cu_bm","Vinculada a Meta Business Manager",f.businessManager)}
+      ${chk("cu_mp","Método de pago cargado para publicidad",f.metodoPago)}
+      ${chk("cu_camp","Campañas activas al momento del bloqueo",f.campanasActivas)}
+      ${chk("cu_hack","Hubo hackeo / acceso desconocido",f.hackeo)}
+    </div>
+    <div style="margin-top:16px"><button class="btn btn-primary" onclick="saveCuenta()">Guardar cambios</button></div>
+  </div></div>`;
+}
+function saveCuenta(){
+  const f=CURRENT.cuenta;
+  f.plataforma=val("cu_plat"); f.handle=val("cu_handle"); f.url=val("cu_url"); f.emailVinc=val("cu_em"); f.telVinc=val("cu_tel");
+  f.tipo=val("cu_tipo"); f.cuentasVinc=val("cu_vinc");
+  f.pautaActiva=chkVal("cu_pauta"); f.saldoRetenido=chkVal("cu_saldo"); f.businessManager=chkVal("cu_bm");
+  f.metodoPago=chkVal("cu_mp"); f.campanasActivas=chkVal("cu_camp"); f.hackeo=chkVal("cu_hack");
+  logAction(CURRENT,"Datos de la cuenta actualizados"); save(); toast("Cuenta guardada"); renderCaso();
+}
+
+/* ---------- TAB: RELATO ---------- */
+function tabRelato(c){
+  const f=c.relato;
+  return `<div class="card"><div class="card-h"><h3>Relato de los hechos</h3></div><div class="card-b">
+    <div class="frow fr2">${inp("re_fs","Fecha aprox. de suspensión",f.fechaSusp,"date")}${sel("re_tipo","Tipo de suspensión",["","Temporal","Definitiva"],f.tipoSusp)}</div>
+    ${inp("re_msg","Mensaje mostrado por Meta/IG/FB",f.mensaje)}
+    <div class="frow fr3">
+      ${chk("re_apelo","Pudo apelar",f.apelo)}
+      ${chk("re_resp","Recibió respuesta de la plataforma",f.recibioResp)}
+      ${chk("re_hack","Hubo hackeo / accesos desconocidos",f.hackeo)}
+      ${chk("re_recup","Recuperada parcialmente en algún momento",f.recupParcial)}
+      ${chk("re_volvio","Volvió a ser suspendida",f.volvioSusp)}
+    </div>
+    ${inp("re_perd","Qué perdió (mensajes, seguidores, campañas…)",f.perdida)}
+    <div class="section-title">Relato original del cliente</div>
+    <div class="field"><textarea id="re_orig" rows="5" placeholder="Texto tal como lo escribió el cliente">${esc(f.original)}</textarea><div class="hint">Esta versión se conserva intacta como respaldo.</div></div>
+    <div class="section-title">Síntesis jurídica del estudio</div>
+    <div class="field"><textarea id="re_sint" rows="5" placeholder="Versión prolija y jurídica para los documentos">${esc(f.sintesis)}</textarea>
+      <div class="hint">Se usa en la planilla de mediación. <a onclick="generarSintesis()">✨ Generar borrador a partir del relato original</a></div></div>
+    <button class="btn btn-primary" onclick="saveRelato()">Guardar relato</button>
+  </div></div>`;
+}
+function generarSintesis(){
+  const orig=val("re_orig").trim();
+  if(!orig){ toast("Cargá primero el relato original","err"); return; }
+  const c=CURRENT;
+  const cuenta=c.cuenta.handle||"la cuenta";
+  const fecha=c.relato.fechaSusp?("con fecha "+fdate(c.relato.fechaSusp)):"";
+  const draft=`Que el/la requirente es titular de la cuenta ${cuenta} en la plataforma ${c.cuenta.plataforma||"Meta"}, la cual fue objeto de suspensión/inhabilitación ${fecha} por parte de la requerida. La requerida comunicó la medida invocando supuestas infracciones a sus normas comunitarias, sin brindar precisiones ni vía de revisión efectiva. La medida ocasionó al requirente la pérdida de acceso a la cuenta, a sus contactos y a su actividad ${c.cuenta.tipo==="Negocio"||c.cuenta.tipo==="Comercial"?"comercial":""}, con el consiguiente perjuicio económico y reputacional. En síntesis: ${orig}`;
+  document.getElementById("re_sint").value=draft;
+  toast("Borrador generado — revisalo y editalo");
+}
+function saveRelato(){
+  const f=CURRENT.relato;
+  f.fechaSusp=val("re_fs"); f.tipoSusp=val("re_tipo"); f.mensaje=val("re_msg");
+  f.apelo=chkVal("re_apelo"); f.recibioResp=chkVal("re_resp"); f.hackeo=chkVal("re_hack");
+  f.recupParcial=chkVal("re_recup"); f.volvioSusp=chkVal("re_volvio"); f.perdida=val("re_perd");
+  f.original=val("re_orig"); f.sintesis=val("re_sint");
+  logAction(CURRENT,"Relato de hechos actualizado"); save(); toast("Relato guardado");
+}
+
+/* ---------- TAB: DOCUMENTACION + FORM LINK ---------- */
+const ADJ_TIPOS=["DNI frente","DNI dorso","Comprobante de pago","Captura aviso de suspensión","Captura correos de Meta","Captura de apelaciones","Captura de respuestas","Captura de la cuenta","Conversaciones / pruebas","Comprobante de pauta","Comprobante saldo retenido","Otra documentación"];
+function tabDoc(c){
+  if(!c.formToken) { /* lazy */ }
+  const link = c.formToken ? (location.href.split("#")[0]+"#form="+c.formToken) : null;
+  const adj=(c.adjuntos||[]).map((a,i)=>`<div class="driveitem"><span class="fi">${fileIcon(a.nombre)}</span><div style="flex:1"><div style="font-weight:600">${esc(a.tipo)}</div><small style="color:var(--muted)">${esc(a.nombre)} · ${fdate(a.fecha)}</small></div><button class="btn btn-ghost btn-sm" onclick="delAdj(${i})">✕</button></div>`).join("") || `<div class="empty" style="padding:24px">Sin documentación cargada aún</div>`;
+  const checklist=ADJ_TIPOS.slice(0,9).map(t=>{ const has=(c.adjuntos||[]).some(a=>a.tipo===t); return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px"><span style="color:${has?'var(--green)':'var(--line2)'};font-weight:700">${has?'✓':'○'}</span><span style="color:${has?'var(--text)':'var(--muted)'}">${esc(t)}</span></div>`; }).join("");
+  return `<div class="grid g2">
+    <div class="card"><div class="card-h"><h3>Formulario digital del cliente</h3></div><div class="card-b">
+      ${link?`<div class="alert alert-ok"><span>✓</span><div>Link de formulario generado. Compartilo con el cliente.</div></div>
+        <div class="copy-link"><input id="formlink" readonly value="${esc(link)}"><button class="btn btn-primary btn-sm" onclick="copyLink()">Copiar</button></div>
+        <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="openClientForm('${c.formToken}')">👁 Previsualizar formulario</button>
+          <a class="btn btn-ghost btn-sm" href="https://wa.me/?text=${encodeURIComponent('Hola, complete el formulario de su caso: '+link)}" target="_blank">📱 Enviar por WhatsApp</a>
+          <button class="btn btn-ghost btn-sm" onclick="sendByMail('form')">✉️ Enviar por mail</button>
+        </div>`
+      :`<p style="color:var(--muted);margin-bottom:14px">Generá un link único para que el cliente cargue sus datos y documentación. Al enviarlo, se crea la carpeta de Drive y se completan los datos del caso.</p>
+        <button class="btn btn-primary" onclick="genFormLink()">🔗 Generar link de formulario</button>`}
+    </div></div>
+    <div class="card"><div class="card-h"><h3>Checklist de documentación</h3></div><div class="card-b">${checklist}</div></div>
+    <div class="card" style="grid-column:1/-1"><div class="card-h"><h3>Documentación cargada</h3><button class="btn btn-ghost btn-sm" onclick="addAdjModal()">＋ Agregar archivo</button></div><div class="card-b">${adj}</div></div>
+  </div>`;
+}
+function genFormLink(){ CURRENT.formToken=uid("frm"); CURRENT.estado="Formulario enviado al cliente"; logAction(CURRENT,"Link de formulario generado"); save(); toast("Link generado"); renderCaso(); }
+function copyLink(){ const i=document.getElementById("formlink"); i.select(); navigator.clipboard?navigator.clipboard.writeText(i.value):document.execCommand("copy"); toast("Link copiado"); }
+function addAdjModal(){
+  modal({title:"Agregar documentación", size:"sm", body:`
+    <div class="field"><label>Tipo de documento</label><select id="adj_tipo">${ADJ_TIPOS.map(t=>`<option>${t}</option>`).join("")}</select></div>
+    <div class="field"><label>Nombre del archivo</label><input id="adj_nom" placeholder="ej: dni_frente.jpg"></div>
+    <div class="fileinput">📎 En la versión instalada, acá se sube el archivo a Drive.</div>`,
+    footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="addAdj()">Agregar</button>`});
+}
+function addAdj(){ const tipo=val("adj_tipo"), nom=val("adj_nom").trim()||tipo.toLowerCase().replace(/ /g,"_")+".pdf"; CURRENT.adjuntos.push({tipo,nombre:nom,fecha:new Date().toISOString().slice(0,10)}); logAction(CURRENT,"Documento adjuntado: "+tipo); save(); closeModal(); toast("Documento agregado"); renderCaso(); }
+function delAdj(i){ CURRENT.adjuntos.splice(i,1); save(); renderCaso(); }
+function fileIcon(n){ n=(n||"").toLowerCase(); if(/\.(jpg|jpeg|png|gif|webp)$/.test(n))return"🖼️"; if(/\.pdf$/.test(n))return"📕"; if(/\.(doc|docx)$/.test(n))return"📘"; return"📄"; }
+
+/* ---------- TAB: DRIVE ---------- */
+const SUBCARPETAS=["01 - Datos del cliente","02 - DNI","03 - Pruebas y capturas","04 - Mediación","05 - Documentación generada","06 - Contrato y poder","07 - Comprobantes de pago"];
+function tabDrive(c){
+  if(!c.drive.creada){
+    return `<div class="card"><div class="card-b"><div class="empty"><div class="ico">📁</div>
+      <p style="margin-bottom:6px">Aún no se creó la carpeta de Google Drive para este caso.</p>
+      <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Se creará automáticamente: <b>${esc(driveFolderName(c))}</b></p>
+      <button class="btn btn-primary" onclick="createDrive()">📁 Crear carpeta en Drive</button></div></div></div>`;
+  }
+  const subs=SUBCARPETAS.map(s=>`<div class="driveitem"><span class="fi">📁</span><div style="flex:1"><b>${esc(s)}</b></div><small style="color:var(--muted)">${countSub(c,s)} archivos</small></div>`).join("");
+  return `<div class="card"><div class="card-h"><h3>${esc(driveFolderName(c))}</h3>
+    <a class="btn btn-gold btn-sm" href="${esc(c.drive.link||'#')}" target="_blank">Abrir en Drive ↗</a></div>
+    <div class="card-b">
+      <div class="copy-link" style="margin-bottom:16px"><input readonly value="${esc(c.drive.link)}"><button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('${esc(c.drive.link)}');toast('Link copiado')">Copiar</button></div>
+      ${subs}
+    </div></div>`;
+}
+function countSub(c,s){
+  if(s.includes("DNI")) return (c.adjuntos||[]).filter(a=>a.tipo.includes("DNI")).length;
+  if(s.includes("Pruebas")) return (c.adjuntos||[]).filter(a=>a.tipo.includes("Captura")||a.tipo.includes("Conversaciones")).length;
+  if(s.includes("Documentación generada")||s.includes("Contrato")) return c.docs.length;
+  if(s.includes("Comprobantes")) return (c.pagos||[]).length;
+  return 0;
+}
+function createDrive(){
+  CURRENT.drive.creada=true;
+  CURRENT.drive.link="https://drive.google.com/drive/folders/"+uid("")+uid("");
+  logAction(CURRENT,"Carpeta de Drive creada: "+driveFolderName(CURRENT));
+  save(); toast("Carpeta de Drive creada con subcarpetas"); renderCaso();
+}
+
+/* ---------- TAB: DOCUMENTOS ---------- */
+function tabDocs(c){
+  const cards=[
+    {tipo:"contrato", t:"Contrato de prestación de servicios", d:"Honorarios y condiciones del caso", ic:"📑"},
+    {tipo:"carta_poder", t:"Carta poder bilingüe", d:"Representación legal (ES/EN)", ic:"⚖️"},
+    {tipo:"mediacion", t:"Solicitud de mediación", d:"Planilla para el mediador", ic:"📋"}
+  ].map(x=>{
+    const v=validateDoc(c,x.tipo);
+    const last=c.docs.filter(d=>d.tipo===x.tipo).sort((a,b)=>b.version-a.version)[0];
+    return `<div class="card"><div class="card-b">
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <div class="doc-row" style="border:none;padding:0;margin:0"><div class="ic">${x.ic}</div></div>
+        <div style="flex:1"><div style="font-weight:700;color:var(--navy)">${x.t}</div><div style="font-size:12.5px;color:var(--muted)">${x.d}</div>
+          ${last?`<div style="margin-top:6px"><span class="badge b-green">v${last.version} · ${esc(last.estado)}</span> <small style="color:var(--muted)">${esc(last.fecha)}</small></div>`:''}
+        </div>
+      </div>
+      ${v.ok?`<div class="alert alert-ok" style="margin-top:14px"><span>✓</span><div>Datos completos. Listo para generar.</div></div>`
+            :`<div class="alert alert-warn" style="margin-top:14px"><span>⚠</span><div>Faltan datos:<ul>${v.missing.map(m=>`<li>${esc(m)}</li>`).join("")}</ul></div></div>`}
+      <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" ${v.ok?'':'disabled'} onclick="previewDoc('${x.tipo}')">Generar / previsualizar</button>
+      </div>
+    </div></div>`;
+  }).join("");
+  const hist=c.docs.length?c.docs.slice().reverse().map(d=>`<div class="doc-row"><div class="ic">${d.tipo==='contrato'?'📑':d.tipo==='carta_poder'?'⚖️':'📋'}</div>
+    <div class="meta" style="flex:1"><b>${esc(docTitle(d.tipo))}</b> <span class="badge b-grey">v${d.version}</span><br><small>${esc(d.fecha)} · ${esc(userName(d.generadoPor))} · ${esc(d.estado)}</small></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+      <button class="btn btn-ghost btn-sm" onclick="downloadDoc('${d.id}','word')">Word</button>
+      <button class="btn btn-ghost btn-sm" onclick="downloadDoc('${d.id}','pdf')">PDF</button>
+      <button class="btn btn-gold btn-sm" onclick="sendDocModal('${d.id}')">📤 Enviar</button>
+      <select class="btn btn-ghost btn-sm" onchange="setDocEstado('${d.id}',this.value)" style="padding:5px"><option value="">estado…</option>${["borrador","enviado","firmado","final"].map(s=>`<option ${d.estado===s?'selected':''}>${s}</option>`).join("")}</select>
+    </div></div>`).join(""):`<div class="empty">Todavía no se generaron documentos</div>`;
+  return `<div class="grid g3" style="margin-bottom:18px">${cards}</div>
+    <div class="card"><div class="card-h"><h3>Historial de documentos generados</h3></div><div class="card-b">${hist}</div></div>`;
+}
+function docTitle(t){ return {contrato:"Contrato de servicios",carta_poder:"Carta poder bilingüe",mediacion:"Solicitud de mediación"}[t]||t; }
+function setDocEstado(id,e){ if(!e)return; const d=CURRENT.docs.find(x=>x.id===id); d.estado=e; logAction(CURRENT,docTitle(d.tipo)+" → "+e); save(); toast("Estado actualizado"); renderCaso(); }
+
+/* ---------- ENVÍO DE DOCUMENTOS (WhatsApp / mail) ---------- */
+const DOC_MSG={
+  contrato:c=>`Hola ${c.cliente.nombre||"[Nombre]"}, te compartimos el contrato de prestación de servicios profesionales correspondiente a la gestión de rehabilitación de tu cuenta. Por favor, revisalo y, si está todo correcto, envianos la versión firmada por este mismo medio. Quedamos atentos a cualquier consulta.`,
+  carta_poder:c=>`Hola ${c.cliente.nombre||"[Nombre]"}, te compartimos la carta poder necesaria para que podamos representarte en las gestiones vinculadas a la rehabilitación de tu cuenta. Por favor, revisala, firmala y envianos la versión firmada junto con la documentación correspondiente.`,
+  mediacion:c=>`Hola, adjuntamos la solicitud de mediación correspondiente al caso ${clienteFull(c)} c/ Meta Platforms Inc. y Facebook Argentina S.R.L., junto con la documentación respaldatoria correspondiente. Quedamos atentos a cualquier observación.`
+};
+function docLink(c){ return c.drive.link || ""; }
+function sendDocModal(id){
+  const c=CURRENT, d=c.docs.find(x=>x.id===id); const link=docLink(c);
+  const base=DOC_MSG[d.tipo]?DOC_MSG[d.tipo](c):("Hola, te compartimos el documento: "+docTitle(d.tipo)+".");
+  const full=base+(link?("\n\nLink al documento: "+link):"");
+  modal({title:"Enviar — "+docTitle(d.tipo), size:"", body:`
+    <div class="field"><label>Destinatario (teléfono para WhatsApp / correo para mail)</label><input id="sd_to" value="${esc(c.cliente.email||c.cliente.tel||"")}"></div>
+    <div class="field"><label>Mensaje (editable antes de enviar)</label><textarea id="sd_msg" rows="7">${esc(full)}</textarea></div>
+    ${link?`<div class="copy-link"><input readonly value="${esc(link)}"><button class="btn btn-ghost btn-sm" onclick="navigator.clipboard.writeText('${esc(link)}');toast('Link copiado')">Copiar link</button></div>`:`<div class="alert alert-warn"><span>⚠</span><div>Este caso no tiene carpeta de Drive todavía. Creala en la pestaña <b>Drive</b> para incluir el link del documento.</div></div>`}`,
+    footer:`<button class="btn btn-ghost" onclick="copyMsg()">Copiar mensaje</button><div style="flex:1"></div>
+      <button class="btn btn-ghost" onclick="sendDocVia('${id}','mail')">✉️ Mail</button>
+      <button class="btn btn-gold" onclick="sendDocVia('${id}','wa')">📱 WhatsApp</button>`});
+}
+function copyMsg(){ const t=document.getElementById("sd_msg").value; if(navigator.clipboard)navigator.clipboard.writeText(t); toast("Mensaje copiado"); }
+function sendDocVia(id,via){
+  const c=CURRENT, d=c.docs.find(x=>x.id===id);
+  const msg=val("sd_msg"); const to=val("sd_to").trim();
+  if(via==="wa"){ const tel=to.replace(/[^0-9]/g,""); window.open("https://wa.me/"+tel+"?text="+encodeURIComponent(msg),"_blank"); }
+  else { window.location.href="mailto:"+encodeURIComponent(to)+"?subject="+encodeURIComponent(docTitle(d.tipo)+" - GMJ Legal Partners")+"&body="+encodeURIComponent(msg); }
+  if(d.estado==="borrador") d.estado="enviado";
+  logAction(c, docTitle(d.tipo)+" enviado por "+(via==="wa"?"WhatsApp":"mail"));
+  save(); closeModal(); toast("Abriendo "+(via==="wa"?"WhatsApp":"mail")); renderCaso();
+}
+
+/* ---------- VALIDATIONS ---------- */
+function validateDoc(c,tipo){
+  const missing=[]; const cl=c.cliente, cu=c.cuenta, f=c.finanzas;
+  const need=(cond,label)=>{ if(!cond) missing.push(label); };
+  if(tipo==="contrato"){
+    need(cl.nombre&&cl.apellido,"Nombre y apellido"); need(cl.domicilio,"Domicilio"); need(cl.email,"Email");
+    need(cl.tel,"Teléfono"); need(cu.handle||cu.url,"Cuenta objeto de la gestión");
+    need(f.montoTotal!=="","Monto total"); need(f.adelanto!=="","Adelanto"); need(f.saldo!=="","Saldo");
+    need(f.devolucion!=="","Devolución pactada"); need(f.moneda,"Moneda");
+  } else if(tipo==="carta_poder"){
+    need(cl.nombre&&cl.apellido,"Nombre y apellido"); need(cl.dni,"DNI / identificación"); need(cl.domicilio,"Domicilio");
+    need(cl.email,"Email"); need(cu.handle||cu.url,"Cuenta afectada"); need(c.abogadoPatrocinante,"Abogado autorizado");
+  } else if(tipo==="mediacion"){
+    need(cl.nombre&&cl.apellido,"Nombre y apellido del requirente"); need(cl.dni,"DNI"); need(cl.cuit,"CUIT / CUIL");
+    need(cl.domicilio,"Domicilio completo"); need(cl.tel,"Teléfono"); need(cl.email,"Email");
+    need(cu.url,"URL de la cuenta afectada"); need(cu.emailVinc,"Email vinculado a la cuenta");
+    need(c.relato.sintesis||c.relato.original,"Síntesis del hecho");
+    need((c.adjuntos||[]).some(a=>a.tipo==="DNI frente"),"DNI frente adjunto");
+    need((c.adjuntos||[]).some(a=>a.tipo==="DNI dorso"),"DNI dorso adjunto");
+    need(c.abogadoPatrocinante,"Abogado patrocinante");
+  }
+  return {ok:missing.length===0, missing};
+}
+
+/* ---------- TAB: MEDIACION ---------- */
+function tabMediacion(c){
+  const ab=DB.abogados.find(a=>a.id===c.abogadoPatrocinante)||{};
+  const req=DB.config.requeridos;
+  return `<div class="card"><div class="card-h"><h3>Datos para la planilla de mediación</h3></div><div class="card-b">
+    <div class="section-title">Patrocinante letrado</div>
+    <div class="field"><label>Abogado patrocinante</label><select id="md_ab" onchange="CURRENT.abogadoPatrocinante=this.value;save();renderTab()">${DB.abogados.map(a=>`<option value="${a.id}" ${c.abogadoPatrocinante===a.id?'selected':''}>${esc(a.nombre)}</option>`).join("")}</select></div>
+    <div class="alert alert-info"><span>ℹ️</span><div><b>${esc(ab.nombre||'—')}</b> · ${esc(ab.domicilio||'')} · T° ${esc(ab.tomo||'')} F° ${esc(ab.folio||'')} ${esc(ab.matricula||'')} · ${esc(ab.tel||'')} · ${esc(ab.mail||'')}</div></div>
+    <div class="section-title">Objeto del reclamo (editable)</div>
+    <div class="field"><textarea id="md_obj" rows="3">${esc(c.objeto||DB.config.objeto)}</textarea></div>
+    <div class="section-title">Requeridos</div>
+    <div class="check" style="background:var(--gold-soft);border:1px solid #e8dcb5;border-radius:8px;padding:10px 12px;margin-bottom:12px">
+      <input type="checkbox" id="md_fb" ${c.citarFacebook!==false?'checked':''} onchange="CURRENT.citarFacebook=this.checked;save();renderTab()">
+      <label for="md_fb" style="margin:0;font-weight:600">Citar a FACEBOOK ARGENTINA S.R.L. en la mediación</label>
+    </div>
+    ${reqMostrados(c).map(r=>`<div class="alert alert-info" style="background:#f8fafc;border-color:var(--line);color:var(--slate)"><span>🏢</span><div><b>${esc(r.nombre)}</b> — ${esc(r.cuit)} — ${esc(r.domicilio)}</div></div>`).join("")}
+    ${c.citarFacebook===false?`<div class="alert alert-warn"><span>⚠</span><div>Facebook Argentina S.R.L. <b>no se incluirá</b> en la planilla de mediación generada.</div></div>`:''}
+    <div class="section-title">Mediador</div>
+    <div class="field"><input id="md_med" value="${esc(DB.config.mediador)}"></div>
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="btn btn-primary" onclick="saveMediacion()">Guardar</button>
+      <button class="btn btn-gold" onclick="ACTIVE_TAB='docs';renderCaso()">→ Ir a generar planilla</button>
+    </div>
+  </div></div>
+  ${tabAudiencia(c)}`;
+}
+function saveMediacion(){ CURRENT.objeto=val("md_obj"); DB.config.mediador=val("md_med"); save(); toast("Datos de mediación guardados"); }
+
+/* ---------- AUDIENCIA + GOOGLE CALENDAR ---------- */
+function tabAudiencia(c){
+  const a=c.audiencia||{};
+  const ab1=DB.abogados[0]||{}, ab2=DB.abogados[1]||{};
+  const inv=a.invitados||[];
+  const cb=(val_,label,sub)=>`<label class="check" style="padding:4px 0"><input type="checkbox" class="md_inv" value="${esc(val_)}" ${inv.includes(val_)?'checked':''}> <span style="font-weight:500">${esc(label)}${sub?`<br><small style="color:var(--muted)">${esc(sub)}</small>`:''}</span></label>`;
+  // En la nube se invita a los USUARIOS reales (cada uno conecta su Google). En local, mails para el link.
+  const checks = CLOUD
+    ? DB.usuarios.map(u=>cb(u.id, u.nombre, u.rol)).join("")
+    : [cb(DB.config.estudio.mail,"Calendario general del estudio"),cb(ab2.mail,"Nazareno Gómez Melé"),cb(ab1.mail,"Ivo Julián"),cb(DB.config.asistenteMail,"Asistente del estudio")].join("");
+  return `<div class="card" style="margin-top:18px"><div class="card-h"><h3>Audiencia de mediación · Google Calendar</h3>${a.realizada?'<span class="badge b-green">Realizada</span>':a.calCreado?'<span class="badge b-blue">En calendario</span>':''}</div><div class="card-b">
+    <div class="frow fr3">
+      ${inp("au_fec","Fecha",a.fecha||"","date")}${inp("au_hora","Hora",a.hora||"10:00","time")}
+      ${sel("au_dur","Duración",["30 min","60 min","90 min","120 min"],a.duracion||"60 min")}
+    </div>
+    <div class="frow fr2">
+      ${sel("au_mod","Modalidad",["Virtual","Presencial"],a.modalidad||"Virtual")}
+      ${inp("au_link","Link de reunión (si es virtual)",a.linkReunion||"")}
+    </div>
+    ${inp("au_lugar","Lugar (si es presencial)",a.lugar||"")}
+    <div class="field"><label>Observaciones</label><textarea id="au_obs" rows="2">${esc(a.obs||"")}</textarea></div>
+    <div class="section-title">Cargar en los calendarios de</div>
+    <div class="frow fr2">${checks}</div>
+    <div class="alert alert-info"><span>📅</span><div>${CLOUD?"Al crear el evento se carga <b>automáticamente</b> en el Google Calendar de cada usuario seleccionado que haya conectado su cuenta (Configuración → Conectar mi Google Calendar).":"Se abre Google Calendar con todo precargado (título, fecha, descripción con links e invitados). Confirmás con un clic."}</div></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="saveAudiencia()">Guardar audiencia</button>
+      <button class="btn btn-gold" onclick="crearEventoCalendar()">📅 Crear evento en Google Calendar</button>
+      ${a.fecha&&!a.realizada?`<button class="btn btn-ghost" onclick="marcarAudienciaRealizada()">✓ Marcar como realizada</button>`:''}
+    </div>
+  </div></div>`;
+}
+function readAudiencia(){
+  const c=CURRENT; c.audiencia=c.audiencia||{};
+  const a=c.audiencia;
+  a.fecha=val("au_fec"); a.hora=val("au_hora"); a.duracion=val("au_dur"); a.modalidad=val("au_mod");
+  a.linkReunion=val("au_link"); a.lugar=val("au_lugar"); a.obs=val("au_obs");
+  a.invitados=Array.from(document.querySelectorAll(".md_inv:checked")).map(x=>x.value);
+  return a;
+}
+function saveAudiencia(){ readAudiencia(); logAction(CURRENT,"Audiencia de mediación actualizada"); save(); toast("Audiencia guardada"); renderTab(); }
+function buildCalUrl(c){
+  const a=c.audiencia||{}; const fb=c.citarFacebook!==false;
+  const title=`Mediación - ${clienteFull(c)} c/ Meta Platforms Inc.${fb?' y Facebook Argentina S.R.L.':''}`;
+  const durMin=parseInt(a.duracion)||60;
+  const f=(a.fecha||"").replace(/-/g,""); const h=(a.hora||"10:00").split(":");
+  const startD=new Date((a.fecha||new Date().toISOString().slice(0,10))+"T"+(a.hora||"10:00")+":00");
+  const endD=new Date(startD.getTime()+durMin*60000);
+  const fmt=d=>d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")+"T"+String(d.getHours()).padStart(2,"0")+String(d.getMinutes()).padStart(2,"0")+"00";
+  const det=[`Mediador: ${DB.config.mediador}`,`Cliente: ${clienteFull(c)}`,`Requerida: META PLATFORMS INC${fb?' y FACEBOOK ARGENTINA S.R.L.':''}`,`Modalidad: ${a.modalidad||'-'}`,a.linkReunion?`Link reunión: ${a.linkReunion}`:'',c.drive.link?`Carpeta Drive: ${c.drive.link}`:'',`Expediente interno: ${c.id} (${clienteFull(c)})`,a.obs?`Observaciones: ${a.obs}`:''].filter(Boolean).join("\n");
+  let url="https://calendar.google.com/calendar/render?action=TEMPLATE";
+  url+="&text="+encodeURIComponent(title)+"&dates="+fmt(startD)+"/"+fmt(endD)+"&details="+encodeURIComponent(det);
+  if(a.modalidad==="Presencial"&&a.lugar) url+="&location="+encodeURIComponent(a.lugar);
+  else if(a.modalidad==="Virtual"&&a.linkReunion) url+="&location="+encodeURIComponent(a.linkReunion);
+  const guests=(a.invitados||[]).filter(Boolean);
+  if(guests.length) url+="&add="+encodeURIComponent(guests.join(","));
+  return url;
+}
+async function crearEventoCalendar(){
+  const c=CURRENT; const a=readAudiencia();
+  if(!a.fecha){ toast("Cargá la fecha de la audiencia","err"); return; }
+  if(CLOUD){ await crearEventoAuto(c,a); return; }
+  const url=buildCalUrl(c);
+  window.open(url,"_blank");
+  a.calCreado=true;
+  logAction(c,"Evento de mediación creado en Google Calendar ("+fdate(a.fecha)+" "+a.hora+")");
+  if(c.estado==="Mediación solicitada"||c.estado==="Mediación pendiente") c.estado="Audiencia fijada";
+  save(); toast("Abriendo Google Calendar"); renderTab();
+}
+async function crearEventoAuto(c,a){
+  const fb=c.citarFacebook!==false;
+  const title=`Mediación - ${clienteFull(c)} c/ Meta Platforms Inc.${fb?' y Facebook Argentina S.R.L.':''}`;
+  const durMin=parseInt(a.duracion)||60;
+  const start=new Date((a.fecha)+"T"+(a.hora||"10:00")+":00");
+  const end=new Date(start.getTime()+durMin*60000);
+  const iso=d=>{const p=n=>String(n).padStart(2,"0");return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+"T"+p(d.getHours())+":"+p(d.getMinutes())+":00";};
+  const det=[`Mediador: ${DB.config.mediador}`,`Cliente: ${clienteFull(c)}`,`Requerida: META PLATFORMS INC${fb?' y FACEBOOK ARGENTINA S.R.L.':''}`,`Modalidad: ${a.modalidad||'-'}`,a.linkReunion?`Link reunión: ${a.linkReunion}`:'',c.drive.link?`Carpeta Drive: ${c.drive.link}`:'',`Expediente: ${c.id}`,a.obs?`Obs: ${a.obs}`:''].filter(Boolean).join("\n");
+  const location=a.modalidad==="Presencial"?(a.lugar||""):(a.linkReunion||"");
+  toast("Creando eventos en los calendarios…");
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    const r=await fetch(FUNCTIONS_URL+"/calendar-insert",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({invitados:a.invitados||[],title,startISO:iso(start),endISO:iso(end),details:det,location})});
+    const j=await r.json();
+    if(j.error){ toast("Error: "+j.error,"err"); return; }
+    const oks=(j.results||[]).filter(x=>x.ok).length;
+    const fails=(j.results||[]).filter(x=>!x.ok);
+    a.calCreado=true;
+    logAction(c,"Eventos de mediación creados en Google Calendar ("+oks+" agenda/s)");
+    if(c.estado==="Mediación solicitada"||c.estado==="Mediación pendiente") c.estado="Audiencia fijada";
+    save();
+    if(fails.length) toast(oks+" creado/s. Sin Google conectado: "+fails.length,"err");
+    else toast("Evento cargado en "+oks+" agenda/s ✓");
+    renderTab();
+  }catch(e){ console.error(e); toast("Error al crear eventos","err"); }
+}
+function marcarAudienciaRealizada(){ const c=CURRENT; c.audiencia=c.audiencia||{}; c.audiencia.realizada=true; c.estado="Audiencia realizada"; logAction(c,"Audiencia de mediación marcada como realizada"); save(); toast("Audiencia marcada como realizada"); renderCaso(); }
+
+/* ---------- TAB: GASTOS ---------- */
+function tabGastos(c){
+  const rows=c.gastos.map(g=>`<tr>
+    <td><b>${esc(g.nombre)}</b></td>
+    <td><select onchange="setGasto('${g.id}','estado',this.value)" style="padding:5px 8px;border:1px solid var(--line2);border-radius:6px">
+      ${["pendiente","abonado","no corresponde"].map(s=>`<option ${g.estado===s?'selected':''}>${s}</option>`).join("")}</select></td>
+    <td>${money(g.importe,g.moneda)}</td>
+    <td>${fdate(g.fecha)}</td>
+    <td>${esc(g.medio||"—")}</td>
+    <td><button class="btn btn-ghost btn-sm" onclick="editGasto('${g.id}')">Editar</button></td>
+  </tr>`).join("");
+  return `<div class="card"><div class="card-h"><h3>Gastos del expediente</h3><button class="btn btn-ghost btn-sm" onclick="addGasto()">＋ Agregar gasto</button></div>
+    <div class="card-b" style="padding-bottom:6px"><div class="alert alert-info"><span>ℹ️</span><div>Cada caso incluye por defecto <b>Mediación</b> y <b>Honorarios del mediador</b> como checklist de control.</div></div></div>
+    <table><thead><tr><th>Gasto</th><th>Estado</th><th>Importe</th><th>Fecha pago</th><th>Medio</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function setGasto(id,k,v){ const g=CURRENT.gastos.find(x=>x.id===id); g[k]=v; if(k==="estado"&&v==="abonado")logAction(CURRENT,"Gasto abonado: "+g.nombre); save(); }
+function addGasto(){ CURRENT.gastos.push({id:uid("g"),nombre:"Nuevo gasto",estado:"pendiente",importe:"",moneda:"ARS",fecha:"",medio:"",obs:"",adjunto:""}); save(); const last=CURRENT.gastos[CURRENT.gastos.length-1]; editGasto(last.id); }
+function editGasto(id){
+  const g=CURRENT.gastos.find(x=>x.id===id);
+  modal({title:"Editar gasto", size:"sm", body:`
+    ${inp("ge_nom","Nombre del gasto",g.nombre)}
+    <div class="frow fr2">${sel("ge_est","Estado",["pendiente","abonado","no corresponde"],g.estado)}${sel("ge_mon","Moneda",["ARS","USD"],g.moneda)}</div>
+    <div class="frow fr2">${inp("ge_imp","Importe",g.importe,"number")}${inp("ge_fec","Fecha de pago",g.fecha,"date")}</div>
+    ${inp("ge_med","Medio de pago",g.medio)}
+    ${inp("ge_obs","Observaciones",g.obs)}
+    <div class="fileinput" style="margin-top:6px">📎 Adjuntar comprobante (en versión instalada)</div>`,
+    footer:`<button class="btn btn-danger" onclick="delGasto('${id}')">Eliminar</button><div style="flex:1"></div><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveGasto('${id}')">Guardar</button>`});
+}
+function saveGasto(id){ const g=CURRENT.gastos.find(x=>x.id===id); g.nombre=val("ge_nom"); g.estado=val("ge_est"); g.moneda=val("ge_mon"); g.importe=val("ge_imp"); g.fecha=val("ge_fec"); g.medio=val("ge_med"); g.obs=val("ge_obs"); save(); closeModal(); toast("Gasto guardado"); renderCaso(); }
+function delGasto(id){ CURRENT.gastos=CURRENT.gastos.filter(x=>x.id!==id); save(); closeModal(); renderCaso(); }
+
+/* ---------- TAB: FINANZAS (socios) ---------- */
+function tabFinanzas(c){
+  const f=c.finanzas;
+  const cobrado=(c.pagos||[]).reduce((s,p)=>s+(p.moneda===f.moneda?Number(p.importe||0):0),0);
+  const pend=Number(f.montoTotal||0)-cobrado;
+  const pagos=(c.pagos||[]).map(p=>`<tr><td>${fdate(p.fecha)}</td><td>${money(p.importe,p.moneda)}</td><td>${esc(p.medio||"—")}</td><td>${esc(p.obs||"")}</td><td><button class="btn btn-ghost btn-sm" onclick="delPago('${p.id}')">✕</button></td></tr>`).join("")||`<tr><td colspan="5" class="empty">Sin pagos registrados</td></tr>`;
+  return `<div class="grid g4" style="margin-bottom:18px">
+    <div class="stat gold"><div class="lab">Monto total</div><div class="val">${money(f.montoTotal,f.moneda)}</div></div>
+    <div class="stat green"><div class="lab">Cobrado</div><div class="val">${money(cobrado,f.moneda)}</div></div>
+    <div class="stat amber"><div class="lab">Pendiente</div><div class="val">${money(pend,f.moneda)}</div></div>
+    <div class="stat accent"><div class="lab">Devolución pactada</div><div class="val">${money(f.devolucion,f.moneda)}</div></div>
+  </div>
+  <div class="grid g2">
+    <div class="card"><div class="card-h"><h3>Condiciones económicas</h3></div><div class="card-b">
+      <div class="frow fr2">${sel("fi_mon","Moneda",["USD","ARS"],f.moneda)}${sel("fi_est","Estado de pago",["pendiente","parcial","completo","vencido"],f.estadoPago)}</div>
+      <div class="frow fr2">${inp("fi_total","Monto total pactado",f.montoTotal,"number")}${inp("fi_adel","Adelanto abonado",f.adelanto,"number")}</div>
+      <div class="frow fr2"><div class="field"><label>Saldo pendiente (automático)</label><input id="fi_saldo" value="${esc(f.saldo)}" disabled style="background:#f1f5f9;color:var(--muted)"><div class="hint">Se calcula: monto total − adelanto</div></div>${inp("fi_dev","Devolución (resultado negativo)",f.devolucion,"number")}</div>
+      <div class="frow fr2">${inp("fi_fadel","Fecha pago adelanto",f.fechaAdelanto,"date")}${inp("fi_fsaldo","Fecha prevista saldo",f.fechaSaldo,"date")}</div>
+      ${inp("fi_medio","Medio de pago",f.medioPago)}
+      <div class="field"><label>Observaciones financieras</label><textarea id="fi_obs" rows="2">${esc(f.obs)}</textarea></div>
+      <div class="alert alert-info"><span>🔗</span><div>Estos montos se usan automáticamente al generar el contrato.</div></div>
+      <button class="btn btn-primary" onclick="saveFinanzas()">Guardar finanzas</button>
+    </div></div>
+    <div class="card"><div class="card-h"><h3>Historial de pagos</h3><button class="btn btn-ghost btn-sm" onclick="addPago()">＋ Registrar pago</button></div>
+      <table><thead><tr><th>Fecha</th><th>Importe</th><th>Medio</th><th>Obs.</th><th></th></tr></thead><tbody>${pagos}</tbody></table></div>
+  </div>`;
+}
+function saveFinanzas(){ const c=CURRENT, f=c.finanzas;
+  f.moneda=val("fi_mon"); f.estadoPago=val("fi_est"); f.montoTotal=val("fi_total"); f.adelanto=val("fi_adel"); f.devolucion=val("fi_dev"); f.fechaAdelanto=val("fi_fadel"); f.fechaSaldo=val("fi_fsaldo"); f.medioPago=val("fi_medio"); f.obs=val("fi_obs");
+  const tot=Number(f.montoTotal||0), ade=Number(f.adelanto||0);
+  f.saldo = f.montoTotal===""?"":Math.max(tot-ade,0);
+  syncAdelanto(c); recalcEstadoPago(c);
+  logAction(c,"Finanzas actualizadas"); save(); toast("Finanzas guardadas"); renderCaso(); }
+function addPago(){
+  modal({title:"Registrar pago", size:"sm", body:`
+    <div class="frow fr2">${inp("pa_imp","Importe",CURRENT.finanzas.adelanto||"","number")}${sel("pa_mon","Moneda",["USD","ARS"],CURRENT.finanzas.moneda)}</div>
+    <div class="frow fr2">${inp("pa_fec","Fecha",new Date().toISOString().slice(0,10),"date")}${inp("pa_med","Medio de pago",CURRENT.finanzas.medioPago)}</div>
+    ${inp("pa_obs","Observaciones","")}`,
+    footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePago()">Registrar</button>`});
+}
+function savePago(){ CURRENT.pagos.push({id:uid("p"),importe:val("pa_imp"),moneda:val("pa_mon"),fecha:val("pa_fec"),medio:val("pa_med"),obs:val("pa_obs")}); recalcEstadoPago(CURRENT); logAction(CURRENT,"Pago registrado: "+money(val("pa_imp"),val("pa_mon"))); save(); closeModal(); toast("Pago registrado"); renderCaso(); }
+function delPago(id){ CURRENT.pagos=CURRENT.pagos.filter(p=>p.id!==id); recalcEstadoPago(CURRENT); save(); renderCaso(); }
+
+/* ---------- TAB: TAREAS ---------- */
+function tabTareas(c){
+  const rows=(c.tareas||[]).map(t=>`<div class="driveitem" style="border-bottom:1px solid var(--line)">
+    <input type="checkbox" ${t.hecha?'checked':''} onchange="toggleTarea('${t.id}')">
+    <div style="flex:1;${t.hecha?'text-decoration:line-through;color:var(--muted)':''}">${esc(t.texto)}${t.vence?` <span class="badge ${t.vence<new Date().toISOString().slice(0,10)&&!t.hecha?'b-red':'b-grey'}">${fdate(t.vence)}</span>`:''}</div>
+    <button class="btn btn-ghost btn-sm" onclick="delTarea('${t.id}')">✕</button></div>`).join("")||`<div class="empty">Sin tareas</div>`;
+  return `<div class="card"><div class="card-h"><h3>Tareas pendientes</h3></div><div class="card-b">
+    <div style="display:flex;gap:8px;margin-bottom:14px"><input id="nt_txt" placeholder="Nueva tarea…" style="flex:1;padding:9px 12px;border:1px solid var(--line2);border-radius:8px"><input id="nt_fec" type="date" style="padding:9px;border:1px solid var(--line2);border-radius:8px"><button class="btn btn-primary" onclick="addTarea()">Agregar</button></div>
+    ${rows}</div></div>`;
+}
+function addTarea(){ const t=val("nt_txt").trim(); if(!t)return; CURRENT.tareas.push({id:uid("t"),texto:t,hecha:false,vence:val("nt_fec")}); save(); renderCaso(); }
+function toggleTarea(id){ const t=CURRENT.tareas.find(x=>x.id===id); t.hecha=!t.hecha; save(); renderCaso(); }
+function delTarea(id){ CURRENT.tareas=CURRENT.tareas.filter(x=>x.id!==id); save(); renderCaso(); }
+
+/* ---------- TAB: HISTORIAL ---------- */
+function tabHistorial(c){
+  const items=(c.historial||[]).map(h=>`<div class="tl-item"><div class="d"></div><div class="act">${esc(h.accion)}</div><div class="meta">${esc(userName(h.usuario))} · ${esc(h.fecha)}</div></div>`).join("")||`<div class="empty">Sin actividad registrada</div>`;
+  return `<div class="card"><div class="card-h"><h3>Historial del caso</h3></div><div class="card-b"><div class="timeline">${items}</div></div></div>`;
+}
+
+/* ---------- TAB: OBSERVACIONES ---------- */
+function tabObs(c){
+  return `<div class="card"><div class="card-h"><h3>Observaciones internas</h3></div><div class="card-b">
+    <div class="field"><textarea id="obs_t" rows="8" placeholder="Notas internas del estudio (no visibles para el cliente)">${esc(c.observaciones)}</textarea></div>
+    <button class="btn btn-primary" onclick="CURRENT.observaciones=val('obs_t');save();toast('Observaciones guardadas')">Guardar</button>
+  </div></div>`;
+}
+
+/* ============================================================
+   GENERACION DE DOCUMENTOS
+   ============================================================ */
+function previewDoc(tipo){
+  const c=CURRENT; const v=validateDoc(c,tipo);
+  if(!v.ok){ toast("Faltan datos obligatorios","err"); return; }
+  const html=buildDocHtml(c,tipo);
+  modal({title:"Previsualización — "+docTitle(tipo), size:"lg", body:`
+    <div class="alert alert-info"><span>✏️</span><div>Podés editar el texto antes de generar. Al confirmar se guarda en Drive y queda registrado.</div></div>
+    <div id="docEdit" contenteditable="true" class="docview" style="border:1px solid var(--line);border-radius:8px;padding:30px 36px;background:#fff">${html}</div>`,
+    footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="finalizeDoc('${tipo}')">✓ Generar y guardar</button>`});
+}
+function finalizeDoc(tipo){
+  const c=CURRENT;
+  const content=document.getElementById("docEdit").innerHTML;
+  const ver=(c.docs.filter(d=>d.tipo===tipo).length)+1;
+  const doc={id:uid("d"),tipo,version:ver,estado:"borrador",fecha:now(),generadoPor:SESSION.id,html:content};
+  c.docs.push(doc);
+  // auto estado del caso
+  if(tipo==="contrato"&&c.estado==="Documentación completa") c.estado="Contrato enviado";
+  logAction(c, docTitle(tipo)+" generado (v"+ver+")");
+  save(); closeModal(); toast(docTitle(tipo)+" generado y guardado en Drive"); renderCaso();
+}
+function docExportCSS(tipo){
+  if(tipo==="carta_poder"){
+    // compacto para entrar en UNA sola carilla
+    return `@page{size:A4;margin:1.4cm 1.6cm}body{font-family:"Times New Roman",serif;font-size:9.6pt;line-height:1.2;color:#000}
+      p{text-align:justify;margin:0 0 4.5pt}h1{text-align:center;font-size:12.5pt;margin:0 0 7pt}
+      .sig{margin-top:14pt;display:flex;justify-content:center;text-align:center;font-size:9pt}`;
+  }
+  return `@page{size:A4;margin:2.2cm}body{font-family:"Times New Roman",serif;font-size:12pt;line-height:1.5;color:#000}
+    p{text-align:justify;margin:0 0 11px}h1,h2{text-align:center;font-size:14pt;margin:0 0 4pt}
+    .sig{margin-top:50pt;display:flex;justify-content:space-around;text-align:center;font-size:11pt}`;
+}
+function downloadDoc(id, fmt){
+  const c=CURRENT; const d=c.docs.find(x=>x.id===id);
+  const filename = docTitle(d.tipo).replace(/ /g,"_")+"_"+clienteFull(c).replace(/[ ,]+/g,"_")+"_v"+d.version;
+  const css=docExportCSS(d.tipo);
+  if(fmt==="word"){
+    const blob=new Blob(['﻿<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><style>'+css+'</style></head><body>'+d.html+'</body></html>'],{type:"application/msword"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=filename+".doc"; a.click();
+    toast("Documento Word descargado");
+  } else {
+    const w=window.open("","_blank");
+    w.document.write(`<html><head><title>${filename}</title><style>${css}</style></head><body>${d.html}<script>window.onload=function(){window.print()}<\/script></body></html>`);
+    w.document.close();
+    toast("Abriendo vista de impresión / PDF");
+  }
+  setDocEstadoSilent(d);
+}
+function setDocEstadoSilent(d){ /* placeholder for download log */ logAction(CURRENT,docTitle(d.tipo)+" descargado"); save(); }
+
+/* ---------- DOCUMENT TEMPLATES ---------- */
+function buildDocHtml(c,tipo){
+  if(tipo==="contrato") return tplContrato(c);
+  if(tipo==="carta_poder") return tplCartaPoder(c);
+  if(tipo==="mediacion") return tplMediacion(c);
+  return "";
+}
+function longDate(d){
+  const meses=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  const dt=d?new Date(d+"T00:00:00"):new Date();
+  return `${dt.getDate()} días del mes de ${meses[dt.getMonth()]} de ${dt.getFullYear()}`;
+}
+function docHead(small){
+  const E=DB.config.estudio;
+  return `<div style="text-align:center;${small?'margin-bottom:6pt':'margin-bottom:14pt'};border-bottom:2px solid #16294d;padding-bottom:${small?'3pt':'7pt'}">
+    <div style="font-family:Georgia,'Times New Roman',serif;font-weight:700;letter-spacing:3px;color:#16294d;font-size:${small?'13pt':'16pt'}">GMJ LEGAL PARTNERS</div>
+    <div style="font-size:${small?'6.5pt':'8.5pt'};color:#555;letter-spacing:.5px">${esc(E.domicilio)} · ${esc(E.mail)}</div></div>`;
+}
+function tplContrato(c){
+  const cl=c.cliente, f=c.finanzas; const E=DB.config.estudio;
+  const m=f.moneda; const mt=money(f.montoTotal,m), ad=money(f.adelanto,m), sa=money(f.saldo,m), dv=money(f.devolucion,m);
+  const cuenta=c.cuenta.handle||c.cuenta.url||"—";
+  return docHead()+`
+<h1>CONTRATO DE PRESTACIÓN DE SERVICIOS PROFESIONALES</h1>
+<h2>REHABILITACIÓN DE CUENTA DIGITAL</h2>
+<p>En la Ciudad de ${esc(E.jurisdiccion)} a los ${longDate("")} entre <b>${esc(E.nombre)}</b>, representado por ${esc(E.repr)}, en adelante "EL ESTUDIO", y por la otra parte el/la Sr./Sra. <b>${esc(cl.nombre)} ${esc(cl.apellido)}</b>, con domicilio en ${esc(cl.domicilio)}, correo electrónico ${esc(cl.email)} y teléfono ${esc(cl.tel)}, en adelante "EL CLIENTE", convienen celebrar el presente contrato sujeto a las siguientes cláusulas:</p>
+<p><b>Cuenta objeto de la gestión:</b> ${esc(cuenta)}</p>
+<p><b>PRIMERA: OBJETO Y ALCANCE.</b> EL CLIENTE contrata a EL ESTUDIO para realizar gestiones profesionales, legales, administrativas y/o prejudiciales tendientes a procurar la rehabilitación, recuperación o reactivación de la cuenta digital indicada. El servicio podrá comprender análisis del caso, revisión de documentación, preparación de reclamos, comunicaciones, intimaciones, presentaciones, seguimiento del trámite e intervención en instancia de audiencia o comunicación formal con Meta, Instagram, sus representantes, apoderados o áreas correspondientes, conforme la estrategia profesional definida por EL ESTUDIO.</p>
+<p><b>SEGUNDA: NATURALEZA DEL SERVICIO.</b> EL ESTUDIO actuará con diligencia profesional, buena fe y criterio técnico-jurídico. EL CLIENTE declara comprender que Meta, Instagram y/o sus empresas vinculadas poseen políticas internas, sistemas de revisión, canales administrativos y criterios de decisión propios, ajenos al control directo de EL ESTUDIO. En consecuencia, el servicio no implica garantía absoluta de resultado, sin perjuicio del régimen de reintegro expresamente pactado para el supuesto de resultado negativo.</p>
+<p><b>TERCERA: HONORARIOS Y FORMA DE PAGO.</b> Por el servicio contratado, EL CLIENTE abonará a EL ESTUDIO la suma total de <b>${mt}</b>. Dicho importe será abonado en dos partes: a) adelanto inicial de <b>${ad}</b> al momento de contratar; y b) saldo restante de <b>${sa}</b> que deberá estar íntegramente cancelado con anterioridad o, como máximo, al momento de celebrarse la audiencia, comunicación formal o gestión prejudicial con Meta, Instagram, sus representantes o apoderados. La falta de pago del saldo facultará a EL ESTUDIO a suspender gestiones pendientes hasta su regularización, sin que ello configure incumplimiento.</p>
+<p><b>CUARTA: PLAZO.</b> EL ESTUDIO realizará las gestiones correspondientes dentro de un plazo máximo de noventa (90) días corridos, contados desde la fecha en que se haya celebrado y/o cumplido la instancia de audiencia, comunicación formal o gestión prejudicial con Meta, Instagram, sus representantes o apoderados. EL CLIENTE reconoce que los tiempos concretos pueden depender de respuestas de Meta, revisiones internas de la plataforma, canales administrativos, disponibilidad de instancias prejudiciales o cualquier otra circunstancia ajena al control directo de EL ESTUDIO.</p>
+<p><b>QUINTA: CUMPLIMIENTO Y NUEVA SUSPENSIÓN.</b> El presente contrato se considerará cumplido por EL ESTUDIO si, como resultado de las gestiones realizadas, se obtiene la rehabilitación, reactivación, recuperación o restitución razonable del acceso a la cuenta. Una vez obtenida la rehabilitación, EL ESTUDIO no será responsable por nuevas suspensiones, bloqueos, restricciones, inhabilitaciones, denuncias, cierres, pérdidas de acceso o limitaciones posteriores, cualquiera sea su causa. Si luego de rehabilitada la cuenta volviera a ser suspendida o restringida, ello será considerado un hecho nuevo, autónomo e independiente, que requerirá una nueva evaluación profesional y, eventualmente, una nueva contratación.</p>
+<p><b>SEXTA: REINTEGRO POR RESULTADO NEGATIVO.</b> Si vencido el plazo de noventa (90) días corridos, contado desde la fecha en que se haya celebrado y/o cumplido la instancia de audiencia, comunicación formal o gestión prejudicial con Meta, Instagram, sus representantes o apoderados, no se hubiera logrado la rehabilitación, recuperación o reactivación de la cuenta, EL ESTUDIO reintegrará a EL CLIENTE la suma de <b>${dv}</b>, dentro de los treinta (30) días hábiles de vencido dicho plazo o de comunicarse el cierre negativo del caso, lo que ocurra primero. Las partes dejan constancia de que el monto no reintegrable, en caso de existir, responde a análisis legal, gastos operativos, tareas profesionales, preparación de documentación, comunicaciones, audiencia y demás gestiones efectivamente realizadas.</p>
+<p><b>SÉPTIMA: OBLIGACIONES Y DECLARACIONES DEL CLIENTE.</b> EL CLIENTE se obliga a brindar información completa, veraz y actualizada; entregar documentación, capturas, correos, notificaciones, datos de contacto, antecedentes y demás elementos necesarios; responder los requerimientos de EL ESTUDIO; y no realizar gestiones paralelas, contradictorias o perjudiciales sin aviso previo. EL CLIENTE declara ser titular, administrador legítimo, representante autorizado o persona con interés legítimo sobre la cuenta, y no ocultar antecedentes relevantes vinculados a la suspensión o bloqueo. La información falsa, incompleta o tardía, o las acciones que perjudiquen la estrategia, podrán afectar el resultado y liberar a EL ESTUDIO de responsabilidad por demoras, rechazos o imposibilidad de avanzar.</p>
+<p><b>OCTAVA: LIMITACIÓN DE RESPONSABILIDAD.</b> EL ESTUDIO no responderá por decisiones de Meta, Instagram o terceros; demoras externas; cambios de políticas internas; nuevas denuncias o infracciones; acciones realizadas directamente por EL CLIENTE; pérdida de seguidores, alcance, contenido, estadísticas, monetización, publicidad, mensajes, archivos u otros elementos internos de la cuenta que la plataforma no restituya; ni por cualquier consecuencia ajena al control directo de EL ESTUDIO.</p>
+<p><b>NOVENA: AUTORIZACIÓN, CONFIDENCIALIDAD Y DATOS.</b> EL CLIENTE autoriza a EL ESTUDIO y a sus representantes a utilizar sus datos personales, documentación, información de la cuenta, capturas, correos, enlaces y demás elementos aportados exclusivamente para gestionar la rehabilitación, y a realizar presentaciones, reclamos, comunicaciones, intimaciones, solicitudes y gestiones ante Meta, Instagram, representantes legales, mediadores o terceros necesarios. EL ESTUDIO mantendrá reserva sobre la información recibida, salvo en lo necesario para cumplir el objeto contractual.</p>
+<p><b>DÉCIMA: COMUNICACIONES Y JURISDICCIÓN.</b> Los honorarios pactados comprenden la totalidad de la prestación profesional acordada para la gestión objeto del presente contrato, no correspondiendo adicionar gastos, tasas, aranceles, costos administrativos o conceptos extras, salvo acuerdo expreso y escrito entre las partes. Las partes constituyen como medios válidos de comunicación los domicilios, correos electrónicos, teléfonos y WhatsApp indicados en el presente, reconociendo plena validez a las comunicaciones cursadas por dichos medios. Para todos los efectos derivados del presente contrato, las partes se someten a la legislación argentina y a la jurisdicción de los tribunales ordinarios competentes de la ${esc(E.jurisdiccion)}, con renuncia expresa a cualquier otro fuero o jurisdicción que pudiera corresponder.</p>
+<p>Leído que fue por las partes, en prueba de conformidad se firman dos ejemplares de un mismo tenor y a un solo efecto, en el lugar y fecha indicados al inicio.</p>
+<div class="sig">
+  <div><br><br>_______________________<br><b>EL ESTUDIO</b><br>${esc(E.nombre)}</div>
+  <div><br><br>_______________________<br><b>EL CLIENTE</b><br>Aclaración: ${esc(cl.nombre)} ${esc(cl.apellido)}<br>DNI/CUIT: ${esc(cl.dni||cl.cuit)}</div>
+</div>`;
+}
+function tplCartaPoder(c){
+  const cl=c.cliente;
+  const abs=DB.abogados;
+  const ab1=abs[0]||{}, ab2=abs[1]||{};
+  const nombre=`${cl.nombre} ${cl.apellido}`.trim();
+  const ig=c.cuenta.plataforma==="Instagram"?(c.cuenta.handle||"—"):(c.cuenta.handle||"—");
+  const fb=c.cuenta.plataforma==="Facebook"?(c.cuenta.handle||""):"";
+  const fecha=new Date(); const meses=["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const mesesEs=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  const fEn=`${meses[fecha.getMonth()]} ${fecha.getDate()}, ${fecha.getFullYear()}`;
+  const fEs=`${fecha.getDate()} de ${mesesEs[fecha.getMonth()]} de ${fecha.getFullYear()}`;
+  const cuentas=`Instagram: ${ig}${fb?` - Facebook: ${fb}`:""}`;
+  return docHead(true)+`
+<h1>LETTER OF ATTORNEY / CARTA PODER</h1>
+<p><b>${esc(nombre)}</b><br>${esc(cl.domicilio)}<br>ZIP Code ${esc(cl.cp||"—")}, ${esc(cl.localidad||"")} ${esc(cl.provincia||"")}, ${esc(cl.nacionalidad||"Argentina")}<br>${esc(cl.email)}</p>
+<p>${fEn} / ${fEs}</p>
+<p><b>${esc(ab1.nombre)}</b><br>${esc(ab1.domicilio)}<br>${esc(ab1.tel)}<br>${esc(ab1.mail)}</p>
+<p><b>${esc(ab2.nombre)}</b><br>${esc(ab2.domicilio)}<br>${esc(ab2.tel)}<br>${esc(ab2.mail)}</p>
+<p><b>Subject: Letter of Attorney for Legal Representation</b></p>
+<p>To whom it may concern,</p>
+<p>I, <b>${esc(nombre)}</b>, with identification No. ${esc(cl.dni)} being of sound mind, hereby authorize the attorneys ${esc(ab1.nombre)} and ${esc(ab2.nombre)}, to represent me and act on my behalf, in all legal matters related to the removal of restrictions on my Instagram and Facebook accounts (${esc(cuentas)}), including, but not limited to:</p>
+<p>1. Mediation: To act on my behalf in all mediation proceedings related to the aforementioned matter, negotiate settlements, and represent my interests in all mediation meetings and discussions.</p>
+<p>2. Litigation: To represent me in any judicial proceedings, attend hearings, file and respond to claims, and take all necessary legal actions in court.</p>
+<p>This power includes the authority to make all decisions and take all actions that I could take personally regarding the described matter. This power of attorney is effective from the date of signing and will remain in effect until I decide to revoke this power in writing.</p>
+<p>Sincerely, ${esc(nombre)}</p>
+<p><b>Asunto: Carta Poder para Representación Legal</b></p>
+<p>Estimados,</p>
+<p>Yo, <b>${esc(nombre)}</b>, en pleno uso de mis facultades, autorizo a los abogados ${esc(ab1.nombre)} y ${esc(ab2.nombre)}, a representarme y actuar en mi nombre en todas las cuestiones legales relacionadas con el levantamiento de restricciones sobre mis cuentas de Instagram y Facebook (${esc(cuentas)}), que incluyen, pero no se limita a:</p>
+<p>1. Mediación: Actuar en mi nombre en todos los procedimientos de mediación relacionados con el asunto, negociar acuerdos y representar mis intereses en todas las reuniones y discusiones de mediación.</p>
+<p>2. Juicio: Representarme en cualquier procedimiento judicial, comparecer en audiencias, presentar y responder a demandas, y tomar todas las acciones legales necesarias en el tribunal.</p>
+<p>Este poder incluye la autoridad para tomar todas las decisiones y realizar todas las acciones que yo podría tomar personalmente en relación con el asunto descrito. Esta carta poder es válida a partir de la fecha de firma y continuará en vigor hasta que yo decida revocarla por escrito.</p>
+<p>Atentamente, ${esc(nombre)}</p>
+<div class="sig"><div>_______________________<br>${esc(nombre)} — DNI ${esc(cl.dni)}</div></div>`;
+}
+function reqMostrados(c){ let r=DB.config.requeridos.slice(); if(c.citarFacebook===false) r=r.filter(x=>!/facebook/i.test(x.nombre)); return r; }
+function tplMediacion(c){
+  const cl=c.cliente; const ab=DB.abogados.find(a=>a.id===c.abogadoPatrocinante)||{};
+  const req=reqMostrados(c); const sint=c.relato.sintesis||c.relato.original||"";
+  return docHead()+`
+<h1>SOLICITUD DE MEDIACIÓN</h1>
+<p style="text-align:center"><b>Mediador:</b> ${esc(DB.config.mediador)}</p>
+<p><b>REQUIRENTE</b><br>
+Nombre y Apellido: ${esc(cl.nombre)} ${esc(cl.apellido)}<br>
+Documento: DNI ${esc(cl.dni)}<br>
+CUIT / CUIL: ${esc(cl.cuit)}<br>
+Domicilio: ${esc(cl.domicilio)} (${esc(cl.localidad)}, ${esc(cl.provincia)}) CP ${esc(cl.cp)}<br>
+Celular: ${esc(cl.tel)}<br>
+Correo electrónico: ${esc(cl.email)}</p>
+<p><b>PATROCINANTE LETRADO</b><br>
+Nombre y Apellido: ${esc(ab.nombre)}<br>
+Domicilio: ${esc(ab.domicilio)}<br>
+Tomo y Folio: T° ${esc(ab.tomo)} F° ${esc(ab.folio)} ${esc(ab.matricula)}<br>
+Celular: ${esc(ab.tel)}<br>
+Mail: ${esc(ab.mail)}</p>
+<p><b>OBJETO DEL RECLAMO</b><br>${esc(c.objeto||DB.config.objeto)}</p>
+${req.map((r,i)=>`<p><b>REQUERIDO ${i===0?'A':'B'}:</b><br>Nombre o Razón Social: ${esc(r.nombre)}<br>CUIT: ${esc(r.cuit)}<br>Domicilio: ${esc(r.domicilio)}</p>`).join("")}
+<p><b>CUENTA AFECTADA</b><br>
+URL de la cuenta: ${esc(c.cuenta.url)}<br>
+Usuario: ${esc(c.cuenta.handle)}<br>
+Correo electrónico vinculado: ${esc(c.cuenta.emailVinc)}<br>
+${c.cuenta.telVinc?`Teléfono vinculado: ${esc(c.cuenta.telVinc)}<br>`:""}
+${c.cuenta.cuentasVinc?`Otras cuentas vinculadas: ${esc(c.cuenta.cuentasVinc)}`:""}</p>
+<p><b>SÍNTESIS DEL HECHO</b><br>${esc(sint).replace(/\n/g,"<br>")}</p>`;
+}
+
+/* ---------- SEND BY MAIL (mailto) ---------- */
+function sendByMail(what){
+  const c=CURRENT; const to=c.cliente.email||"";
+  let subject, body;
+  if(what==="form"){ const link=location.href.split("#")[0]+"#form="+c.formToken; subject="Formulario de relevamiento - GMJ Legal Partners"; body=`Estimado/a ${c.cliente.nombre},\n\nPor favor complete el siguiente formulario para iniciar la gestión de su caso:\n${link}\n\nSaludos,\nGMJ Legal Partners`; }
+  window.location.href=`mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  logAction(c,"Formulario enviado por mail"); save();
+}
+
+/* ============================================================
+   FORMULARIO DEL CLIENTE (vista pública simulada)
+   ============================================================ */
+function openClientForm(token){ location.hash="form="+token; renderClientForm(token); }
+function renderClientForm(token){ const c=DB.casos.find(x=>x.formToken===token); paintForm(token,c,"submitClientForm"); }
+async function renderClientFormCloud(token){
+  document.getElementById("login").classList.add("hidden"); document.getElementById("app").classList.add("hidden");
+  let root=document.getElementById("formRoot"); if(!root){ root=document.createElement("div"); root.id="formRoot"; document.body.appendChild(root);} root.classList.remove("hidden");
+  root.innerHTML=`<div style="padding:60px;text-align:center;color:#64748b">Cargando formulario…</div>`;
+  try{
+    const r=await fetch(FUNCTIONS_URL+"/public-form?token="+encodeURIComponent(token),{headers:{"apikey":SUPABASE_ANON_KEY}});
+    const j=await r.json();
+    if(!j.ok){ root.innerHTML=`<div style="padding:60px;text-align:center">Formulario no encontrado o vencido.</div>`; return; }
+    paintForm(token,{cliente:j.cliente||{},cuenta:j.cuenta||{},relato:j.relato||{},adjuntos:j.adjuntos||[]},"submitClientFormCloud");
+  }catch(e){ root.innerHTML=`<div style="padding:60px;text-align:center">No se pudo cargar el formulario.</div>`; }
+}
+function paintForm(token,c,submitFn){
+  document.getElementById("login").classList.add("hidden");
+  document.getElementById("app").classList.add("hidden");
+  let root=document.getElementById("formRoot");
+  if(!root){ root=document.createElement("div"); root.id="formRoot"; document.body.appendChild(root); }
+  root.classList.remove("hidden");
+  if(!c){ root.innerHTML=`<div style="padding:60px;text-align:center">Formulario no encontrado.</div>`; return; }
+  const cl=c.cliente||{}, cu=c.cuenta||{}, re=c.relato||{};
+  root.innerHTML=`
+  <div style="min-height:100vh;background:var(--bg);padding:30px 16px">
+    <div style="max-width:760px;margin:0 auto">
+      <div style="text-align:center;margin-bottom:24px"><div style="width:80px;height:94px;margin:0 auto 12px">${LOGO_FULL}</div>
+        <h1 style="color:var(--navy);font-size:22px">Formulario de relevamiento</h1>
+        <p style="color:var(--muted);font-size:13px">GMJ Legal Partners · Rehabilitación de cuentas digitales</p></div>
+      <div class="card"><div class="card-b">
+        <div class="section-title">A. Datos de la cuenta afectada</div>
+        ${inp("cf_url","URL completa de la cuenta",cu.url)}
+        <div class="frow fr2">${inp("cf_handle","Usuario / handle",cu.handle)}${inp("cf_em","Email vinculado a la cuenta",cu.emailVinc)}</div>
+        <div class="frow fr2">${inp("cf_tel","Teléfono vinculado",cu.telVinc)}${sel("cf_tipo","Tipo de cuenta",["",...TIPO_CUENTA],cu.tipo)}</div>
+        <div class="frow fr2">${chk("cf_pauta","Tenía pauta publicitaria activa",cu.pautaActiva)}${chk("cf_saldo","Había saldo retenido / fondos de anuncios",cu.saldoRetenido)}</div>
+        <div class="frow fr2">${chk("cf_bm","Vinculada a Meta Business Manager",cu.businessManager)}${chk("cf_camp","Tenía campañas activas al bloqueo",cu.campanasActivas)}</div>
+
+        <div class="section-title">B. Datos del titular</div>
+        <div class="frow fr2">${inp("cf_ap","Apellido",cl.apellido)}${inp("cf_no","Nombre",cl.nombre)}</div>
+        <div class="frow fr2">${inp("cf_dni","DNI",cl.dni)}${inp("cf_cuit","CUIT / CUIL",cl.cuit)}</div>
+        <div class="frow fr2">${inp("cf_nac","Nacionalidad",cl.nacionalidad)}${inp("cf_fnac","Fecha de nacimiento",cl.fechaNac,"date")}</div>
+        <div class="frow fr2">${sel("cf_ec","Estado civil",["","Soltero/a","Casado/a","Divorciado/a","Viudo/a","Unión convivencial"],cl.estadoCivil)}${inp("cf_con","Cónyuge (si corresponde)",cl.conyuge)}</div>
+        ${inp("cf_dom","Domicilio completo",cl.domicilio)}
+        <div class="frow fr3">${inp("cf_loc","Localidad",cl.localidad)}${inp("cf_prov","Provincia",cl.provincia)}${inp("cf_cp","Código postal",cl.cp)}</div>
+        <div class="frow fr2">${inp("cf_celular","Teléfono celular",cl.tel)}${inp("cf_email","Email de contacto",cl.email)}</div>
+
+        <div class="section-title">C. Relato de los hechos</div>
+        <div class="frow fr2">${inp("cf_fs","Fecha aprox. de suspensión",re.fechaSusp,"date")}${sel("cf_ts","Tipo de suspensión",["","Temporal","Definitiva"],re.tipoSusp)}</div>
+        ${inp("cf_msg","¿Qué mensaje mostró Meta/IG/FB?",re.mensaje)}
+        <div class="frow fr2">${chk("cf_apelo","Pude apelar",re.apelo)}${chk("cf_resp","Recibí respuestas de la plataforma",re.recibioResp)}</div>
+        <div class="frow fr2">${chk("cf_hack","Hubo hackeo / accesos desconocidos",re.hackeo)}${chk("cf_volvio","La cuenta volvió a ser suspendida",re.volvioSusp)}</div>
+        <div class="field"><label>Relato libre: contanos qué pasó</label><textarea id="cf_orig" rows="5">${esc(re.original)}</textarea></div>
+
+        <div class="section-title">D. Documentación (adjuntar archivos)</div>
+        <div class="alert alert-info"><span>📎</span><div>Los tres primeros son <b>obligatorios</b>. Podés subir fotos o PDF.</div></div>
+        <div class="frow fr3">
+          <div class="field"><label>DNI frente <span class="req">*</span></label><input type="file" id="cf_f_dnif" accept="image/*,.pdf"></div>
+          <div class="field"><label>DNI dorso <span class="req">*</span></label><input type="file" id="cf_f_dnid" accept="image/*,.pdf"></div>
+          <div class="field"><label>Comprobante de pago <span class="req">*</span></label><input type="file" id="cf_f_pago" accept="image/*,.pdf"></div>
+        </div>
+        <div class="field"><label>Otros documentos / pruebas adicionales (podés seleccionar varios)</label><input type="file" id="cf_f_otros" accept="image/*,.pdf" multiple><div class="hint">Capturas de la suspensión, correos de Meta, apelaciones, comprobantes de pauta, conversaciones, etc.</div></div>
+
+        <div style="margin-top:22px;display:flex;justify-content:center">
+          <button class="btn btn-primary" style="padding:12px 30px;font-size:15px" onclick="${submitFn}('${token}')">Enviar formulario</button>
+        </div>
+      </div></div>
+      <p style="text-align:center;color:var(--muted);font-size:12px;margin-top:16px">Los datos se utilizan exclusivamente para la gestión de su caso.</p>
+    </div>
+  </div>`;
+}
+function submitClientForm(token){
+  const c=DB.casos.find(x=>x.formToken===token); if(!c) return;
+  const cl=c.cliente, cu=c.cuenta, re=c.relato;
+  cu.url=val("cf_url"); cu.handle=val("cf_handle"); cu.emailVinc=val("cf_em"); cu.telVinc=val("cf_tel"); cu.tipo=val("cf_tipo");
+  cu.pautaActiva=chkVal("cf_pauta"); cu.saldoRetenido=chkVal("cf_saldo"); cu.businessManager=chkVal("cf_bm"); cu.campanasActivas=chkVal("cf_camp");
+  cl.apellido=val("cf_ap").toUpperCase(); cl.nombre=val("cf_no"); cl.dni=val("cf_dni"); cl.cuit=val("cf_cuit"); cl.nacionalidad=val("cf_nac"); cl.fechaNac=val("cf_fnac");
+  cl.estadoCivil=val("cf_ec"); cl.conyuge=val("cf_con"); cl.domicilio=val("cf_dom"); cl.localidad=val("cf_loc"); cl.provincia=val("cf_prov"); cl.cp=val("cf_cp"); cl.tel=val("cf_celular"); cl.email=val("cf_email");
+  re.fechaSusp=val("cf_fs"); re.tipoSusp=val("cf_ts"); re.mensaje=val("cf_msg"); re.apelo=chkVal("cf_apelo"); re.recibioResp=chkVal("cf_resp"); re.hackeo=chkVal("cf_hack"); re.volvioSusp=chkVal("cf_volvio"); re.original=val("cf_orig");
+  // adjuntos por archivo (obligatorios DNI frente/dorso + comprobante de pago)
+  const hoy=new Date().toISOString().slice(0,10);
+  const fileEl=id=>document.getElementById(id);
+  const fDniF=fileEl("cf_f_dnif"), fDniD=fileEl("cf_f_dnid"), fPago=fileEl("cf_f_pago"), fOtros=fileEl("cf_f_otros");
+  const tiene=el=>el&&el.files&&el.files.length>0;
+  const yaTengo=t=>c.adjuntos.some(a=>a.tipo===t);
+  const faltan=[];
+  if(!tiene(fDniF)&&!yaTengo("DNI frente")) faltan.push("DNI frente");
+  if(!tiene(fDniD)&&!yaTengo("DNI dorso")) faltan.push("DNI dorso");
+  if(!tiene(fPago)&&!yaTengo("Comprobante de pago")) faltan.push("Comprobante de pago");
+  if(faltan.length){ toast("Faltan adjuntos obligatorios: "+faltan.join(", "),"err"); return; }
+  const addFile=(el,tipo)=>{ if(tiene(el)){ c.adjuntos=c.adjuntos.filter(a=>a.tipo!==tipo); c.adjuntos.push({tipo,nombre:el.files[0].name,fecha:hoy}); } };
+  addFile(fDniF,"DNI frente"); addFile(fDniD,"DNI dorso"); addFile(fPago,"Comprobante de pago");
+  if(tiene(fOtros)){ for(const f of fOtros.files){ c.adjuntos.push({tipo:"Otra documentación",nombre:f.name,fecha:hoy}); } }
+  // auto: crear drive + gastos default si faltan
+  if(!c.drive.creada){ c.drive.creada=true; c.drive.link="https://drive.google.com/drive/folders/"+uid("")+uid(""); }
+  if(!c.gastos||!c.gastos.length){ c.gastos=GASTOS_DEFAULT.map(n=>({id:uid("g"),nombre:n,estado:"pendiente",importe:"",moneda:"ARS",fecha:"",medio:"",obs:"",adjunto:""})); }
+  c.estado="Formulario completado";
+  logAction(c,"Formulario completado por el cliente");
+  logAction(c,"Carpeta de Drive creada automáticamente");
+  save();
+  document.getElementById("formRoot").innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg)"><div class="card" style="max-width:460px;text-align:center"><div class="card-b" style="padding:46px"><div style="font-size:48px">✅</div><h2 style="color:var(--navy);margin:14px 0 8px">¡Formulario enviado!</h2><p style="color:var(--muted)">Gracias. El estudio ya recibió tus datos y documentación. Nos pondremos en contacto a la brevedad.</p><button class="btn btn-ghost" style="margin-top:20px" onclick="backToApp()">Volver a la plataforma (demo)</button></div></div></div>`;
+}
+function backToApp(){ location.hash=""; document.getElementById("formRoot").classList.add("hidden"); if(SESSION){document.getElementById("app").classList.remove("hidden"); go("caso", DB.casos.find(c=>c.estado).id||"");} else {document.getElementById("login").classList.remove("hidden");} }
+function formSuccess(){ document.getElementById("formRoot").innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f1f5f9"><div class="card" style="max-width:460px;text-align:center"><div class="card-b" style="padding:46px"><div style="font-size:48px">✅</div><h2 style="color:var(--navy);margin:14px 0 8px">¡Formulario enviado!</h2><p style="color:var(--muted)">Gracias. El estudio ya recibió tus datos y documentación. Nos pondremos en contacto a la brevedad.</p></div></div></div>`; }
+async function submitClientFormCloud(token){
+  const cliente={apellido:val("cf_ap").toUpperCase(),nombre:val("cf_no"),dni:val("cf_dni"),cuit:val("cf_cuit"),nacionalidad:val("cf_nac"),fechaNac:val("cf_fnac"),estadoCivil:val("cf_ec"),conyuge:val("cf_con"),domicilio:val("cf_dom"),localidad:val("cf_loc"),provincia:val("cf_prov"),cp:val("cf_cp"),tel:val("cf_celular"),email:val("cf_email")};
+  const cuenta={url:val("cf_url"),handle:val("cf_handle"),emailVinc:val("cf_em"),telVinc:val("cf_tel"),tipo:val("cf_tipo"),pautaActiva:chkVal("cf_pauta"),saldoRetenido:chkVal("cf_saldo"),businessManager:chkVal("cf_bm"),campanasActivas:chkVal("cf_camp")};
+  const relato={fechaSusp:val("cf_fs"),tipoSusp:val("cf_ts"),mensaje:val("cf_msg"),apelo:chkVal("cf_apelo"),recibioResp:chkVal("cf_resp"),hackeo:chkVal("cf_hack"),volvioSusp:chkVal("cf_volvio"),original:val("cf_orig")};
+  const fe=id=>document.getElementById(id); const tiene=el=>el&&el.files&&el.files.length>0;
+  const faltan=[]; if(!tiene(fe("cf_f_dnif")))faltan.push("DNI frente"); if(!tiene(fe("cf_f_dnid")))faltan.push("DNI dorso"); if(!tiene(fe("cf_f_pago")))faltan.push("Comprobante de pago");
+  if(faltan.length){ toast("Faltan adjuntos obligatorios: "+faltan.join(", "),"err"); return; }
+  const adjuntos=[]; const push=(el,t)=>{ if(tiene(el)) adjuntos.push({tipo:t,nombre:el.files[0].name}); };
+  push(fe("cf_f_dnif"),"DNI frente"); push(fe("cf_f_dnid"),"DNI dorso"); push(fe("cf_f_pago"),"Comprobante de pago");
+  if(tiene(fe("cf_f_otros"))) for(const f of fe("cf_f_otros").files) adjuntos.push({tipo:"Otra documentación",nombre:f.name});
+  try{
+    const r=await fetch(FUNCTIONS_URL+"/public-form",{method:"POST",headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({token,cliente,cuenta,relato,adjuntos})});
+    const j=await r.json();
+    if(!j.ok){ toast("No se pudo enviar el formulario","err"); return; }
+    formSuccess();
+  }catch(e){ console.error(e); toast("Error al enviar","err"); }
+}
+
+/* ============================================================
+   FINANZAS GLOBAL (socios)
+   ============================================================ */
+function renderFinanzasGlobal(){
+  setCrumb("Finanzas global"); topActions("");
+  const cs=DB.casos;
+  let rows="", tUSD=0,cUSD=0,pUSD=0, tARS=0,cARS=0,pARS=0;
+  cs.forEach(c=>{
+    const f=c.finanzas; const cobrado=(c.pagos||[]).reduce((s,p)=>s+(p.moneda===f.moneda?Number(p.importe||0):0),0);
+    const pend=Number(f.montoTotal||0)-cobrado;
+    if(f.moneda==="USD"){tUSD+=Number(f.montoTotal||0);cUSD+=cobrado;pUSD+=pend;}else{tARS+=Number(f.montoTotal||0);cARS+=cobrado;pARS+=pend;}
+    rows+=`<tr class="clickable" onclick="go('caso','${c.id}')"><td><b>${esc(clienteFull(c))}</b><br><small style="color:var(--muted)">${esc(c.id)}</small></td>
+      <td>${money(f.montoTotal,f.moneda)}</td><td>${money(cobrado,f.moneda)}</td><td>${money(pend,f.moneda)}</td>
+      <td>${money(f.devolucion,f.moneda)}</td><td><span class="badge ${pagoBadge(f.estadoPago)}">${esc(f.estadoPago)}</span></td></tr>`;
+  });
+  document.getElementById("view").innerHTML=`
+    <div class="pagehead"><div><h2>Finanzas global del estudio</h2><div class="sub">Resumen de todos los casos · solo socios</div></div></div>
+    <div class="grid g3" style="margin-bottom:18px">
+      <div class="stat gold"><div class="lab">Pactado USD</div><div class="val">${money(tUSD,"USD")}</div><div class="sub">Cobrado ${money(cUSD,"USD")} · Pend. ${money(pUSD,"USD")}</div></div>
+      <div class="stat green"><div class="lab">Pactado ARS</div><div class="val">${money(tARS,"ARS")}</div><div class="sub">Cobrado ${money(cARS,"ARS")} · Pend. ${money(pARS,"ARS")}</div></div>
+      <div class="stat accent"><div class="lab">Casos</div><div class="val">${cs.length}</div></div>
+    </div>
+    <div class="card"><table><thead><tr><th>Cliente</th><th>Total</th><th>Cobrado</th><th>Pendiente</th><th>Devolución</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+/* ============================================================
+   CONFIG
+   ============================================================ */
+async function conectarGoogle(){
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    const r=await fetch(FUNCTIONS_URL+"/google-oauth?start=1",{headers:{"Authorization":"Bearer "+session.access_token}});
+    const j=await r.json();
+    if(j.url){ window.location.href=j.url; }
+    else { toast("No se pudo iniciar la conexión con Google","err"); }
+  }catch(e){ console.error(e); toast("Error al conectar Google","err"); }
+}
+function renderConfig(){
+  setCrumb("Configuración"); topActions("");
+  const E=DB.config.estudio;
+  document.getElementById("view").innerHTML=`
+    <div class="pagehead"><div><h2>Configuración</h2><div class="sub">Datos del estudio, requeridos y textos por defecto</div></div></div>
+    ${CLOUD?`<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Mi cuenta de Google Calendar</h3></div><div class="card-b" style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
+      <div style="font-size:13.5px;color:var(--slate)">Conectá tu Google una vez para que las audiencias se carguen <b>automáticamente</b> en tu agenda. Cada usuario del estudio debe hacerlo desde su propia sesión.</div>
+      <button class="btn btn-gold" onclick="conectarGoogle()">🔗 Conectar mi Google Calendar</button>
+    </div></div>`:''}
+    <div class="grid g2">
+      <div class="card"><div class="card-h"><h3>Datos del estudio</h3></div><div class="card-b">
+        ${inp("co_nom","Nombre del estudio",E.nombre)}
+        ${inp("co_repr","Representado por",E.repr)}
+        <div class="frow fr2">${inp("co_mail","Mail del estudio",E.mail)}${inp("co_dom","Domicilio",E.domicilio)}</div>
+        ${inp("co_jur","Jurisdicción",E.jurisdiccion)}
+        ${inp("co_med","Mediador por defecto",DB.config.mediador)}
+        <button class="btn btn-primary" onclick="saveConfig()">Guardar</button>
+      </div></div>
+      <div class="card"><div class="card-h"><h3>Objeto del reclamo (por defecto)</h3></div><div class="card-b">
+        <div class="field"><textarea id="co_obj" rows="6">${esc(DB.config.objeto)}</textarea></div>
+        <button class="btn btn-primary" onclick="DB.config.objeto=val('co_obj');save();toast('Objeto guardado')">Guardar objeto</button>
+      </div></div>
+      <div class="card" style="grid-column:1/-1"><div class="card-h"><h3>Requeridos precargados</h3></div><div class="card-b">
+        ${DB.config.requeridos.map((r,i)=>`<div class="frow fr3" style="margin-bottom:10px">
+          <div class="field" style="margin:0"><label>Razón social ${i+1}</label><input id="rq_n${i}" value="${esc(r.nombre)}"></div>
+          <div class="field" style="margin:0"><label>CUIT</label><input id="rq_c${i}" value="${esc(r.cuit)}"></div>
+          <div class="field" style="margin:0"><label>Domicilio</label><input id="rq_d${i}" value="${esc(r.domicilio)}"></div>
+        </div>`).join("")}
+        <button class="btn btn-primary" onclick="saveRequeridos()">Guardar requeridos</button>
+      </div></div>
+    </div>`;
+}
+function saveConfig(){ const E=DB.config.estudio; E.nombre=val("co_nom"); E.repr=val("co_repr"); E.mail=val("co_mail"); E.domicilio=val("co_dom"); E.jurisdiccion=val("co_jur"); DB.config.mediador=val("co_med"); save(); toast("Configuración guardada"); }
+function saveRequeridos(){ DB.config.requeridos.forEach((r,i)=>{ r.nombre=val("rq_n"+i); r.cuit=val("rq_c"+i); r.domicilio=val("rq_d"+i); }); save(); toast("Requeridos guardados"); }
+
+/* ============================================================
+   USUARIOS Y ABOGADOS (socios)
+   ============================================================ */
+function renderUsuarios(){
+  setCrumb("Usuarios y abogados"); topActions("");
+  const us=DB.usuarios.map(u=>`<tr><td><b>${esc(u.nombre)}</b></td><td><span class="badge ${u.rol==='socio'?'b-gold':'b-blue'}">${u.rol}</span></td><td><button class="btn btn-ghost btn-sm" onclick="editUser('${u.id}')">Editar</button></td></tr>`).join("");
+  const abs=DB.abogados.map(a=>`<tr><td><b>${esc(a.nombre)}</b><br><small style="color:var(--muted)">${esc(a.mail)}</small></td><td>T° ${esc(a.tomo)} F° ${esc(a.folio)}</td><td>${esc(a.tel)}</td><td><button class="btn btn-ghost btn-sm" onclick="editAb('${a.id}')">Editar</button></td></tr>`).join("");
+  document.getElementById("view").innerHTML=`
+    <div class="pagehead"><div><h2>Usuarios y abogados</h2><div class="sub">Accesos internos y patrocinantes del estudio</div></div></div>
+    <div class="grid g2">
+      <div class="card"><div class="card-h"><h3>Usuarios internos</h3><button class="btn btn-ghost btn-sm" onclick="editUser()">＋ Nuevo</button></div>
+        <table><thead><tr><th>Nombre</th><th>Rol</th><th></th></tr></thead><tbody>${us}</tbody></table></div>
+      <div class="card"><div class="card-h"><h3>Abogados patrocinantes</h3><button class="btn btn-ghost btn-sm" onclick="editAb()">＋ Nuevo</button></div>
+        <table><thead><tr><th>Nombre</th><th>Tomo/Folio</th><th>Tel</th><th></th></tr></thead><tbody>${abs}</tbody></table></div>
+    </div>`;
+}
+function editUser(id){
+  const u=id?DB.usuarios.find(x=>x.id===id):{nombre:"",rol:"empleado"};
+  modal({title:id?"Editar usuario":"Nuevo usuario", size:"sm", body:`
+    ${inp("us_nom","Nombre",u.nombre)}
+    ${sel("us_rol","Rol",["socio","empleado"],u.rol)}`,
+    footer:`${id?`<button class="btn btn-danger" onclick="delUser('${id}')">Eliminar</button>`:""}<div style="flex:1"></div><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveUser('${id||''}')">Guardar</button>`});
+}
+function saveUser(id){ if(id){const u=DB.usuarios.find(x=>x.id===id);u.nombre=val("us_nom");u.rol=val("us_rol");}else{DB.usuarios.push({id:uid("u"),nombre:val("us_nom"),rol:val("us_rol")});} save(); closeModal(); toast("Usuario guardado"); renderUsuarios(); }
+function delUser(id){ DB.usuarios=DB.usuarios.filter(x=>x.id!==id); save(); closeModal(); renderUsuarios(); }
+function editAb(id){
+  const a=id?DB.abogados.find(x=>x.id===id):{nombre:"",domicilio:"",tomo:"",folio:"",matricula:"C.P.A.C.F.",tel:"",mail:""};
+  modal({title:id?"Editar abogado":"Nuevo abogado", size:"", body:`
+    ${inp("ab_nom","Nombre y apellido",a.nombre)}
+    ${inp("ab_dom","Domicilio profesional",a.domicilio)}
+    <div class="frow fr3">${inp("ab_tomo","Tomo",a.tomo)}${inp("ab_folio","Folio",a.folio)}${inp("ab_mat","Matrícula",a.matricula)}</div>
+    <div class="frow fr2">${inp("ab_tel","Teléfono",a.tel)}${inp("ab_mail","Mail",a.mail)}</div>`,
+    footer:`${id?`<button class="btn btn-danger" onclick="delAb('${id}')">Eliminar</button>`:""}<div style="flex:1"></div><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveAb('${id||''}')">Guardar</button>`});
+}
+function saveAb(id){ const o={nombre:val("ab_nom"),domicilio:val("ab_dom"),tomo:val("ab_tomo"),folio:val("ab_folio"),matricula:val("ab_mat"),tel:val("ab_tel"),mail:val("ab_mail")}; if(id){Object.assign(DB.abogados.find(x=>x.id===id),o);}else{o.id=uid("ab");DB.abogados.push(o);} save(); closeModal(); toast("Abogado guardado"); renderUsuarios(); }
+function delAb(id){ DB.abogados=DB.abogados.filter(x=>x.id!==id); save(); closeModal(); renderUsuarios(); }
+
+/* ============================================================
+   UI HELPERS (inputs, modal)
+   ============================================================ */
+function val(id){ const e=document.getElementById(id); return e?e.value:""; }
+function chkVal(id){ const e=document.getElementById(id); return e?e.checked:false; }
+function inp(id,label,v,type){ return `<div class="field"><label>${esc(label)}</label><input id="${id}" type="${type||'text'}" value="${esc(v)}"></div>`; }
+function sel(id,label,opts,v){ return `<div class="field"><label>${esc(label)}</label><select id="${id}">${opts.map(o=>`<option ${v===o?'selected':''}>${esc(o)}</option>`).join("")}</select></div>`; }
+function chk(id,label,v){ return `<div class="check"><input type="checkbox" id="${id}" ${v?'checked':''}><label for="${id}" style="margin:0;font-weight:500">${esc(label)}</label></div>`; }
+function formCard(title, fields, onsave){
+  return `<div class="card"><div class="card-h"><h3>${esc(title)}</h3></div><div class="card-b">
+    <div class="frow fr2">${fields.join("")}</div>
+    <div style="margin-top:16px"><button class="btn btn-primary" onclick="${onsave}">Guardar cambios</button></div></div></div>`;
+}
+function modal({title,body,footer,size}){
+  document.getElementById("modalRoot").innerHTML=`<div class="overlay" onclick="if(event.target===this)closeModal()">
+    <div class="modal ${size||''}"><div class="modal-h"><h3>${esc(title)}</h3><button class="x" onclick="closeModal()">×</button></div>
+    <div class="modal-b">${body}</div>${footer?`<div class="modal-f">${footer}</div>`:''}</div></div>`;
+}
+function closeModal(){ document.getElementById("modalRoot").innerHTML=""; }
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+function handleGoogleHash(){
+  if(location.hash.indexOf("google=ok")>=0){ toast("Google Calendar conectado ✓"); history.replaceState(null,"",location.pathname+location.search); }
+  else if(location.hash.indexOf("google=error")>=0){ toast("No se pudo conectar Google","err"); history.replaceState(null,"",location.pathname+location.search); }
+}
+(async function boot(){
+  // Formulario público del cliente (con o sin nube)
+  if(location.hash.startsWith("#form=")){
+    const tk=location.hash.slice(6);
+    if(CLOUD){ renderClientFormCloud(tk); }
+    else { loadLocal(); renderClientForm(tk); }
+    return;
+  }
+  if(CLOUD){
+    const {data:{session}}=await sb.auth.getSession();
+    if(session){ await afterAuth(); }
+    else { DB={config:{},abogados:[],usuarios:[],casos:[]}; renderLogin(); }
+  } else {
+    loadLocal(); renderLogin();
+  }
+})();
+</script>
+</body>
+</html>

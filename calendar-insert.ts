@@ -27,11 +27,21 @@ Deno.serve(async (req) => {
   if (!u?.user) return json({ error: "no-auth" }, 401);
 
   const body = await req.json();
-  // invitados = lista de user_id (uuid) de los usuarios del estudio a los que cargar el evento
-  const { invitados = [], title, startISO, endISO, details = "", location = "" } = body;
+  // invitados = lista de user_id (uuid). eventos = { user_id: eventId } de eventos ya creados (para ACTUALIZAR).
+  const { invitados = [], title, startISO, endISO, details = "", location = "", eventos = {} } = body;
   if (!title || !startISO || !endISO) return json({ error: "faltan-datos" }, 400);
 
   const results: { email: string; ok: boolean; link?: string; reason?: string }[] = [];
+  const nuevosEventos: Record<string, string> = {};
+
+  const eventBody = {
+    summary: title,
+    description: details,
+    location,
+    start: { dateTime: startISO, timeZone: "America/Argentina/Buenos_Aires" },
+    end: { dateTime: endISO, timeZone: "America/Argentina/Buenos_Aires" },
+    reminders: { useDefault: true },
+  };
 
   for (const userId of invitados) {
     if (!userId) continue;
@@ -44,25 +54,31 @@ Deno.serve(async (req) => {
     }
     try {
       const access = await refreshToken(tk.refresh_token);
-      const ev = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${access}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          summary: title,
-          description: details,
-          location,
-          start: { dateTime: startISO, timeZone: "America/Argentina/Buenos_Aires" },
-          end: { dateTime: endISO, timeZone: "America/Argentina/Buenos_Aires" },
-          reminders: { useDefault: true },
-        }),
-      }).then((r) => r.json());
-      if (ev.id) results.push({ email, ok: true, link: ev.htmlLink });
+      const existingId = eventos[userId];
+      let ev;
+      if (existingId) {
+        // ACTUALIZAR el evento existente (no crear duplicado)
+        ev = await fetch(`https://www.googleapis.com/calendar/v3/calendars/primary/events/${existingId}?sendUpdates=all`, {
+          method: "PATCH",
+          headers: { Authorization: `Bearer ${access}`, "Content-Type": "application/json" },
+          body: JSON.stringify(eventBody),
+        }).then((r) => r.json());
+      }
+      if (!ev || !ev.id) {
+        // crear nuevo (si no había, o si el PATCH falló porque se borró)
+        ev = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${access}`, "Content-Type": "application/json" },
+          body: JSON.stringify(eventBody),
+        }).then((r) => r.json());
+      }
+      if (ev.id) { results.push({ email, ok: true, link: ev.htmlLink }); nuevosEventos[userId] = ev.id; }
       else results.push({ email, ok: false, reason: ev.error?.message || "error-calendar" });
     } catch (e) {
       results.push({ email, ok: false, reason: String(e) });
     }
   }
-  return json({ ok: true, results });
+  return json({ ok: true, results, eventos: nuevosEventos });
 });
 
 async function refreshToken(refresh_token: string): Promise<string> {

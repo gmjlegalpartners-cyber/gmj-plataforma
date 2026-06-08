@@ -1002,11 +1002,30 @@ function copyLink(){ const i=document.getElementById("formlink"); i.select(); na
 function addAdjModal(){
   modal({title:"Agregar documentación", size:"sm", body:`
     <div class="field"><label>Tipo de documento</label><select id="adj_tipo">${ADJ_TIPOS.map(t=>`<option>${t}</option>`).join("")}</select></div>
-    <div class="field"><label>Nombre del archivo</label><input id="adj_nom" placeholder="ej: dni_frente.jpg"></div>
-    <div class="fileinput">📎 En la versión instalada, acá se sube el archivo a Drive.</div>`,
+    ${CLOUD?`<div class="field"><label>Archivo</label><input type="file" id="adj_file" accept="image/*,.pdf,.doc,.docx"><div class="hint">Se sube a la carpeta del cliente en Google Drive.</div></div>`
+           :`<div class="field"><label>Nombre del archivo</label><input id="adj_nom" placeholder="ej: dni_frente.jpg"></div><div class="fileinput">📎 En la versión nube, acá se sube el archivo a Drive.</div>`}`,
     footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="addAdj()">Agregar</button>`});
 }
-function addAdj(){ const tipo=val("adj_tipo"), nom=val("adj_nom").trim()||tipo.toLowerCase().replace(/ /g,"_")+".pdf"; CURRENT.adjuntos.push({tipo,nombre:nom,fecha:new Date().toISOString().slice(0,10)}); logAction(CURRENT,"Documento adjuntado: "+tipo); save(); closeModal(); toast("Documento agregado"); renderCaso(); }
+async function addAdj(){
+  const tipo=val("adj_tipo");
+  if(CLOUD){
+    const el=document.getElementById("adj_file");
+    if(!el||!el.files||!el.files.length){ toast("Elegí un archivo","err"); return; }
+    const f=el.files[0]; closeModal(); toast("Subiendo a Drive…");
+    try{
+      const b64=await fileToB64(f);
+      const {data:{session}}=await sb.auth.getSession();
+      const r=await fetch(FUNCTIONS_URL+"/drive-sync",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({casoId:CURRENT.id,action:"upload",tipo,nombre:f.name,mime:f.type||"application/octet-stream",base64:b64})});
+      const j=await r.json();
+      if(j.error){ toast("Error Drive: "+(j.detail||j.error),"err"); return; }
+      logAction(CURRENT,"Documento subido a Drive: "+tipo);
+      await cloudLoad(); CURRENT=DB.casos.find(c=>c.id===CURRENT.id)||CURRENT;
+      toast("Archivo subido a Drive ✓"); renderCaso();
+    }catch(e){ console.error(e); toast("Error al subir","err"); }
+    return;
+  }
+  const nom=val("adj_nom").trim()||tipo.toLowerCase().replace(/ /g,"_")+".pdf"; CURRENT.adjuntos.push({tipo,nombre:nom,fecha:new Date().toISOString().slice(0,10)}); logAction(CURRENT,"Documento adjuntado: "+tipo); save(); closeModal(); toast("Documento agregado"); renderCaso();
+}
 function delAdj(i){ CURRENT.adjuntos.splice(i,1); save(); renderCaso(); }
 function fileIcon(n){ n=(n||"").toLowerCase(); if(/\.(jpg|jpeg|png|gif|webp)$/.test(n))return"🖼️"; if(/\.pdf$/.test(n))return"📕"; if(/\.(doc|docx)$/.test(n))return"📘"; return"📄"; }
 
@@ -1034,7 +1053,21 @@ function countSub(c,s){
   if(s.includes("Comprobantes")) return (c.pagos||[]).length;
   return 0;
 }
-function createDrive(){
+async function createDrive(){
+  if(CLOUD){
+    toast("Creando carpeta en Google Drive…");
+    try{
+      const {data:{session}}=await sb.auth.getSession();
+      const r=await fetch(FUNCTIONS_URL+"/drive-sync",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({casoId:CURRENT.id,action:"folder"})});
+      const j=await r.json();
+      if(j.error){ toast("Error Drive: "+(j.detail||j.error),"err"); return; }
+      CURRENT.drive=j.drive||CURRENT.drive; CURRENT.drive.creada=true;
+      logAction(CURRENT,"Carpeta de Drive creada: "+driveFolderName(CURRENT));
+      await cloudLoad(); CURRENT=DB.casos.find(c=>c.id===CURRENT.id)||CURRENT;
+      toast("Carpeta de Drive creada ✓"); renderCaso();
+    }catch(e){ console.error(e); toast("Error al crear la carpeta","err"); }
+    return;
+  }
   CURRENT.drive.creada=true;
   CURRENT.drive.link="https://drive.google.com/drive/folders/"+uid("")+uid("");
   logAction(CURRENT,"Carpeta de Drive creada: "+driveFolderName(CURRENT));
@@ -1639,16 +1672,25 @@ async function submitClientFormCloud(token){
   const fe=id=>document.getElementById(id); const tiene=el=>el&&el.files&&el.files.length>0;
   const faltan=[]; if(!tiene(fe("cf_f_dnif")))faltan.push("DNI frente"); if(!tiene(fe("cf_f_dnid")))faltan.push("DNI dorso"); if(!tiene(fe("cf_f_pago")))faltan.push("Comprobante de pago");
   if(faltan.length){ toast("Faltan adjuntos obligatorios: "+faltan.join(", "),"err"); return; }
-  const adjuntos=[]; const push=(el,t)=>{ if(tiene(el)) adjuntos.push({tipo:t,nombre:el.files[0].name}); };
-  push(fe("cf_f_dnif"),"DNI frente"); push(fe("cf_f_dnid"),"DNI dorso"); push(fe("cf_f_pago"),"Comprobante de pago");
-  if(tiene(fe("cf_f_otros"))) for(const f of fe("cf_f_otros").files) adjuntos.push({tipo:"Otra documentación",nombre:f.name});
+  const adjuntos=[]; const jobs=[];
+  const addJob=(el,t)=>{ if(tiene(el)) for(const f of el.files){ adjuntos.push({tipo:t,nombre:f.name}); jobs.push({tipo:t,file:f}); } };
+  addJob(fe("cf_f_dnif"),"DNI frente"); addJob(fe("cf_f_dnid"),"DNI dorso"); addJob(fe("cf_f_pago"),"Comprobante de pago"); addJob(fe("cf_f_otros"),"Otra documentación");
   try{
     const r=await fetch(FUNCTIONS_URL+"/public-form",{method:"POST",headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({token,cliente,cuenta,relato,adjuntos})});
     const j=await r.json();
     if(!j.ok){ toast("No se pudo enviar el formulario","err"); return; }
+    // subir archivos reales a Google Drive (crea la carpeta del cliente si no existe)
+    document.getElementById("formRoot").innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f1f5f9"><div style="text-align:center;color:#64748b"><div style="font-size:32px">⏳</div><p style="margin-top:10px">Subiendo tus archivos, no cierres esta ventana…</p></div></div>`;
+    for(const job of jobs){
+      try{
+        const b64=await fileToB64(job.file);
+        await fetch(FUNCTIONS_URL+"/drive-sync",{method:"POST",headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({formToken:token,action:"upload",tipo:job.tipo,nombre:job.file.name,mime:job.file.type||"application/octet-stream",base64:b64})});
+      }catch(e){ console.error("upload",job.tipo,e); }
+    }
     formSuccess();
   }catch(e){ console.error(e); toast("Error al enviar","err"); }
 }
+function fileToB64(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(",")[1]); r.onerror=rej; r.readAsDataURL(file); }); }
 
 /* ============================================================
    FINANZAS GLOBAL (socios)

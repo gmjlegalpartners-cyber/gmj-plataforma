@@ -435,6 +435,15 @@ async function doCloudSave(){
     }
   }catch(e){ console.error("cloudSave",e); toast("Error guardando en la nube","err"); }
 }
+async function cloudSaveCaseNow(c){
+  if(!CLOUD||!sb||!c) return;
+  try{
+    const noFin = JSON.parse(JSON.stringify(c)); delete noFin.finanzas; delete noFin.pagos;
+    await sb.from("casos").upsert({ id:c.id, data:noFin, cliente_nombre:clienteFull(c), estado:c.estado, form_token:c.formToken||null, updated_at:new Date().toISOString(), updated_by:SESSION.id });
+    if(isSocio()) await sb.from("case_finance").upsert({ caso_id:c.id, finanzas:c.finanzas||{}, pagos:c.pagos||[], updated_at:new Date().toISOString() });
+  }catch(e){ console.error("cloudSaveCaseNow",e); toast("Error guardando en la nube","err"); }
+}
+async function persistCaso(c){ if(CLOUD){ await cloudSaveCaseNow(c); } else { saveLocal(); } }
 async function cloudInsertCase(c){
   const noFin = JSON.parse(JSON.stringify(c)); delete noFin.finanzas; delete noFin.pagos;
   await sb.from("casos").insert({ id:c.id, data:noFin, cliente_nombre:clienteFull(c), estado:c.estado, form_token:c.formToken||null, updated_by:SESSION.id });
@@ -606,6 +615,15 @@ function renderDashboard(){
     </tr>`;
   }).join("") || `<tr><td colspan="4" class="empty">Sin fechas límite cargadas</td></tr>`;
 
+  // próximas audiencias de mediación
+  const med = cs.filter(c=>c.audiencia&&c.audiencia.fecha&&!c.audiencia.realizada).sort((a,b)=>(a.audiencia.fecha+a.audiencia.hora).localeCompare(b.audiencia.fecha+b.audiencia.hora));
+  const medRows = med.map(c=>`<tr class="clickable" onclick="ACTIVE_TAB='mediacion';go('caso','${c.id}')">
+      <td><b>${esc(clienteFull(c))}</b><br><small style="color:var(--muted)">${esc(c.id)}</small></td>
+      <td><span class="badge ${c.audiencia.fecha<today?'b-red':'b-gold'}">${fdate(c.audiencia.fecha)} · ${esc(c.audiencia.hora||'')}</span></td>
+      <td>${esc(c.audiencia.modalidad||'—')}</td>
+      <td>${c.audiencia.calCreado?'<span class="badge b-blue">En calendario</span>':'<span class="badge b-grey">Sin calendario</span>'}</td>
+    </tr>`).join("") || `<tr><td colspan="4" class="empty">Sin audiencias agendadas</td></tr>`;
+
   document.getElementById("view").innerHTML=`
     <div class="pagehead"><div><h2>Hola, ${esc(SESSION.nombre.split(" ")[0])} 👋</h2><div class="sub">${isSocio()?"Vista completa del estudio":"Vista operativa"} · ${cs.length} casos en total</div></div>
       <button class="btn btn-primary" onclick="openNewCase()">＋ Nuevo caso</button></div>
@@ -620,7 +638,9 @@ function renderDashboard(){
         <table><thead><tr><th>Cliente</th><th>Próxima acción</th><th>Fecha límite</th><th>Estado</th></tr></thead><tbody>${vencRows}</tbody></table></div>
       <div class="card"><div class="card-h"><h3>Casos por estado</h3></div>
         <table><tbody>${estadoRows||'<tr><td class="empty">Sin casos</td></tr>'}</tbody></table></div>
-    </div>`;
+    </div>
+    <div class="card" style="margin-top:18px"><div class="card-h"><h3>Próximas audiencias de mediación</h3><span class="badge b-gold">${med.length}</span></div>
+      <table><thead><tr><th>Cliente</th><th>Fecha y hora</th><th>Modalidad</th><th>Calendario</th></tr></thead><tbody>${medRows}</tbody></table></div>`;
 }
 
 /* ============================================================
@@ -811,6 +831,14 @@ function tabResumen(c){
         <dt>Saldo retenido</dt><dd>${c.cuenta.saldoRetenido?"Sí":"No"}</dd>
       </dl></div></div>
     ${finBlock}
+    ${c.audiencia&&c.audiencia.fecha?`<div class="card"><div class="card-h"><h3>Audiencia de mediación</h3><span class="badge ${c.audiencia.realizada?'b-green':c.audiencia.calCreado?'b-blue':'b-gold'}">${c.audiencia.realizada?'Realizada':c.audiencia.calCreado?'En calendario':'Agendada'}</span></div><div class="card-b">
+      <dl class="kv">
+        <dt>Fecha y hora</dt><dd><b>${fdate(c.audiencia.fecha)} · ${esc(c.audiencia.hora||'—')}</b></dd>
+        <dt>Modalidad</dt><dd>${esc(c.audiencia.modalidad||'—')} ${c.audiencia.linkReunion?`· <a href="${esc(c.audiencia.linkReunion)}" target="_blank">link reunión ↗</a>`:''}</dd>
+        <dt>Mediador</dt><dd>${esc(DB.config.mediador||'—')}</dd>
+      </dl>
+      <button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="ACTIVE_TAB='mediacion';renderCaso()">Editar / gestionar audiencia →</button>
+    </div></div>`:''}
     <div class="card"><div class="card-h"><h3>Acciones rápidas</h3></div><div class="card-b" style="display:flex;flex-wrap:wrap;gap:10px">
       <button class="btn btn-ghost" onclick="ACTIVE_TAB='doc';renderCaso()">📨 Generar link de formulario</button>
       <button class="btn btn-ghost" onclick="ACTIVE_TAB='docs';renderCaso()">📄 Generar documentos</button>
@@ -1214,7 +1242,9 @@ function tabAudiencia(c){
   const checks = CLOUD
     ? DB.usuarios.map(u=>cb(u.id, u.nombre, u.rol)).join("")
     : [cb(DB.config.estudio.mail,"Calendario general del estudio"),cb(ab2.mail,"Nazareno Gómez Melé"),cb(ab1.mail,"Ivo Julián"),cb(DB.config.asistenteMail,"Asistente del estudio")].join("");
-  return `<div class="card" style="margin-top:18px"><div class="card-h"><h3>Audiencia de mediación · Google Calendar</h3>${a.realizada?'<span class="badge b-green">Realizada</span>':a.calCreado?'<span class="badge b-blue">En calendario</span>':''}</div><div class="card-b">
+  const banner = a.fecha ? `<div class="alert ${a.realizada?'alert-ok':'alert-info'}" style="font-size:14px"><span>📅</span><div><b>Audiencia agendada:</b> ${fdate(a.fecha)} a las ${esc(a.hora||'—')} · ${esc(a.modalidad||'')} · ${esc(a.duracion||'')} ${a.calCreado?' · <b>en calendario</b>':''}${a.realizada?' · <b>realizada</b>':''}<br><small>Editá los campos de abajo y "Actualizar audiencia", o "Eliminar audiencia" para borrarla.</small></div></div>` : '';
+  return `<div class="card" style="margin-top:18px"><div class="card-h"><h3>Audiencia de mediación · Google Calendar</h3>${a.realizada?'<span class="badge b-green">Realizada</span>':a.calCreado?'<span class="badge b-blue">En calendario</span>':a.fecha?'<span class="badge b-gold">Agendada</span>':''}</div><div class="card-b">
+    ${banner}
     <div class="frow fr3">
       ${inp("au_fec","Fecha",a.fecha||"","date")}${inp("au_hora","Hora",a.hora||"10:00","time")}
       ${sel("au_dur","Duración",["30 min","60 min","90 min","120 min"],a.duracion||"60 min")}
@@ -1237,11 +1267,11 @@ function tabAudiencia(c){
     ${a.calCreado?`<div class="hint" style="margin-top:8px">Nota: "Recargar" crea un evento nuevo en los calendarios; si cambiaste la fecha, borrá el evento anterior desde Google Calendar.</div>`:''}
   </div></div>`;
 }
-function eliminarAudiencia(){
+async function eliminarAudiencia(){
   if(!confirm("¿Eliminar la audiencia/mediación de este caso? (no borra eventos ya creados en Google Calendar)")) return;
   CURRENT.audiencia=null;
   logAction(CURRENT,"Audiencia de mediación eliminada");
-  save(); toast("Audiencia eliminada"); renderTab();
+  await persistCaso(CURRENT); toast("Audiencia eliminada"); renderTab();
 }
 function readAudiencia(){
   const c=CURRENT; c.audiencia=c.audiencia||{};
@@ -1251,7 +1281,7 @@ function readAudiencia(){
   a.invitados=Array.from(document.querySelectorAll(".md_inv:checked")).map(x=>x.value);
   return a;
 }
-function saveAudiencia(){ readAudiencia(); logAction(CURRENT,"Audiencia de mediación actualizada"); save(); toast("Audiencia guardada"); renderTab(); }
+async function saveAudiencia(){ readAudiencia(); logAction(CURRENT,"Audiencia de mediación actualizada"); await persistCaso(CURRENT); toast("Audiencia guardada"); renderTab(); }
 function buildCalUrl(c){
   const a=c.audiencia||{}; const fb=c.citarFacebook!==false;
   const title=`Mediación - ${clienteFull(c)} c/ Meta Platforms Inc.${fb?' y Facebook Argentina S.R.L.':''}`;
@@ -1289,24 +1319,26 @@ async function crearEventoAuto(c,a){
   const iso=d=>{const p=n=>String(n).padStart(2,"0");return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+"T"+p(d.getHours())+":"+p(d.getMinutes())+":00";};
   const det=[`Mediador: ${DB.config.mediador}`,`Cliente: ${clienteFull(c)}`,`Requerida: META PLATFORMS INC${fb?' y FACEBOOK ARGENTINA S.R.L.':''}`,`Modalidad: ${a.modalidad||'-'}`,a.linkReunion?`Link reunión: ${a.linkReunion}`:'',c.drive.link?`Carpeta Drive: ${c.drive.link}`:'',`Expediente: ${c.id}`,a.obs?`Obs: ${a.obs}`:''].filter(Boolean).join("\n");
   const location=a.modalidad==="Presencial"?(a.lugar||""):(a.linkReunion||"");
+  // guardamos la audiencia ANTES de tocar el calendario, así queda registrada y editable pase lo que pase
+  if(c.estado==="Mediación solicitada"||c.estado==="Mediación pendiente") c.estado="Audiencia fijada";
+  await persistCaso(c);
   toast("Creando eventos en los calendarios…");
   try{
     const {data:{session}}=await sb.auth.getSession();
     const r=await fetch(FUNCTIONS_URL+"/calendar-insert",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({invitados:a.invitados||[],title,startISO:iso(start),endISO:iso(end),details:det,location})});
     const j=await r.json();
-    if(j.error){ toast("Error: "+j.error,"err"); return; }
+    if(j.error){ toast("Audiencia guardada, pero falló el calendario: "+j.error,"err"); renderTab(); return; }
     const oks=(j.results||[]).filter(x=>x.ok).length;
     const fails=(j.results||[]).filter(x=>!x.ok);
     a.calCreado=true;
     logAction(c,"Eventos de mediación creados en Google Calendar ("+oks+" agenda/s)");
-    if(c.estado==="Mediación solicitada"||c.estado==="Mediación pendiente") c.estado="Audiencia fijada";
-    save();
+    await persistCaso(c);
     if(fails.length) toast(oks+" creado/s. Sin Google conectado: "+fails.length,"err");
     else toast("Evento cargado en "+oks+" agenda/s ✓");
     renderTab();
-  }catch(e){ console.error(e); toast("Error al crear eventos","err"); }
+  }catch(e){ console.error(e); toast("Audiencia guardada; error al crear el evento en el calendario","err"); renderTab(); }
 }
-function marcarAudienciaRealizada(){ const c=CURRENT; c.audiencia=c.audiencia||{}; c.audiencia.realizada=true; c.estado="Audiencia realizada"; logAction(c,"Audiencia de mediación marcada como realizada"); save(); toast("Audiencia marcada como realizada"); renderCaso(); }
+async function marcarAudienciaRealizada(){ const c=CURRENT; c.audiencia=c.audiencia||{}; c.audiencia.realizada=true; c.estado="Audiencia realizada"; logAction(c,"Audiencia de mediación marcada como realizada"); await persistCaso(c); toast("Audiencia marcada como realizada"); renderCaso(); }
 
 /* ---------- TAB: GASTOS ---------- */
 function tabGastos(c){

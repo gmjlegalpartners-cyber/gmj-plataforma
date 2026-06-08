@@ -71,9 +71,10 @@ Deno.serve(async (req) => {
     const c = row.data || {};
     c.drive = c.drive || {};
 
-    // asegurar carpeta + subcarpetas
+    // asegurar carpeta + subcarpetas (dentro de la carpeta padre del estudio)
     if (!c.drive.folderId) {
-      const fid = await createFolder(access, folderName(c), null);
+      const parentId = await ensureParent(access);
+      const fid = await createFolder(access, folderName(c), parentId);
       const subs: Record<string, string> = {};
       for (const s of SUBCARPETAS) subs[s] = await createFolder(access, s, fid);
       await makeReadableByLink(access, fid);
@@ -100,6 +101,15 @@ Deno.serve(async (req) => {
   }
 });
 
+const PARENT_NAME = "GMJ LEGAL - CLIENTES FORM";
+async function ensureParent(access: string): Promise<string> {
+  const q = encodeURIComponent(`name='${PARENT_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+  const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id)`, {
+    headers: { Authorization: `Bearer ${access}` },
+  }).then((x) => x.json());
+  if (r.files && r.files.length) return r.files[0].id;
+  return await createFolder(access, PARENT_NAME, null);
+}
 async function createFolder(access: string, name: string, parent: string | null): Promise<string> {
   const meta: any = { name, mimeType: "application/vnd.google-apps.folder" };
   if (parent) meta.parents = [parent];
@@ -112,12 +122,17 @@ async function createFolder(access: string, name: string, parent: string | null)
   return r.id;
 }
 async function uploadFile(access: string, name: string, mime: string, base64: string, parentId: string) {
+  // decodificar base64 -> bytes reales
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   const boundary = "gmj" + Math.random().toString(36).slice(2);
   const meta = JSON.stringify({ name, parents: [parentId] });
-  const body =
-    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n` +
-    `--${boundary}\r\nContent-Type: ${mime}\r\nContent-Transfer-Encoding: base64\r\n\r\n${base64}\r\n` +
-    `--${boundary}--`;
+  const enc = new TextEncoder();
+  const pre = enc.encode(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: ${mime}\r\n\r\n`);
+  const post = enc.encode(`\r\n--${boundary}--`);
+  const body = new Uint8Array(pre.length + bytes.length + post.length);
+  body.set(pre, 0); body.set(bytes, pre.length); body.set(post, pre.length + bytes.length);
   const r = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink", {
     method: "POST",
     headers: { Authorization: `Bearer ${access}`, "Content-Type": `multipart/related; boundary=${boundary}` },

@@ -573,7 +573,7 @@ function renderDashboard(){
   // próximas acciones
   const today=new Date().toISOString().slice(0,10);
   const venc=cs.filter(c=>c.fechaLimite).sort((a,b)=>a.fechaLimite.localeCompare(b.fechaLimite));
-  let finCards="";
+  let finCards="", gastosRow="";
   if(isSocio()){
     let totalUSD=0, cobradoUSD=0, totalARS=0, cobradoARS=0;
     cs.forEach(c=>{ const f=c.finanzas; const pagado=(c.pagos||[]).reduce((s,p)=>s+(p.moneda===f.moneda?Number(p.importe||0):0),0);
@@ -581,6 +581,16 @@ function renderDashboard(){
     finCards=`
       <div class="stat gold"><div class="lab">Facturación pactada (USD)</div><div class="val">${money(totalUSD,"USD")}</div><div class="sub">Cobrado: ${money(cobradoUSD,"USD")} · Pendiente: ${money(totalUSD-cobradoUSD,"USD")}</div></div>
       <div class="stat green"><div class="lab">Facturación pactada (ARS)</div><div class="val">${money(totalARS,"ARS")}</div><div class="sub">Cobrado: ${money(cobradoARS,"ARS")}</div></div>`;
+    // gastos generales del estudio (suma de todos los casos)
+    let gPendARS=0,gAbonARS=0,gPendUSD=0,gAbonUSD=0;
+    cs.forEach(c=>(c.gastos||[]).forEach(g=>{ const imp=Number(g.importe||0); if(!imp||g.estado==="no corresponde")return; const usd=g.moneda==="USD"; const ab=g.estado==="abonado";
+      if(usd){ ab?gAbonUSD+=imp:gPendUSD+=imp; } else { ab?gAbonARS+=imp:gPendARS+=imp; } }));
+    gastosRow=`<div class="grid g4" style="margin-bottom:18px">
+      <div class="stat amber"><div class="lab">Gastos pendientes (ARS)</div><div class="val">${money(gPendARS,"ARS")}</div><div class="sub">sin abonar</div></div>
+      <div class="stat green"><div class="lab">Gastos abonados (ARS)</div><div class="val">${money(gAbonARS,"ARS")}</div></div>
+      <div class="stat amber"><div class="lab">Gastos pendientes (USD)</div><div class="val">${money(gPendUSD,"USD")}</div><div class="sub">sin abonar</div></div>
+      <div class="stat green"><div class="lab">Gastos abonados (USD)</div><div class="val">${money(gAbonUSD,"USD")}</div></div>
+    </div>`;
   }
   let estadoBreak={};
   cs.forEach(c=>estadoBreak[c.estado]=(estadoBreak[c.estado]||0)+1);
@@ -604,6 +614,7 @@ function renderDashboard(){
       <div class="stat amber"><div class="lab">Documentación pendiente</div><div class="val">${pendDoc}</div><div class="sub">requieren seguimiento</div></div>
       ${isSocio()?finCards:`<div class="stat green"><div class="lab">Cuentas rehabilitadas</div><div class="val">${rehab}</div><div class="sub">resultados positivos</div></div><div class="stat"><div class="lab">Tareas abiertas</div><div class="val">${cs.reduce((s,c)=>s+(c.tareas||[]).filter(t=>!t.hecha).length,0)}</div></div>`}
     </div>
+    ${gastosRow}
     <div class="grid" style="grid-template-columns:1.6fr 1fr">
       <div class="card"><div class="card-h"><h3>Próximas acciones y vencimientos</h3></div>
         <table><thead><tr><th>Cliente</th><th>Próxima acción</th><th>Fecha límite</th><th>Estado</th></tr></thead><tbody>${vencRows}</tbody></table></div>
@@ -1218,11 +1229,19 @@ function tabAudiencia(c){
     <div class="frow fr2">${checks}</div>
     <div class="alert alert-info"><span>📅</span><div>${CLOUD?"Al crear el evento se carga <b>automáticamente</b> en el Google Calendar de cada usuario seleccionado que haya conectado su cuenta (Configuración → Conectar mi Google Calendar).":"Se abre Google Calendar con todo precargado (título, fecha, descripción con links e invitados). Confirmás con un clic."}</div></div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn btn-primary" onclick="saveAudiencia()">Guardar audiencia</button>
-      <button class="btn btn-gold" onclick="crearEventoCalendar()">📅 Crear evento en Google Calendar</button>
+      <button class="btn btn-primary" onclick="saveAudiencia()">${a.fecha?'Actualizar audiencia':'Guardar audiencia'}</button>
+      <button class="btn btn-gold" onclick="crearEventoCalendar()">📅 ${a.calCreado?'Recargar en Google Calendar':'Crear evento en Google Calendar'}</button>
       ${a.fecha&&!a.realizada?`<button class="btn btn-ghost" onclick="marcarAudienciaRealizada()">✓ Marcar como realizada</button>`:''}
+      ${(a.fecha||a.calCreado||a.realizada)?`<button class="btn btn-danger" onclick="eliminarAudiencia()">🗑 Eliminar audiencia</button>`:''}
     </div>
+    ${a.calCreado?`<div class="hint" style="margin-top:8px">Nota: "Recargar" crea un evento nuevo en los calendarios; si cambiaste la fecha, borrá el evento anterior desde Google Calendar.</div>`:''}
   </div></div>`;
+}
+function eliminarAudiencia(){
+  if(!confirm("¿Eliminar la audiencia/mediación de este caso? (no borra eventos ya creados en Google Calendar)")) return;
+  CURRENT.audiencia=null;
+  logAction(CURRENT,"Audiencia de mediación eliminada");
+  save(); toast("Audiencia eliminada"); renderTab();
 }
 function readAudiencia(){
   const c=CURRENT; c.audiencia=c.audiencia||{};

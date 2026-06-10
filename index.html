@@ -464,6 +464,7 @@ async function cloudLoad(){
     return c;
   });
   DB.casos.sort((a,b)=>(b.id||"").localeCompare(a.id||""));
+  _tareasSig=tareasSignature(DB.tareas);
 }
 let _saveTimer=null;
 function cloudSave(){ if(!sb) return; if(_saveTimer) clearTimeout(_saveTimer); _saveTimer=setTimeout(doCloudSave,350); }
@@ -501,10 +502,37 @@ function bindRealtime(){
     .on("postgres_changes",{event:"*",schema:"public",table:"casos"}, cloudRefresh)
     .on("postgres_changes",{event:"*",schema:"public",table:"case_finance"}, cloudRefresh)
     .on("postgres_changes",{event:"*",schema:"public",table:"settings"}, cloudRefresh)
-    .on("postgres_changes",{event:"*",schema:"public",table:"tareas"}, cloudRefresh)
+    .subscribe();
+  // canal propio para tareas (refresco liviano, no interrumpe)
+  sb.channel("gmj-tareas")
+    .on("postgres_changes",{event:"*",schema:"public",table:"tareas"}, onTareaChange)
+    .subscribe();
+  // canal propio para notificaciones (filtrado por usuario)
+  sb.channel("gmj-notif")
     .on("postgres_changes",{event:"INSERT",schema:"public",table:"notificaciones",filter:"user_id=eq."+SESSION.id}, onNotifInsert)
     .subscribe();
+  startLivePolling();
 }
+let _tareaRefreshTimer=null;
+function onTareaChange(){ if(_tareaRefreshTimer)clearTimeout(_tareaRefreshTimer); _tareaRefreshTimer=setTimeout(refreshTareasLive,150); }
+let _tareasSig="";
+function tareasSignature(rows){ return (rows||[]).map(t=>t.id+":"+t.estado+":"+(t.asignados||[]).join(",")+":"+(t.vence||"")+":"+(t.hora||"")+":"+t.prioridad+":"+(t.titulo||"")+":"+(t.observaciones||"").length).sort().join("|"); }
+async function refreshTareasLive(){
+  if(!CLOUD||!sb||!SESSION) return;
+  if(document.getElementById("modalRoot") && document.getElementById("modalRoot").innerHTML.trim()) return;
+  if(document.getElementById("tkMenu")) return;
+  try{
+    const [{data:td},{data:nd}]=await Promise.all([
+      sb.from("tareas").select("*"),
+      sb.from("notificaciones").select("*").order("created_at",{ascending:false}).limit(50)
+    ]);
+    if(nd){ DB.notificaciones=nd; renderBell(); }
+    if(td){ const sig=tareasSignature(td); if(sig!==_tareasSig){ _tareasSig=sig; DB.tareas=td;
+      if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='caso'&&CURRENT)renderCaso(); else if(ROUTE==='dashboard')renderDashboard(); } }
+  }catch(e){ console.error("refreshTareasLive",e); }
+}
+let _pollTimer=null;
+function startLivePolling(){ if(_pollTimer||!CLOUD) return; _pollTimer=setInterval(()=>{ if(!document.hidden) refreshTareasLive(); }, 10000); }
 function onNotifInsert(payload){
   const n=payload.new; if(!n) return;
   DB.notificaciones=DB.notificaciones||[]; if(DB.notificaciones.some(x=>x.id===n.id)) return;
@@ -2232,7 +2260,6 @@ function tareaRow(t){
   const caso=t.caso_id?DB.casos.find(c=>c.id===t.caso_id):null;
   const estSel=ESTADOS_TAREA.filter(e=>e!=="vencida").map(e=>`<option value="${e}" ${t.estado===e?'selected':''}>${e}</option>`).join("");
   return `<div class="tk-row" data-id="${t.id}">
-    <input class="tk-chk" type="checkbox" ${t.estado==='realizada'?'checked':''} onchange="cambiarEstadoTarea('${t.id}', this.checked?'realizada':'pendiente')" title="Marcar realizada">
     <div class="tk-main" onclick="tareaModal('${t.id}')">
       <div class="tk-title" style="${done?'text-decoration:line-through;color:var(--muted)':''}">${esc(t.titulo)} <span class="badge ${PRIO_COLOR[t.prioridad]||'b-grey'}">${t.prioridad}</span>${t.privacidad==='privada'?' <span class="badge b-grey">🔒</span>':''}</div>
       <div class="tk-meta">👤 ${esc(asig)}${t.vence?` · 📅 ${fdate(t.vence)}${t.hora?' '+esc(t.hora):''}`:''}${caso?` · 📁 ${esc(clienteFull(caso))}`:''}${t.observaciones?' · 📝':''}</div>

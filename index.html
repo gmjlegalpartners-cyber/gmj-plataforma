@@ -307,7 +307,7 @@ const SUPABASE_URL = "https://ybczeovebtsqdkgckcul.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_2cMt9Q29MthejwnnDeWvzQ_Ibn_NLmt";
 const CLOUD = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 const FUNCTIONS_URL = SUPABASE_URL ? SUPABASE_URL.replace(".supabase.co", ".functions.supabase.co") : "";
-const BUILD = "2026.06.10 · B1 finanzas";
+const BUILD = "2026.06.10 · B2 activo/historial";
 let sb = null;
 if (CLOUD && window.supabase) { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 let RT_BOUND = false;
@@ -2147,26 +2147,83 @@ function fileToB64(file){ return new Promise((res,rej)=>{ const r=new FileReader
 /* ============================================================
    FINANZAS GLOBAL (socios)
    ============================================================ */
+function casoEsHistorial(c){ const f=c.finanzas||{}; return f.estadoLiquidacion==="liquidado_completo"; }
+function dosMon(o){ return `<span style="white-space:nowrap">${money(o.USD,"USD")}</span> · <span style="white-space:nowrap">${money(o.ARS,"ARS")}</span>`; }
+function calcFinanzasGlobal(){
+  const z=()=>({USD:0,ARS:0}); const cur=m=>(m==="ARS"?"ARS":"USD");
+  const a={pendCobro:z(),pendDev:z(),pendGasto:z(),pendLiq:z(),cobrado:z(),gastosPag:z(),devRealizada:z()};
+  casosActivos().forEach(c=>{
+    const f=c.finanzas||{}; const m=cur(f.moneda); const cob=cobradoDe(c);
+    a.cobrado[m]+=cob;
+    if(!casoEsHistorial(c)){
+      a.pendCobro[m]+=Math.max(Number(f.montoTotal||0)-cob,0);
+      if(["pendiente_dev","parcial_dev"].includes(f.estadoDevolucion)) a.pendDev[m]+=Number(f.devolucion||0);
+      if(cob>0) a.pendLiq[m]+=Math.max(cob-(f.estadoDevolucion==="realizada_dev"?Number(f.devolucion||0):0),0);
+    }
+    if(f.estadoDevolucion==="realizada_dev") a.devRealizada[m]+=Number(f.devolucion||0);
+    (c.gastos||[]).forEach(g=>{ const gm=cur(g.moneda); const imp=Number(g.importe||0); if(g.estado==='pagado') a.gastosPag[gm]+=imp; else a.pendGasto[gm]+=imp; });
+  });
+  a.caja={USD:a.cobrado.USD-a.gastosPag.USD-a.devRealizada.USD, ARS:a.cobrado.ARS-a.gastosPag.ARS-a.devRealizada.ARS};
+  return a;
+}
+let FINFILTER={q:"",cobro:"",res:"",dev:"",liq:"",mon:""};
 function renderFinanzasGlobal(){
   setCrumb("Finanzas global"); topActions("");
-  const cs=casosActivos();
-  let rows="", tUSD=0,cUSD=0,pUSD=0, tARS=0,cARS=0,pARS=0;
-  cs.forEach(c=>{
-    const f=c.finanzas; const cobrado=(c.pagos||[]).reduce((s,p)=>s+(p.moneda===f.moneda?Number(p.importe||0):0),0);
-    const pend=Number(f.montoTotal||0)-cobrado;
-    if(f.moneda==="USD"){tUSD+=Number(f.montoTotal||0);cUSD+=cobrado;pUSD+=pend;}else{tARS+=Number(f.montoTotal||0);cARS+=cobrado;pARS+=pend;}
-    rows+=`<tr class="clickable" onclick="go('caso','${c.id}')"><td><b>${esc(clienteFull(c))}</b><br><small style="color:var(--muted)">${esc(c.id)}</small></td>
-      <td>${money(f.montoTotal,f.moneda)}</td><td>${money(cobrado,f.moneda)}</td><td>${money(pend,f.moneda)}</td>
-      <td>${money(f.devolucion,f.moneda)}</td><td><span class="badge ${pagoBadge(f.estadoPago)}">${esc(f.estadoPago)}</span></td></tr>`;
-  });
+  const a=calcFinanzasGlobal();
+  const todos=casosActivos();
+  const activos=todos.filter(c=>!casoEsHistorial(c));
+  const histo=todos.filter(c=>casoEsHistorial(c));
+  // filtros sobre activos
+  let act=activos.slice();
+  const F=FINFILTER;
+  if(F.q){ const q=F.q.toLowerCase(); act=act.filter(c=>clienteFull(c).toLowerCase().includes(q)||(c.id||"").toLowerCase().includes(q)); }
+  if(F.cobro) act=act.filter(c=>(c.finanzas||{}).estadoCobro===F.cobro);
+  if(F.res) act=act.filter(c=>(c.finanzas||{}).estadoResultado===F.res);
+  if(F.dev) act=act.filter(c=>(c.finanzas||{}).estadoDevolucion===F.dev);
+  if(F.liq) act=act.filter(c=>(c.finanzas||{}).estadoLiquidacion===F.liq);
+  if(F.mon) act=act.filter(c=>(c.finanzas||{}).moneda===F.mon);
+  const fila=(c,hist)=>{ const f=c.finanzas||{}; const cob=cobradoDe(c); const pend=Math.max(Number(f.montoTotal||0)-cob,0);
+    return `<tr class="clickable" onclick="go('caso','${c.id}')">
+      <td><b>${esc(clienteFull(c))}</b><br><small style="color:var(--muted)">${esc(c.id)}</small></td>
+      <td>${esc(f.moneda||'—')}</td><td>${money(f.montoTotal,f.moneda)}</td><td>${money(cob,f.moneda)}</td>
+      ${hist?'':`<td>${money(pend,f.moneda)}</td>`}
+      <td><span class="badge ${FIN_COLOR[f.estadoCobro]||'b-grey'}">${finLabel(f.estadoCobro)}</span></td>
+      <td><span class="badge ${FIN_COLOR[f.estadoResultado]||'b-grey'}">${finLabel(f.estadoResultado)}</span></td>
+      <td><span class="badge ${FIN_COLOR[f.estadoDevolucion]||'b-grey'}">${finLabel(f.estadoDevolucion)}</span></td>
+      <td><span class="badge ${FIN_COLOR[f.estadoLiquidacion]||'b-grey'}">${finLabel(f.estadoLiquidacion)}</span></td>
+    </tr>`; };
+  const actRows=act.length?act.map(c=>fila(c,false)).join(""):`<tr><td colspan="9" class="empty">Sin casos que requieran acción</td></tr>`;
+  const histRows=histo.length?histo.map(c=>fila(c,true)).join(""):`<tr><td colspan="8" class="empty">Sin casos en el historial</td></tr>`;
+  const opt=(arr,v)=>arr.map(o=>`<option value="${o}" ${v===o?'selected':''}>${finLabel(o)}</option>`).join("");
   document.getElementById("view").innerHTML=`
-    <div class="pagehead"><div><h2>Finanzas global del estudio</h2><div class="sub">Resumen de todos los casos · solo socios</div></div></div>
-    <div class="grid g3" style="margin-bottom:18px">
-      <div class="stat gold"><div class="lab">Pactado USD</div><div class="val">${money(tUSD,"USD")}</div><div class="sub">Cobrado ${money(cUSD,"USD")} · Pend. ${money(pUSD,"USD")}</div></div>
-      <div class="stat green"><div class="lab">Pactado ARS</div><div class="val">${money(tARS,"ARS")}</div><div class="sub">Cobrado ${money(cARS,"ARS")} · Pend. ${money(pARS,"ARS")}</div></div>
-      <div class="stat accent"><div class="lab">Casos</div><div class="val">${cs.length}</div></div>
+    <div class="pagehead"><div><h2>Finanzas global del estudio</h2><div class="sub">Solo socios · ${activos.length} activos · ${histo.length} en historial</div></div></div>
+
+    <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 10px">Resumen activo</div>
+    <div class="grid g3" style="margin-bottom:8px">
+      <div class="stat accent"><div class="lab">Caja estimada (USD · ARS)</div><div class="val" style="font-size:18px">${dosMon(a.caja)}</div><div class="sub">cobrado − gastos pagados − devoluciones</div></div>
+      <div class="stat amber"><div class="lab">Pendiente de cobro</div><div class="val" style="font-size:18px">${dosMon(a.pendCobro)}</div></div>
+      <div class="stat gold"><div class="lab">Pendiente de liquidar entre socios</div><div class="val" style="font-size:18px">${dosMon(a.pendLiq)}</div></div>
     </div>
-    <div class="card"><table><thead><tr><th>Cliente</th><th>Total</th><th>Cobrado</th><th>Pendiente</th><th>Devolución</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    <div class="grid g3" style="margin-bottom:18px">
+      <div class="stat"><div class="lab">Pendiente de devolución</div><div class="val" style="font-size:18px">${dosMon(a.pendDev)}</div></div>
+      <div class="stat"><div class="lab">Pendiente de gastos</div><div class="val" style="font-size:18px">${dosMon(a.pendGasto)}</div></div>
+      <div class="stat green"><div class="lab">Cobrado total</div><div class="val" style="font-size:18px">${dosMon(a.cobrado)}</div></div>
+    </div>
+    <div class="alert alert-info" style="margin-bottom:16px"><span>ℹ️</span><div>La <b>caja</b> es estimada: se afina cuando carguemos los <b>cambios de divisa</b> (próxima etapa) y la <b>liquidación entre socios</b>. Un caso pasa al historial cuando su liquidación queda <b>“Liquidado completamente”</b>.</div></div>
+
+    <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 10px">Casos que requieren acción</div>
+    <div class="filters" style="margin-bottom:10px">
+      <input placeholder="Buscar cliente…" value="${esc(F.q)}" oninput="FINFILTER.q=this.value;renderFinanzasGlobal()" style="min-width:180px">
+      <select onchange="FINFILTER.mon=this.value;renderFinanzasGlobal()"><option value="">Moneda</option><option ${F.mon==='USD'?'selected':''}>USD</option><option ${F.mon==='ARS'?'selected':''}>ARS</option></select>
+      <select onchange="FINFILTER.cobro=this.value;renderFinanzasGlobal()"><option value="">Cobro</option>${opt(FIN_COBRO,F.cobro)}</select>
+      <select onchange="FINFILTER.res=this.value;renderFinanzasGlobal()"><option value="">Resultado</option>${opt(FIN_RESULTADO,F.res)}</select>
+      <select onchange="FINFILTER.dev=this.value;renderFinanzasGlobal()"><option value="">Devolución</option>${opt(FIN_DEVOLUCION,F.dev)}</select>
+      <select onchange="FINFILTER.liq=this.value;renderFinanzasGlobal()"><option value="">Liquidación</option>${opt(FIN_LIQUIDACION,F.liq)}</select>
+    </div>
+    <div class="card" style="margin-bottom:24px"><table><thead><tr><th>Cliente</th><th>Mon.</th><th>Total</th><th>Cobrado</th><th>Pend.</th><th>Cobro</th><th>Resultado</th><th>Devolución</th><th>Liquidación</th></tr></thead><tbody>${actRows}</tbody></table></div>
+
+    <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 10px">Historial (cerrados y liquidados)</div>
+    <div class="card"><table><thead><tr><th>Cliente</th><th>Mon.</th><th>Total</th><th>Cobrado</th><th>Cobro</th><th>Resultado</th><th>Devolución</th><th>Liquidación</th></tr></thead><tbody>${histRows}</tbody></table></div>`;
 }
 
 /* ============================================================

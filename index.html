@@ -575,7 +575,7 @@ function go(route, arg){
    ============================================================ */
 function renderDashboard(){
   setCrumb("Panel de control");
-  const cs=DB.casos;
+  const cs=casosActivos();
   const activos=cs.filter(c=>!["Cerrado","Resultado negativo"].includes(c.estado)).length;
   const rehab=cs.filter(c=>c.estado==="Cuenta rehabilitada").length;
   const pendDoc=cs.filter(c=>c.estado==="Documentación pendiente").length;
@@ -648,12 +648,14 @@ function renderDashboard(){
 /* ============================================================
    CASOS LIST
    ============================================================ */
-let FILTER={q:"",estado:""};
+function casosActivos(){ return DB.casos.filter(c=>!c.archivado); }
+let FILTER={q:"",estado:"",arch:false};
 function renderCasos(){
   setCrumb("Casos");
   topActions(`<button class="btn btn-primary" onclick="openNewCase()">＋ Nuevo caso</button>`);
   const opts=ESTADOS.map(e=>`<option ${FILTER.estado===e?'selected':''}>${e}</option>`).join("");
-  let list=DB.casos.filter(c=>{
+  const base=DB.casos.filter(c=>FILTER.arch?c.archivado:!c.archivado);
+  let list=base.filter(c=>{
     const matchQ=!FILTER.q || (clienteFull(c)+c.id+(c.cuenta.handle||"")).toLowerCase().includes(FILTER.q.toLowerCase());
     const matchE=!FILTER.estado || c.estado===FILTER.estado;
     return matchQ && matchE;
@@ -666,21 +668,46 @@ function renderCasos(){
       <td><span class="badge ${ESTADO_COLOR[c.estado]||'b-grey'}"><span class="dot"></span>${esc(c.estado)}</span></td>
       <td>${esc(abLabel(c.abogadoPatrocinante))}</td>
       <td style="width:130px"><div style="font-size:11px;color:var(--muted)">${prog}% completo</div><div class="progress"><i style="width:${prog}%"></i></div></td>
-      <td>${c.fechaLimite?`<span class="badge ${c.fechaLimite<new Date().toISOString().slice(0,10)?'b-red':'b-grey'}">${fdate(c.fechaLimite)}</span>`:'—'}</td>
+      <td>${FILTER.arch?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();archivarCaso('${c.id}',false)">↩ Restaurar</button>`:(c.fechaLimite?`<span class="badge ${c.fechaLimite<new Date().toISOString().slice(0,10)?'b-red':'b-grey'}">${fdate(c.fechaLimite)}</span>`:'—')}</td>
     </tr>`;
   }).join("");
   document.getElementById("view").innerHTML=`
-    <div class="pagehead"><div><h2>Casos</h2><div class="sub">${list.length} de ${DB.casos.length} casos</div></div></div>
+    <div class="pagehead"><div><h2>${FILTER.arch?'Casos archivados':'Casos'}</h2><div class="sub">${list.length} ${FILTER.arch?'archivados':'casos activos'}</div></div></div>
     <div class="filters">
       <div class="search"><span class="si">🔎</span><input id="fq" placeholder="Buscar por cliente, ID o usuario…" value="${esc(FILTER.q)}" oninput="FILTER.q=this.value;renderCasos();document.getElementById('fq').focus()"></div>
       <select onchange="FILTER.estado=this.value;renderCasos()"><option value="">Todos los estados</option>${opts}</select>
-      ${FILTER.estado||FILTER.q?`<button class="btn btn-ghost btn-sm" onclick="FILTER={q:'',estado:''};renderCasos()">Limpiar</button>`:''}
+      <button class="btn btn-ghost btn-sm ${FILTER.arch?'btn-gold':''}" style="${FILTER.arch?'color:#fff':''}" onclick="FILTER.arch=!FILTER.arch;renderCasos()">${FILTER.arch?'← Ver activos':'🗄 Ver archivados'}</button>
+      ${FILTER.estado||FILTER.q?`<button class="btn btn-ghost btn-sm" onclick="FILTER.q='';FILTER.estado='';renderCasos()">Limpiar</button>`:''}
     </div>
     <div class="card">
-      <table><thead><tr><th>Cliente</th><th>Cuenta</th><th>Estado</th><th>Patrocinante</th><th>Avance</th><th>Límite</th></tr></thead>
-      <tbody>${rows||'<tr><td colspan="6"><div class="empty"><div class="ico">📁</div>No hay casos que coincidan</div></td></tr>'}</tbody></table>
+      <table><thead><tr><th>Cliente</th><th>Cuenta</th><th>Estado</th><th>Patrocinante</th><th>Avance</th><th>${FILTER.arch?'':'Límite'}</th></tr></thead>
+      <tbody>${rows||`<tr><td colspan="6"><div class="empty"><div class="ico">📁</div>${FILTER.arch?'No hay casos archivados':'No hay casos que coincidan'}</div></td></tr>`}</tbody></table>
     </div>`;
   setTimeout(()=>{const fq=document.getElementById('fq');if(fq){fq.focus();fq.setSelectionRange(fq.value.length,fq.value.length);}},0);
+}
+async function archivarCaso(id, arch){
+  const c=DB.casos.find(x=>x.id===id); if(!c) return;
+  if(arch && !confirm("¿Archivar este caso? Dejará de aparecer en el listado principal. Se puede restaurar cuando quieras.")) return;
+  c.archivado=arch; c.archivadoPor=arch?SESSION.id:null; c.archivadoEn=arch?now():null;
+  logAction(c, arch?"Caso archivado":"Caso restaurado");
+  await persistCaso(c);
+  toast(arch?"Caso archivado":"Caso restaurado");
+  if(arch && ROUTE==="caso"){ go("casos"); } else if(ROUTE==="caso"){ renderCaso(); } else { renderCasos(); }
+}
+async function eliminarCasoDef(id){
+  if(!isSocio()){ toast("Solo los socios pueden eliminar definitivamente","err"); return; }
+  if(!confirm("¿Eliminar este caso DEFINITIVAMENTE? Esta acción NO se puede deshacer.")) return;
+  const motivo = prompt("Motivo de la eliminación (opcional):")||"";
+  if(CLOUD){
+    try{
+      await sb.from("audit_log").insert({accion:"Caso eliminado definitivamente", caso_id:id, detalle:motivo, usuario:SESSION.id});
+      const {error}=await sb.from("casos").delete().eq("id",id);
+      if(error){ toast("Error al eliminar: "+error.message,"err"); return; }
+    }catch(e){ console.error(e); toast("Error al eliminar","err"); return; }
+  }
+  DB.casos=DB.casos.filter(c=>c.id!==id);
+  if(!CLOUD) saveLocal();
+  CURRENT=null; toast("Caso eliminado"); go("casos");
 }
 function caseProgress(c){
   let done=0,total=7;
@@ -769,12 +796,15 @@ function renderCaso(){
         <div style="font-size:19px;font-weight:700;color:var(--navy)">${esc(clienteFull(c))}</div>
         <div style="font-size:13px;color:var(--muted);margin-top:3px">${esc(c.id)} · ${esc(c.cuenta.handle||"sin cuenta")} · Alta ${fdate(c.fechaAlta)}</div>
       </div>
-      <div style="display:flex;gap:10px;align-items:center">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <select onchange="changeEstado(this.value)" style="padding:8px 12px;border:1px solid var(--line2);border-radius:8px;font-weight:600">
           ${ESTADOS.map(e=>`<option ${c.estado===e?'selected':''}>${e}</option>`).join("")}
         </select>
+        ${c.archivado?`<button class="btn btn-ghost btn-sm" onclick="archivarCaso('${c.id}',false)">↩ Restaurar</button>`:`<button class="btn btn-ghost btn-sm" onclick="archivarCaso('${c.id}',true)">🗄 Archivar</button>`}
+        ${isSocio()?`<button class="btn btn-danger btn-sm" onclick="eliminarCasoDef('${c.id}')">🗑 Eliminar</button>`:''}
       </div>
-    </div></div>`;
+    </div></div>
+    ${c.archivado?'<div class="alert alert-warn"><span>🗄</span><div>Este caso está <b>archivado</b>. No aparece en el listado principal. Podés restaurarlo arriba.</div></div>':''}`;
 
   document.getElementById("view").innerHTML = header + `<div class="tabs">${tabBtns}</div><div id="tabBody"></div>`;
   renderTab();
@@ -1740,7 +1770,7 @@ function fileToB64(file){ return new Promise((res,rej)=>{ const r=new FileReader
    ============================================================ */
 function renderFinanzasGlobal(){
   setCrumb("Finanzas global"); topActions("");
-  const cs=DB.casos;
+  const cs=casosActivos();
   let rows="", tUSD=0,cUSD=0,pUSD=0, tARS=0,cARS=0,pARS=0;
   cs.forEach(c=>{
     const f=c.finanzas; const cobrado=(c.pagos||[]).reduce((s,p)=>s+(p.moneda===f.moneda?Number(p.importe||0):0),0);

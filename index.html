@@ -541,12 +541,18 @@ function onNotifInsert(payload){
   toast("🔔 "+(n.titulo||"Nueva notificación"));
 }
 /* ---------- TAREAS: persistencia ---------- */
-async function tareaUpsert(t){
+async function tareaUpsert(t, isNew){
   if(CLOUD){
+    // En altas usamos INSERT (política de inserción); en ediciones usamos UPDATE
+    // (política de edición: socio, creador o asignado). Evita el choque de RLS del upsert.
+    const exists = (DB.tareas||[]).some(x=>x.id===t.id);
+    const insert = isNew===true || (isNew===undefined && !exists);
     const row={ id:t.id, titulo:t.titulo, descripcion:t.descripcion||null, asignados:t.asignados||[], creado_por:t.creado_por, caso_id:t.caso_id||null, cliente_nombre:t.cliente_nombre||null, vence:t.vence||null, hora:t.hora||null, duracion:t.duracion||null, prioridad:t.prioridad||"media", estado:t.estado||"pendiente", observaciones:t.observaciones||null, recordatorio:t.recordatorio||null, privacidad:t.privacidad||"equipo", eventos:t.eventos||{}, updated_at:new Date().toISOString() };
-    const {data,error}=await sb.from("tareas").upsert(row).select().maybeSingle();
-    if(error){ console.error("tareaUpsert",error); toast("Error al guardar la tarea: "+error.message,"err"); return null; }
-    return data;
+    let res;
+    if(insert){ res=await sb.from("tareas").insert(row).select().maybeSingle(); }
+    else { const up={...row}; delete up.creado_por; res=await sb.from("tareas").update(up).eq("id",t.id).select().maybeSingle(); }
+    if(res.error){ console.error("tareaUpsert",res.error); toast("Error al guardar la tarea: "+res.error.message,"err"); return null; }
+    return res.data;
   } else {
     DB.tareas=DB.tareas||[]; const i=DB.tareas.findIndex(x=>x.id===t.id);
     if(i>=0) DB.tareas[i]=t; else DB.tareas.push(t); saveLocal(); return t;
@@ -2421,9 +2427,10 @@ async function saveTareaForm(id){
   let t = id ? (DB.tareas||[]).find(x=>x.id===id) : null;
   const prevAsign = (t && Array.isArray(t.asignados)) ? t.asignados.slice() : [];
   const prevEstado = t ? t.estado : null;
+  const isNew=!t;
   const base = t || { id:newTareaId(), creado_por:SESSION.id, created_at:new Date().toISOString(), eventos:{} };
   Object.assign(base, { titulo:tit, descripcion:val("tk_desc"), asignados, caso_id:casoId, cliente_nombre:caso?clienteFull(caso):null, vence:val("tk_vence")||null, hora:val("tk_hora")||null, duracion:val("tk_dur")||null, prioridad:val("tk_prio"), estado:val("tk_est"), observaciones:val("tk_obs"), recordatorio:val("tk_rec"), privacidad:val("tk_priv") });
-  await tareaUpsert(base);
+  await tareaUpsert(base, isNew);
   DB.tareas=DB.tareas||[]; const i=DB.tareas.findIndex(x=>x.id===base.id); if(i>=0)DB.tareas[i]=base; else DB.tareas.push(base);
   closeModal(); toast("Tarea guardada");
   if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='caso')renderCaso();

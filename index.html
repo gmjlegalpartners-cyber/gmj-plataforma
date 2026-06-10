@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>GMJ Legal Partners — Plataforma de Gestión</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -274,6 +277,7 @@ tr.clickable:hover{background:#f8fafc}
         <div><div class="nm" id="unm">–</div><div class="rl" id="url">–</div></div>
       </div>
       <button class="logout" onclick="logout()">Cerrar sesión</button>
+      <div id="buildTag" style="text-align:center;font-size:10px;color:var(--muted);margin-top:8px;opacity:.7"></div>
     </div>
   </aside>
   <div class="main">
@@ -303,6 +307,7 @@ const SUPABASE_URL = "https://ybczeovebtsqdkgckcul.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_2cMt9Q29MthejwnnDeWvzQ_Ibn_NLmt";
 const CLOUD = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 const FUNCTIONS_URL = SUPABASE_URL ? SUPABASE_URL.replace(".supabase.co", ".functions.supabase.co") : "";
+const BUILD = "2026.06.10 · B1 finanzas";
 let sb = null;
 if (CLOUD && window.supabase) { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 let RT_BOUND = false;
@@ -720,6 +725,7 @@ function initApp(){
   document.getElementById("unm").textContent = SESSION.nombre;
   document.getElementById("url").textContent = isSocio()?"Socio / Administrador":"Colaborador";
   setLogos(); buildNav(); renderBell(); go("dashboard");
+  const bt=document.getElementById("buildTag"); if(bt)bt.textContent="Versión "+BUILD;
 }
 function buildNav(){
   const items=[

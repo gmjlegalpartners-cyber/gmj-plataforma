@@ -307,7 +307,7 @@ const SUPABASE_URL = "https://ybczeovebtsqdkgckcul.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_2cMt9Q29MthejwnnDeWvzQ_Ibn_NLmt";
 const CLOUD = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 const FUNCTIONS_URL = SUPABASE_URL ? SUPABASE_URL.replace(".supabase.co", ".functions.supabase.co") : "";
-const BUILD = "2026.06.10 · B3 cambios de divisa";
+const BUILD = "2026.06.10 · B4 liquidación socios";
 let sb = null;
 if (CLOUD && window.supabase) { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 let RT_BOUND = false;
@@ -346,8 +346,8 @@ const FIN_COBRO=["no_cobrado","cobro_parcial","cobrado_completo","saldo_pendient
 const FIN_RESULTADO=["en_tramite","favorable","negativo","cerrado_sin_resultado","cancelado_cliente","desistido"];
 const FIN_DEVOLUCION=["no_corresponde","pendiente_dev","parcial_dev","realizada_dev","cancelada_dev"];
 const FIN_LIQUIDACION=["no_liquidado","pendiente_dividir","liquidado_parcial","liquidado_completo"];
-const FIN_LABEL={no_cobrado:"No cobrado",cobro_parcial:"Cobro parcial",cobrado_completo:"Cobrado completo",saldo_pendiente:"Saldo pendiente",vencido:"Vencido",en_tramite:"En trámite",favorable:"Resultado favorable",negativo:"Resultado negativo",cerrado_sin_resultado:"Cerrado sin resultado",cancelado_cliente:"Cancelado por cliente",desistido:"Caso desistido",no_corresponde:"No corresponde",pendiente_dev:"Pendiente de devolución",parcial_dev:"Devolución parcial",realizada_dev:"Devolución realizada",cancelada_dev:"Devolución cancelada",no_liquidado:"No liquidado",pendiente_dividir:"Pendiente de dividir",liquidado_parcial:"Liquidado parcialmente",liquidado_completo:"Liquidado completamente"};
-const FIN_COLOR={no_cobrado:"b-grey",cobro_parcial:"b-amber",cobrado_completo:"b-green",saldo_pendiente:"b-amber",vencido:"b-red",en_tramite:"b-blue",favorable:"b-green",negativo:"b-red",cerrado_sin_resultado:"b-grey",cancelado_cliente:"b-grey",desistido:"b-grey",no_corresponde:"b-grey",pendiente_dev:"b-amber",parcial_dev:"b-amber",realizada_dev:"b-green",cancelada_dev:"b-grey",no_liquidado:"b-grey",pendiente_dividir:"b-amber",liquidado_parcial:"b-amber",liquidado_completo:"b-green"};
+const FIN_LABEL={pendiente:"Pendiente",no_cobrado:"No cobrado",cobro_parcial:"Cobro parcial",cobrado_completo:"Cobrado completo",saldo_pendiente:"Saldo pendiente",vencido:"Vencido",en_tramite:"En trámite",favorable:"Resultado favorable",negativo:"Resultado negativo",cerrado_sin_resultado:"Cerrado sin resultado",cancelado_cliente:"Cancelado por cliente",desistido:"Caso desistido",no_corresponde:"No corresponde",pendiente_dev:"Pendiente de devolución",parcial_dev:"Devolución parcial",realizada_dev:"Devolución realizada",cancelada_dev:"Devolución cancelada",no_liquidado:"No liquidado",pendiente_dividir:"Pendiente de dividir",liquidado_parcial:"Liquidado parcialmente",liquidado_completo:"Liquidado completamente"};
+const FIN_COLOR={pendiente:"b-amber",no_cobrado:"b-grey",cobro_parcial:"b-amber",cobrado_completo:"b-green",saldo_pendiente:"b-amber",vencido:"b-red",en_tramite:"b-blue",favorable:"b-green",negativo:"b-red",cerrado_sin_resultado:"b-grey",cancelado_cliente:"b-grey",desistido:"b-grey",no_corresponde:"b-grey",pendiente_dev:"b-amber",parcial_dev:"b-amber",realizada_dev:"b-green",cancelada_dev:"b-grey",no_liquidado:"b-grey",pendiente_dividir:"b-amber",liquidado_parcial:"b-amber",liquidado_completo:"b-green"};
 function finLabel(v){ return FIN_LABEL[v]||v||"—"; }
 function finEstadosDefault(){ return {estadoCobro:"no_cobrado",estadoResultado:"en_tramite",estadoDevolucion:"no_corresponde",estadoLiquidacion:"no_liquidado"}; }
 
@@ -450,14 +450,15 @@ function uid(p){ return p+Math.random().toString(36).slice(2,8); }
 /* ---------- CAPA DE NUBE (Supabase) ---------- */
 function isSocioRole(){ return SESSION && SESSION.rol==="socio"; }
 async function cloudLoad(){
-  const [st, profs, cs, fin, tk, nt, cd] = await Promise.all([
+  const [st, profs, cs, fin, tk, nt, cd, lq] = await Promise.all([
     sb.from("settings").select("data").eq("id",1).maybeSingle(),
     sb.from("profiles").select("id,nombre,rol"),
     sb.from("casos").select("id,data,form_token"),
     sb.from("case_finance").select("*"),
     sb.from("tareas").select("*"),
     sb.from("notificaciones").select("*").order("created_at",{ascending:false}).limit(50),
-    sb.from("cambios_divisa").select("*").order("fecha",{ascending:false})
+    sb.from("cambios_divisa").select("*").order("fecha",{ascending:false}),
+    sb.from("liquidaciones").select("*").order("fecha",{ascending:false})
   ]);
   const cfg = (st.data && st.data.data) || {};
   DB = {
@@ -468,6 +469,7 @@ async function cloudLoad(){
     tareas: tk.data||[],
     notificaciones: nt.data||[],
     cambios: cd.data||[],
+    liquidaciones: lq.data||[],
     counter: cfg.counter||0
   };
   const finMap={}; (fin.data||[]).forEach(f=>finMap[f.caso_id]=f);
@@ -520,6 +522,7 @@ function bindRealtime(){
     .on("postgres_changes",{event:"*",schema:"public",table:"case_finance"}, cloudRefresh)
     .on("postgres_changes",{event:"*",schema:"public",table:"settings"}, cloudRefresh)
     .on("postgres_changes",{event:"*",schema:"public",table:"cambios_divisa"}, cloudRefresh)
+    .on("postgres_changes",{event:"*",schema:"public",table:"liquidaciones"}, cloudRefresh)
     .subscribe();
   // canal propio para tareas (refresco liviano, no interrumpe)
   sb.channel("gmj-tareas")
@@ -1612,6 +1615,7 @@ function tabFinanzas(c){
       <table><thead><tr><th>Fecha</th><th>Importe</th><th>Medio</th><th>Obs.</th><th></th></tr></thead><tbody>${pagos}</tbody></table></div>
   </div>
   ${finEstadoBlock(c)}
+  ${finLiqBlock(c)}
   ${finHistCard(c)}`;
 }
 function finEstadoBlock(c){
@@ -2156,25 +2160,86 @@ function casoEsHistorial(c){ const f=c.finanzas||{}; return f.estadoLiquidacion=
 function dosMon(o){ return `<span style="white-space:nowrap">${money(o.USD,"USD")}</span> · <span style="white-space:nowrap">${money(o.ARS,"ARS")}</span>`; }
 function calcFinanzasGlobal(){
   const z=()=>({USD:0,ARS:0}); const cur=m=>(m==="ARS"?"ARS":"USD");
-  const a={pendCobro:z(),pendDev:z(),pendGasto:z(),pendLiq:z(),cobrado:z(),gastosPag:z(),devRealizada:z(),fxOut:z(),fxIn:z()};
+  const a={pendCobro:z(),pendDev:z(),pendGasto:z(),pendLiq:z(),cobrado:z(),gastosPag:z(),devRealizada:z(),fxOut:z(),fxIn:z(),liquidado:z()};
+  // liquidado por caso (suma de repartos)
+  const liqByCaso={};
+  (DB.liquidaciones||[]).forEach(l=>{ const m=cur(l.moneda); const dist=(l.reparto||[]).reduce((s,r)=>s+Number(r.monto||0),0); a.liquidado[m]+=dist; liqByCaso[l.caso_id]=(liqByCaso[l.caso_id]||0)+dist; });
   casosActivos().forEach(c=>{
     const f=c.finanzas||{}; const m=cur(f.moneda); const cob=cobradoDe(c);
     a.cobrado[m]+=cob;
     if(!casoEsHistorial(c)){
       a.pendCobro[m]+=Math.max(Number(f.montoTotal||0)-cob,0);
       if(["pendiente_dev","parcial_dev"].includes(f.estadoDevolucion)) a.pendDev[m]+=Number(f.devolucion||0);
-      if(cob>0) a.pendLiq[m]+=Math.max(cob-(f.estadoDevolucion==="realizada_dev"?Number(f.devolucion||0):0),0);
+      if(cob>0){ const neto=cob-(f.estadoDevolucion==="realizada_dev"?Number(f.devolucion||0):0); a.pendLiq[m]+=Math.max(neto-(liqByCaso[c.id]||0),0); }
     }
     if(f.estadoDevolucion==="realizada_dev") a.devRealizada[m]+=Number(f.devolucion||0);
     (c.gastos||[]).forEach(g=>{ const gm=cur(g.moneda); const imp=Number(g.importe||0); if(!imp||g.estado==='no corresponde')return; if(g.estado==='abonado') a.gastosPag[gm]+=imp; else a.pendGasto[gm]+=imp; });
   });
-  // cambios de divisa: salen de la moneda origen, entran en la destino
   (DB.cambios||[]).forEach(x=>{ const mo=cur(x.moneda_origen), md=cur(x.moneda_destino); a.fxOut[mo]+=Number(x.monto_origen||0); a.fxIn[md]+=Number(x.monto_destino||0); });
   a.caja={
-    USD: a.cobrado.USD - a.gastosPag.USD - a.devRealizada.USD - a.fxOut.USD + a.fxIn.USD,
-    ARS: a.cobrado.ARS - a.gastosPag.ARS - a.devRealizada.ARS - a.fxOut.ARS + a.fxIn.ARS
+    USD: a.cobrado.USD - a.gastosPag.USD - a.devRealizada.USD - a.fxOut.USD + a.fxIn.USD - a.liquidado.USD,
+    ARS: a.cobrado.ARS - a.gastosPag.ARS - a.devRealizada.ARS - a.fxOut.ARS + a.fxIn.ARS - a.liquidado.ARS
   };
   return a;
+}
+/* ---------- LIQUIDACIÓN ENTRE SOCIOS (solo socios) ---------- */
+function socios(){ return DB.usuarios.filter(u=>u.rol==='socio'); }
+function liquidacionesDe(casoId){ return (DB.liquidaciones||[]).filter(l=>l.caso_id===casoId); }
+const LIQ_EST={pendiente:"Pendiente",liquidado_parcial:"Liquidado parcialmente",liquidado_completo:"Liquidado completamente"};
+async function liqUpsert(l, isNew){
+  if(CLOUD){
+    const row={id:l.id,caso_id:l.caso_id||null,fecha:l.fecha||null,moneda:l.moneda||"USD",monto_total:Number(l.monto_total||0),reparto:l.reparto||[],gastos_descontados:Number(l.gastos_descontados||0),devolucion_cliente:Number(l.devolucion_cliente||0),estado:l.estado||"pendiente",obs:l.obs||null,usuario:l.usuario,created_at:l.created_at||new Date().toISOString()};
+    const ins=isNew===true || !(DB.liquidaciones||[]).some(x=>x.id===l.id);
+    let res; if(ins) res=await sb.from("liquidaciones").insert(row).select().maybeSingle(); else res=await sb.from("liquidaciones").update(row).eq("id",l.id).select().maybeSingle();
+    if(res.error){ console.error("liqUpsert",res.error); toast("Error al guardar la liquidación: "+res.error.message,"err"); return null; } return res.data;
+  } else { DB.liquidaciones=DB.liquidaciones||[]; const i=DB.liquidaciones.findIndex(x=>x.id===l.id); if(i>=0)DB.liquidaciones[i]=l; else DB.liquidaciones.unshift(l); saveLocal(); return l; }
+}
+async function liqDelete(id){ if(CLOUD){ const {error}=await sb.from("liquidaciones").delete().eq("id",id); if(error){toast("Error al eliminar: "+error.message,"err");return false;} } DB.liquidaciones=(DB.liquidaciones||[]).filter(x=>x.id!==id); if(!CLOUD)saveLocal(); return true; }
+function liqModal(casoId, id){
+  const editing=!!id; const soc=socios();
+  const c = DB.casos.find(x=>x.id===casoId) || CURRENT;
+  let l = editing ? (DB.liquidaciones||[]).find(x=>x.id===id) : null;
+  if(!editing){
+    const cob = c?cobradoDe(c):0; const each = soc.length? Math.round((cob/soc.length)*100)/100 : 0;
+    l = { caso_id:casoId, fecha:new Date().toISOString().slice(0,10), moneda:(c&&c.finanzas&&c.finanzas.moneda)||"USD", monto_total:cob, gastos_descontados:0, devolucion_cliente:0, estado:"pendiente", obs:"", reparto: soc.map(s=>({socio_id:s.id, nombre:s.nombre, monto:each})) };
+  }
+  if(!l){ toast("Liquidación no encontrada","err"); return; }
+  const reparto = (l.reparto&&l.reparto.length)?l.reparto:soc.map(s=>({socio_id:s.id,nombre:s.nombre,monto:0}));
+  const repartoRows = reparto.map(r=>`<div class="frow fr2" style="align-items:end;margin-bottom:6px"><div class="field" style="margin:0"><label>${esc(r.nombre||userName(r.socio_id))}</label><input class="lq_monto" data-sid="${r.socio_id}" type="number" value="${esc(r.monto)}"></div><div style="color:var(--muted);font-size:12px;padding-bottom:11px">${esc(l.moneda)}</div></div>`).join("")||'<span style="color:var(--muted)">No hay socios cargados</span>';
+  modal({title:editing?"Editar liquidación":"Registrar liquidación entre socios", size:"", body:`
+    <div class="frow fr3">${inp("lq_fecha","Fecha",l.fecha||"","date")}${sel("lq_mon","Moneda",["USD","ARS"],l.moneda||"USD")}${inp("lq_total","Monto total a repartir",l.monto_total||"","number")}</div>
+    <div class="field"><label>Reparto entre socios (prellenado en partes iguales · editable)</label><div style="border:1px solid var(--line2);border-radius:8px;padding:10px">${repartoRows}</div></div>
+    <div class="frow fr2">${inp("lq_gastos","Gastos descontados",l.gastos_descontados||"","number")}${inp("lq_dev","Devolución al cliente",l.devolucion_cliente||"","number")}</div>
+    <div class="field"><label>Estado</label><select id="lq_est">${Object.entries(LIQ_EST).map(([k,v])=>`<option value="${k}" ${l.estado===k?'selected':''}>${v}</option>`).join("")}</select></div>
+    <div class="field"><label>Observaciones</label><textarea id="lq_obs" rows="2">${esc(l.obs||'')}</textarea></div>
+    <div class="alert alert-info"><span>⚖️</span><div>Al marcar <b>“Liquidado completamente”</b>, el caso pasa al <b>historial</b> y el dinero repartido se descuenta de la caja.</div></div>`,
+    footer:`${editing?`<button class="btn btn-danger" onclick="liqDeleteConfirm('${id}','${casoId}')">Eliminar</button>`:''}<div style="flex:1"></div><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveLiq('${id||''}','${casoId}')">Guardar</button>`});
+}
+async function saveLiq(id, casoId){
+  const reparto=Array.from(document.querySelectorAll(".lq_monto")).map(el=>({socio_id:el.dataset.sid, nombre:userName(el.dataset.sid), monto:Number(el.value||0)}));
+  const isNew=!id;
+  const base = id?(DB.liquidaciones||[]).find(x=>x.id===id):{id:newTareaId(), caso_id:casoId, usuario:SESSION.id, created_at:new Date().toISOString()};
+  Object.assign(base,{fecha:val("lq_fecha")||null,moneda:val("lq_mon"),monto_total:Number(val("lq_total")||0),reparto,gastos_descontados:Number(val("lq_gastos")||0),devolucion_cliente:Number(val("lq_dev")||0),estado:val("lq_est"),obs:val("lq_obs")});
+  const r=await liqUpsert(base,isNew);
+  if(r){ DB.liquidaciones=DB.liquidaciones||[]; const i=DB.liquidaciones.findIndex(x=>x.id===base.id); if(i>=0)DB.liquidaciones[i]=CLOUD?r:base; else DB.liquidaciones.unshift(CLOUD?r:base); }
+  const c=DB.casos.find(x=>x.id===casoId);
+  if(c && c.finanzas){
+    if(base.estado==="liquidado_completo"){ c.finanzas.estadoLiquidacion="liquidado_completo"; finLog(c,"Liquidación entre socios completada", base.reparto.map(x=>x.nombre+": "+money(x.monto,base.moneda)).join(" · ")); }
+    else if(base.estado==="liquidado_parcial"){ c.finanzas.estadoLiquidacion="liquidado_parcial"; finLog(c,"Liquidación parcial entre socios", "Monto: "+money(base.monto_total,base.moneda)); }
+    else { finLog(c,"Liquidación registrada (pendiente)", "Monto: "+money(base.monto_total,base.moneda)); }
+    if(CLOUD) cloudSaveCaseNow(c); else saveLocal();
+  }
+  closeModal(); toast("Liquidación guardada");
+  if(ROUTE==="caso")renderCaso(); else if(ROUTE==="finanzas")renderFinanzasGlobal();
+}
+function liqDeleteConfirm(id, casoId){ if(!confirm("¿Eliminar esta liquidación?"))return; liqDelete(id).then(ok=>{ if(ok){ closeModal(); toast("Liquidación eliminada"); if(ROUTE==="caso")renderCaso(); else if(ROUTE==="finanzas")renderFinanzasGlobal(); } }); }
+function finLiqBlock(c){
+  if(!isSocio()) return "";
+  const ls=liquidacionesDe(c.id);
+  const rows=ls.length?ls.map(l=>`<div class="driveitem" style="border-bottom:1px solid var(--line);cursor:pointer" onclick="liqModal('${c.id}','${l.id}')">
+     <div style="flex:1"><b>${money(l.monto_total,l.moneda)}</b><br><small style="color:var(--muted)">${fdate(l.fecha)} · ${(l.reparto||[]).map(r=>esc(r.nombre)+" "+money(r.monto,l.moneda)).join(" · ")}</small></div>
+     <span class="badge ${FIN_COLOR[l.estado]||'b-grey'}">${esc(LIQ_EST[l.estado]||l.estado)}</span></div>`).join(""):'<div class="empty">Sin liquidaciones registradas</div>';
+  return `<div class="card" style="margin-top:18px"><div class="card-h"><h3>Liquidación entre socios</h3><button class="btn btn-primary btn-sm" onclick="liqModal('${c.id}')">＋ Registrar liquidación</button></div><div class="card-b" style="padding:6px 8px">${rows}</div></div>`;
 }
 /* ---------- CAMBIOS DE DIVISA (caja, solo socios) ---------- */
 async function cambioUpsert(x, isNew){
@@ -2251,8 +2316,10 @@ function renderFinanzasGlobal(){
   casosActivos().forEach(c=>{ (c.pagos||[]).forEach(p=>movs.push({fecha:p.fecha,tipo:"Cobro",detalle:clienteFull(c),monto:Number(p.importe||0),moneda:p.moneda,signo:1}));
     (c.gastos||[]).forEach(g=>{ if(g.estado==='abonado'&&Number(g.importe||0)) movs.push({fecha:g.fecha,tipo:"Gasto",detalle:g.nombre+" · "+clienteFull(c),monto:Number(g.importe||0),moneda:g.moneda,signo:-1}); }); });
   (DB.cambios||[]).forEach(x=>movs.push({fecha:x.fecha,tipo:"Cambio",detalle:`${money(x.monto_origen,x.moneda_origen)} → ${money(x.monto_destino,x.moneda_destino)}${x.motivo?' · '+x.motivo:''}`,fx:true,signo:0}));
+  (DB.liquidaciones||[]).forEach(l=>{ const caso=l.caso_id?DB.casos.find(c=>c.id===l.caso_id):null; movs.push({fecha:l.fecha,tipo:"Liquidación",detalle:`${caso?clienteFull(caso):'—'} · ${(l.reparto||[]).map(r=>r.nombre+' '+money(r.monto,l.moneda)).join(', ')}`,monto:(l.reparto||[]).reduce((s,r)=>s+Number(r.monto||0),0),moneda:l.moneda,signo:-1}); });
   movs.sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""));
-  const movRows=movs.length?movs.slice(0,80).map(m=>`<tr><td>${fdate(m.fecha)}</td><td><span class="badge ${m.tipo==='Cobro'?'b-green':m.tipo==='Gasto'?'b-red':'b-blue'}">${m.tipo}</span></td><td>${esc(m.detalle)}</td><td style="text-align:right;font-weight:600;color:${m.signo>0?'#1c7a40':m.signo<0?'#c0392b':'var(--muted)'}">${m.fx?'—':(m.signo>0?'+ ':'− ')+money(m.monto,m.moneda)}</td></tr>`).join(""):`<tr><td colspan="4" class="empty">Sin movimientos</td></tr>`;
+  const movBadge=t=>t==='Cobro'?'b-green':t==='Gasto'?'b-red':t==='Liquidación'?'b-gold':'b-blue';
+  const movRows=movs.length?movs.slice(0,80).map(m=>`<tr><td>${fdate(m.fecha)}</td><td><span class="badge ${movBadge(m.tipo)}">${m.tipo}</span></td><td>${esc(m.detalle)}</td><td style="text-align:right;font-weight:600;color:${m.signo>0?'#1c7a40':m.signo<0?'#c0392b':'var(--muted)'}">${m.fx?'—':(m.signo>0?'+ ':'− ')+money(m.monto,m.moneda)}</td></tr>`).join(""):`<tr><td colspan="4" class="empty">Sin movimientos</td></tr>`;
   document.getElementById("view").innerHTML=`
     <div class="pagehead"><div><h2>Finanzas global del estudio</h2><div class="sub">Solo socios · ${activos.length} activos · ${histo.length} en historial</div></div></div>
 
@@ -2267,7 +2334,7 @@ function renderFinanzasGlobal(){
       <div class="stat"><div class="lab">Pendiente de gastos</div><div class="val" style="font-size:18px">${dosMon(a.pendGasto)}</div></div>
       <div class="stat green"><div class="lab">Cobrado total</div><div class="val" style="font-size:18px">${dosMon(a.cobrado)}</div></div>
     </div>
-    <div class="alert alert-info" style="margin-bottom:16px"><span>ℹ️</span><div>La <b>caja</b> ya incluye los <b>cambios de divisa</b>. Se terminará de afinar con la <b>liquidación entre socios</b> (próxima etapa). Un caso pasa al historial cuando su liquidación queda <b>“Liquidado completamente”</b>.</div></div>
+    <div class="alert alert-info" style="margin-bottom:16px"><span>ℹ️</span><div>La <b>caja</b> ya descuenta gastos, devoluciones, <b>cambios de divisa</b> y lo <b>liquidado entre socios</b>. Un caso pasa al historial cuando su liquidación queda <b>“Liquidado completamente”</b>. La liquidación se registra desde la pestaña <b>Finanzas</b> de cada caso.</div></div>
 
     <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 10px">Casos que requieren acción</div>
     <div class="filters" style="margin-bottom:10px">

@@ -74,6 +74,24 @@ a{color:var(--primary);text-decoration:none}
 .notif-item .ni-t{font-weight:600;color:var(--navy);font-size:13px}
 .notif-item .ni-b{color:var(--muted);font-size:12px;margin-top:1px}
 .notif-item .ni-d{color:var(--muted);font-size:11px;margin-top:3px}
+.tk-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.tk-row:hover{background:var(--bg)}
+.tk-row .tk-chk{margin-top:0}
+.tk-main{flex:1;cursor:pointer;min-width:0}
+.tk-title{font-weight:600;color:var(--navy);font-size:13.5px}
+.tk-meta{font-size:12px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tk-estado{border:1px solid var(--line2);border-radius:7px;padding:5px 7px;font-size:12px;background:#fff;cursor:pointer;text-transform:capitalize}
+.tk-estado.est-realizada{background:#e8f7ee;border-color:#bce3c9;color:#1c7a40}
+.tk-estado.est-cancelada{background:#f0f0f0;color:#888}
+.tk-estado.est-vencida{background:#fdeaea;border-color:#f3c0c0;color:#c0392b}
+.tk-estado.est-en_curso{background:#eaf2fd;border-color:#bcd4f3;color:#2563b8}
+.tk-kebab{width:30px;height:30px;border-radius:7px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:17px;line-height:1;color:var(--muted);flex-shrink:0}
+.tk-kebab:hover{background:var(--bg)}
+.tk-menu{position:fixed;z-index:60;width:228px;background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 30px rgba(0,0,0,.16);padding:6px}
+.tk-menu button{display:block;width:100%;text-align:left;border:0;background:none;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px;color:var(--navy)}
+.tk-menu button:hover{background:var(--bg)}
+.tk-menu button.danger{color:#d12f2f}
+.tk-menu-sep{height:1px;background:var(--line);margin:5px 4px}
 .content{padding:26px 28px 60px}
 
 /* COMPONENTS */
@@ -2212,23 +2230,88 @@ function tareaRow(t){
   const done=["realizada","cancelada"].includes(t.estado);
   const asig=(t.asignados||[]).map(id=>userName(id)).join(", ")||"—";
   const caso=t.caso_id?DB.casos.find(c=>c.id===t.caso_id):null;
-  return `<div class="driveitem" style="border-bottom:1px solid var(--line);align-items:flex-start;gap:10px">
-    <input type="checkbox" ${t.estado==='realizada'?'checked':''} onchange="toggleTareaHecha('${t.id}')" style="margin-top:4px">
-    <div style="flex:1;cursor:pointer" onclick="tareaModal('${t.id}')">
-      <div style="${done?'text-decoration:line-through;color:var(--muted)':'font-weight:600;color:var(--navy)'}">${esc(t.titulo)} <span class="badge ${PRIO_COLOR[t.prioridad]||'b-grey'}">${t.prioridad}</span>${t.privacidad==='privada'?' <span class="badge b-grey">🔒</span>':''}</div>
-      <div style="font-size:12px;color:var(--muted);margin-top:2px">👤 ${esc(asig)}${t.vence?` · 📅 ${fdate(t.vence)}${t.hora?' '+esc(t.hora):''}`:''}${caso?` · 📁 ${esc(clienteFull(caso))}`:''}</div>
+  const estSel=ESTADOS_TAREA.filter(e=>e!=="vencida").map(e=>`<option value="${e}" ${t.estado===e?'selected':''}>${e}</option>`).join("");
+  return `<div class="tk-row" data-id="${t.id}">
+    <input class="tk-chk" type="checkbox" ${t.estado==='realizada'?'checked':''} onchange="cambiarEstadoTarea('${t.id}', this.checked?'realizada':'pendiente')" title="Marcar realizada">
+    <div class="tk-main" onclick="tareaModal('${t.id}')">
+      <div class="tk-title" style="${done?'text-decoration:line-through;color:var(--muted)':''}">${esc(t.titulo)} <span class="badge ${PRIO_COLOR[t.prioridad]||'b-grey'}">${t.prioridad}</span>${t.privacidad==='privada'?' <span class="badge b-grey">🔒</span>':''}</div>
+      <div class="tk-meta">👤 ${esc(asig)}${t.vence?` · 📅 ${fdate(t.vence)}${t.hora?' '+esc(t.hora):''}`:''}${caso?` · 📁 ${esc(clienteFull(caso))}`:''}${t.observaciones?' · 📝':''}</div>
     </div>
-    <span class="badge ${ESTTAREA_COLOR[est]||'b-grey'}">${est}</span>
+    <select class="tk-estado est-${est.replace(/ /g,'_')}" onclick="event.stopPropagation()" onchange="cambiarEstadoTarea('${t.id}', this.value)" title="Cambiar estado">${estSel}</select>
+    <button class="tk-kebab" onclick="openTareaMenu('${t.id}', event)" title="Acciones rápidas">⋯</button>
   </div>`;
 }
-async function toggleTareaHecha(id){
+async function cambiarEstadoTarea(id, estado){
   const t=(DB.tareas||[]).find(x=>x.id===id); if(!t)return;
-  const completando = t.estado!=='realizada';
-  t.estado = completando ? 'realizada' : 'pendiente';
+  if(t.estado===estado) return;
+  t.estado=estado;
   await tareaUpsert(t);
   syncTareaCalendar(t);
-  if(completando && t.creado_por && t.creado_por!==SESSION.id)
-    notifCreate(t.creado_por,"tarea_completada","Tarea completada: "+t.titulo,"Por "+userName(SESSION.id),t.id,t.caso_id);
+  if(estado==='realizada' && t.creado_por && t.creado_por!==SESSION.id) notifCreate(t.creado_por,"tarea_completada","Tarea completada: "+t.titulo,"Por "+userName(SESSION.id),t.id,t.caso_id);
+  if(estado==='cancelada' && t.creado_por && t.creado_por!==SESSION.id) notifCreate(t.creado_por,"tarea_cancelada","Tarea cancelada: "+t.titulo,"Por "+userName(SESSION.id),t.id,t.caso_id);
+  toast("Estado: "+estado);
+  if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='caso')renderCaso();
+}
+async function toggleTareaHecha(id){ const t=(DB.tareas||[]).find(x=>x.id===id); if(!t)return; cambiarEstadoTarea(id, t.estado==='realizada'?'pendiente':'realizada'); }
+/* --- menú de acciones rápidas --- */
+function openTareaMenu(id, ev){
+  ev.stopPropagation(); closeTareaMenu();
+  const t=(DB.tareas||[]).find(x=>x.id===id); if(!t)return;
+  const canDel=isSocio()||t.creado_por===SESSION.id;
+  const m=document.createElement("div"); m.className="tk-menu"; m.id="tkMenu";
+  m.innerHTML=`
+    <button onclick="tareaModal('${id}');closeTareaMenu()">✎ Editar tarea</button>
+    <button onclick="quickFechaHora('${id}')">📅 Cambiar fecha / hora</button>
+    <button onclick="quickPrioridad('${id}')">⚑ Cambiar prioridad</button>
+    <button onclick="quickReasignar('${id}')">👤 Reasignar</button>
+    <button onclick="quickObs('${id}')">📝 Agregar observación</button>
+    <div class="tk-menu-sep"></div>
+    <button onclick="cambiarEstadoTarea('${id}','realizada');closeTareaMenu()">✅ Marcar realizada</button>
+    <button onclick="cambiarEstadoTarea('${id}','cancelada');closeTareaMenu()">🚫 Cancelar tarea</button>
+    ${canDel?`<div class="tk-menu-sep"></div><button class="danger" onclick="closeTareaMenu();deleteTareaConfirm('${id}')">🗑 Eliminar</button>`:''}`;
+  document.body.appendChild(m);
+  const r=ev.currentTarget.getBoundingClientRect();
+  m.style.top=Math.min(r.bottom+4, window.innerHeight-m.offsetHeight-8)+"px";
+  m.style.left=Math.max(8,(r.right-228))+"px";
+  setTimeout(()=>document.addEventListener("click",closeTareaMenuOutside),0);
+}
+function closeTareaMenu(){ const m=document.getElementById("tkMenu"); if(m)m.remove(); document.removeEventListener("click",closeTareaMenuOutside); }
+function closeTareaMenuOutside(e){ const m=document.getElementById("tkMenu"); if(m && !m.contains(e.target)) closeTareaMenu(); }
+function quickFechaHora(id){ closeTareaMenu(); const t=(DB.tareas||[]).find(x=>x.id===id); if(!t)return;
+  modal({title:"Fecha y hora", size:"sm", body:`<div class="frow fr3">${inp("qf_v","Vence",t.vence||"","date")}${inp("qf_h","Hora",t.hora||"","time")}${sel("qf_d","Duración",["","30 min","60 min","90 min","120 min"],t.duracion||"")}</div>`,
+    footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveQuickTarea('${id}',{vence:val('qf_v')||null,hora:val('qf_h')||null,duracion:val('qf_d')})">Guardar</button>`}); }
+function quickPrioridad(id){ closeTareaMenu(); const t=(DB.tareas||[]).find(x=>x.id===id); if(!t)return;
+  modal({title:"Prioridad", size:"sm", body:`<div class="field"><label>Prioridad</label><select id="qp_p">${PRIORIDADES.map(p=>`<option ${t.prioridad===p?'selected':''}>${p}</option>`).join("")}</select></div>`,
+    footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveQuickTarea('${id}',{prioridad:val('qp_p')})">Guardar</button>`}); }
+function quickReasignar(id){ closeTareaMenu(); const t=(DB.tareas||[]).find(x=>x.id===id); if(!t)return; const asg=t.asignados||[];
+  const checks=DB.usuarios.map(u=>`<label class="check" style="display:block;padding:4px 0"><input type="checkbox" class="qr_a" value="${u.id}" ${asg.includes(u.id)?'checked':''}> ${esc(u.nombre)}</label>`).join("");
+  modal({title:"Reasignar tarea", size:"sm", body:`<div style="border:1px solid var(--line2);border-radius:8px;padding:8px 10px">${checks||'<span style="color:var(--muted)">No hay usuarios</span>'}</div>`,
+    footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveQuickReasignar('${id}')">Guardar</button>`}); }
+function quickObs(id){ closeTareaMenu(); const t=(DB.tareas||[]).find(x=>x.id===id); if(!t)return;
+  modal({title:"Agregar observación", size:"sm", body:`<div class="field"><textarea id="qo_t" rows="3" placeholder="Escribí una observación…"></textarea></div>${t.observaciones?`<div class="sub" style="white-space:pre-wrap">Anteriores:\n${esc(t.observaciones)}</div>`:''}`,
+    footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveQuickObs('${id}')">Guardar</button>`}); }
+async function saveQuickTarea(id, patch){
+  const t=(DB.tareas||[]).find(x=>x.id===id); if(!t)return;
+  Object.assign(t, patch);
+  await tareaUpsert(t); syncTareaCalendar(t);
+  closeModal(); toast("Tarea actualizada");
+  if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='caso')renderCaso();
+}
+async function saveQuickReasignar(id){
+  const t=(DB.tareas||[]).find(x=>x.id===id); if(!t)return;
+  const prev=(t.asignados||[]).slice();
+  t.asignados=Array.from(document.querySelectorAll(".qr_a:checked")).map(x=>x.value);
+  await tareaUpsert(t); syncTareaCalendar(t);
+  t.asignados.filter(u=>!prev.includes(u)).forEach(u=>notifCreate(u,"tarea_asignada","Te asignaron: "+t.titulo,(t.vence?("Vence "+fdate(t.vence)):"Sin fecha"),t.id,t.caso_id));
+  closeModal(); toast("Tarea reasignada");
+  if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='caso')renderCaso();
+}
+async function saveQuickObs(id){
+  const t=(DB.tareas||[]).find(x=>x.id===id); if(!t)return;
+  const nv=val("qo_t").trim(); if(!nv){ closeModal(); return; }
+  t.observaciones=(t.observaciones?t.observaciones+"\n":"")+`[${now()} · ${userName(SESSION.id)}] ${nv}`;
+  await tareaUpsert(t);
+  closeModal(); toast("Observación agregada");
   if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='caso')renderCaso();
 }
 /* ---------- TAREAS ↔ Google Calendar ---------- */

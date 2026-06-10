@@ -412,7 +412,7 @@ async function cloudLoad(){
   ]);
   const cfg = (st.data && st.data.data) || {};
   DB = {
-    config:{ estudio:cfg.estudio||{}, asistenteMail:cfg.asistenteMail||"", mediador:cfg.mediador||"", requeridos:cfg.requeridos||[], objeto:cfg.objeto||"" },
+    config:{ estudio:cfg.estudio||{}, asistenteMail:cfg.asistenteMail||"", mediador:cfg.mediador||"", requeridos:cfg.requeridos||[], objeto:cfg.objeto||"", plantillas:cfg.plantillas||{} },
     abogados: cfg.abogados||[],
     usuarios: (profs.data||[]).map(p=>({id:p.id,nombre:p.nombre,rol:p.rol})),
     casos: [],
@@ -433,7 +433,7 @@ let _saveTimer=null;
 function cloudSave(){ if(!sb) return; if(_saveTimer) clearTimeout(_saveTimer); _saveTimer=setTimeout(doCloudSave,350); }
 async function doCloudSave(){
   try{
-    const cfg={ estudio:DB.config.estudio, asistenteMail:DB.config.asistenteMail, mediador:DB.config.mediador, requeridos:DB.config.requeridos, objeto:DB.config.objeto, abogados:DB.abogados, counter:DB.counter };
+    const cfg={ estudio:DB.config.estudio, asistenteMail:DB.config.asistenteMail, mediador:DB.config.mediador, requeridos:DB.config.requeridos, objeto:DB.config.objeto, plantillas:DB.config.plantillas||{}, abogados:DB.abogados, counter:DB.counter };
     await sb.from("settings").upsert({id:1, data:cfg, updated_at:new Date().toISOString()});
     const c = CURRENT;
     if(c){
@@ -456,7 +456,7 @@ async function cloudInsertCase(c){
   const noFin = JSON.parse(JSON.stringify(c)); delete noFin.finanzas; delete noFin.pagos;
   await sb.from("casos").insert({ id:c.id, data:noFin, cliente_nombre:clienteFull(c), estado:c.estado, form_token:c.formToken||null, updated_by:SESSION.id });
   if(isSocio()) await sb.from("case_finance").upsert({ caso_id:c.id, finanzas:c.finanzas||{}, pagos:c.pagos||[] });
-  const cfg={ estudio:DB.config.estudio, asistenteMail:DB.config.asistenteMail, mediador:DB.config.mediador, requeridos:DB.config.requeridos, objeto:DB.config.objeto, abogados:DB.abogados, counter:DB.counter };
+  const cfg={ estudio:DB.config.estudio, asistenteMail:DB.config.asistenteMail, mediador:DB.config.mediador, requeridos:DB.config.requeridos, objeto:DB.config.objeto, plantillas:DB.config.plantillas||{}, abogados:DB.abogados, counter:DB.counter };
   await sb.from("settings").upsert({id:1, data:cfg});
 }
 function bindRealtime(){
@@ -523,7 +523,7 @@ function driveFolderName(c){ const ap=(c.cliente.apellido||"APELLIDO").toUpperCa
    ============================================================ */
 function renderLogin(){
   if(CLOUD){ renderCloudLogin(); return; }
-  const icons={socio:"⚖️",empleado:"👤"};
+  const icons={socio:"⚖️",colaborador:"👤",empleado:"👤"};
   let h="";
   DB.usuarios.forEach(u=>{
     const col = u.rol==="socio" ? "background:var(--gold-soft);color:var(--gold)" : "background:var(--blue-bg);color:var(--blue)";
@@ -1557,11 +1557,176 @@ function downloadDoc(id, fmt){
 function setDocEstadoSilent(d){ /* placeholder for download log */ logAction(CURRENT,docTitle(d.tipo)+" descargado"); save(); }
 
 /* ---------- DOCUMENT TEMPLATES ---------- */
+/* ---- Modelos base (editables desde Configuración). El encabezado/membrete se agrega solo. ---- */
+const DEFAULT_PLANTILLAS={
+contrato:`<h1>CONTRATO DE PRESTACIÓN DE SERVICIOS PROFESIONALES</h1>
+<h2>REHABILITACIÓN DE CUENTA DIGITAL</h2>
+<p>En la Ciudad de {{jurisdiccion}} a los {{fecha_larga}} entre <b>{{estudio_nombre}}</b>, representado por {{estudio_repr}}, en adelante "EL ESTUDIO", y por la otra parte el/la Sr./Sra. <b>{{nombre_cliente}}</b>, con domicilio en {{domicilio_cliente}}, correo electrónico {{email_cliente}} y teléfono {{tel_cliente}}, en adelante "EL CLIENTE", convienen celebrar el presente contrato sujeto a las siguientes cláusulas:</p>
+<p><b>Cuenta objeto de la gestión:</b> {{cuenta}}</p>
+<p><b>PRIMERA: OBJETO Y ALCANCE.</b> EL CLIENTE contrata a EL ESTUDIO para realizar gestiones profesionales, legales, administrativas y/o prejudiciales tendientes a procurar la rehabilitación, recuperación o reactivación de la cuenta digital indicada. El servicio podrá comprender análisis del caso, revisión de documentación, preparación de reclamos, comunicaciones, intimaciones, presentaciones, seguimiento del trámite e intervención en instancia de audiencia o comunicación formal con Meta, Instagram, sus representantes, apoderados o áreas correspondientes, conforme la estrategia profesional definida por EL ESTUDIO.</p>
+<p><b>SEGUNDA: NATURALEZA DEL SERVICIO.</b> EL ESTUDIO actuará con diligencia profesional, buena fe y criterio técnico-jurídico. EL CLIENTE declara comprender que Meta, Instagram y/o sus empresas vinculadas poseen políticas internas, sistemas de revisión, canales administrativos y criterios de decisión propios, ajenos al control directo de EL ESTUDIO. En consecuencia, el servicio no implica garantía absoluta de resultado, sin perjuicio del régimen de reintegro expresamente pactado para el supuesto de resultado negativo.</p>
+<p><b>TERCERA: HONORARIOS Y FORMA DE PAGO.</b> Por el servicio contratado, EL CLIENTE abonará a EL ESTUDIO la suma total de <b>{{monto_total}}</b>. Dicho importe será abonado en dos partes: a) adelanto inicial de <b>{{adelanto}}</b> al momento de contratar; y b) saldo restante de <b>{{saldo}}</b> que deberá estar íntegramente cancelado con anterioridad o, como máximo, al momento de celebrarse la audiencia, comunicación formal o gestión prejudicial con Meta, Instagram, sus representantes o apoderados. La falta de pago del saldo facultará a EL ESTUDIO a suspender gestiones pendientes hasta su regularización, sin que ello configure incumplimiento.</p>
+<p><b>CUARTA: PLAZO.</b> EL ESTUDIO realizará las gestiones correspondientes dentro de un plazo máximo de noventa (90) días corridos, contados desde la fecha en que se haya celebrado y/o cumplido la instancia de audiencia, comunicación formal o gestión prejudicial con Meta, Instagram, sus representantes o apoderados. EL CLIENTE reconoce que los tiempos concretos pueden depender de respuestas de Meta, revisiones internas de la plataforma, canales administrativos, disponibilidad de instancias prejudiciales o cualquier otra circunstancia ajena al control directo de EL ESTUDIO.</p>
+<p><b>QUINTA: CUMPLIMIENTO Y NUEVA SUSPENSIÓN.</b> El presente contrato se considerará cumplido por EL ESTUDIO si, como resultado de las gestiones realizadas, se obtiene la rehabilitación, reactivación, recuperación o restitución razonable del acceso a la cuenta. Una vez obtenida la rehabilitación, EL ESTUDIO no será responsable por nuevas suspensiones, bloqueos, restricciones, inhabilitaciones, denuncias, cierres, pérdidas de acceso o limitaciones posteriores, cualquiera sea su causa. Si luego de rehabilitada la cuenta volviera a ser suspendida o restringida, ello será considerado un hecho nuevo, autónomo e independiente, que requerirá una nueva evaluación profesional y, eventualmente, una nueva contratación.</p>
+<p><b>SEXTA: REINTEGRO POR RESULTADO NEGATIVO.</b> Si vencido el plazo de noventa (90) días corridos, contado desde la fecha en que se haya celebrado y/o cumplido la instancia de audiencia, comunicación formal o gestión prejudicial con Meta, Instagram, sus representantes o apoderados, no se hubiera logrado la rehabilitación, recuperación o reactivación de la cuenta, EL ESTUDIO reintegrará a EL CLIENTE la suma de <b>{{devolucion}}</b>, dentro de los treinta (30) días hábiles de vencido dicho plazo o de comunicarse el cierre negativo del caso, lo que ocurra primero. Las partes dejan constancia de que el monto no reintegrable, en caso de existir, responde a análisis legal, gastos operativos, tareas profesionales, preparación de documentación, comunicaciones, audiencia y demás gestiones efectivamente realizadas.</p>
+<p><b>SÉPTIMA: OBLIGACIONES Y DECLARACIONES DEL CLIENTE.</b> EL CLIENTE se obliga a brindar información completa, veraz y actualizada; entregar documentación, capturas, correos, notificaciones, datos de contacto, antecedentes y demás elementos necesarios; responder los requerimientos de EL ESTUDIO; y no realizar gestiones paralelas, contradictorias o perjudiciales sin aviso previo. EL CLIENTE declara ser titular, administrador legítimo, representante autorizado o persona con interés legítimo sobre la cuenta, y no ocultar antecedentes relevantes vinculados a la suspensión o bloqueo. La información falsa, incompleta o tardía, o las acciones que perjudiquen la estrategia, podrán afectar el resultado y liberar a EL ESTUDIO de responsabilidad por demoras, rechazos o imposibilidad de avanzar.</p>
+<p><b>OCTAVA: LIMITACIÓN DE RESPONSABILIDAD.</b> EL ESTUDIO no responderá por decisiones de Meta, Instagram o terceros; demoras externas; cambios de políticas internas; nuevas denuncias o infracciones; acciones realizadas directamente por EL CLIENTE; pérdida de seguidores, alcance, contenido, estadísticas, monetización, publicidad, mensajes, archivos u otros elementos internos de la cuenta que la plataforma no restituya; ni por cualquier consecuencia ajena al control directo de EL ESTUDIO.</p>
+<p><b>NOVENA: AUTORIZACIÓN, CONFIDENCIALIDAD Y DATOS.</b> EL CLIENTE autoriza a EL ESTUDIO y a sus representantes a utilizar sus datos personales, documentación, información de la cuenta, capturas, correos, enlaces y demás elementos aportados exclusivamente para gestionar la rehabilitación, y a realizar presentaciones, reclamos, comunicaciones, intimaciones, solicitudes y gestiones ante Meta, Instagram, representantes legales, mediadores o terceros necesarios. EL ESTUDIO mantendrá reserva sobre la información recibida, salvo en lo necesario para cumplir el objeto contractual.</p>
+<p><b>DÉCIMA: COMUNICACIONES Y JURISDICCIÓN.</b> Los honorarios pactados comprenden la totalidad de la prestación profesional acordada para la gestión objeto del presente contrato, no correspondiendo adicionar gastos, tasas, aranceles, costos administrativos o conceptos extras, salvo acuerdo expreso y escrito entre las partes. Las partes constituyen como medios válidos de comunicación los domicilios, correos electrónicos, teléfonos y WhatsApp indicados en el presente, reconociendo plena validez a las comunicaciones cursadas por dichos medios. Para todos los efectos derivados del presente contrato, las partes se someten a la legislación argentina y a la jurisdicción de los tribunales ordinarios competentes de la {{jurisdiccion}}, con renuncia expresa a cualquier otro fuero o jurisdicción que pudiera corresponder.</p>
+<p>Leído que fue por las partes, en prueba de conformidad se firman dos ejemplares de un mismo tenor y a un solo efecto, en el lugar y fecha indicados al inicio.</p>
+<div class="sig">
+  <div><br><br>_______________________<br><b>EL ESTUDIO</b><br>{{estudio_nombre}}</div>
+  <div><br><br>_______________________<br><b>EL CLIENTE</b><br>Aclaración: {{nombre_cliente}}<br>DNI/CUIT: {{dni_o_cuit}}</div>
+</div>`,
+carta_poder:`<h1>LETTER OF ATTORNEY / CARTA PODER</h1>
+<p><b>{{nombre_cliente}}</b><br>{{domicilio_cliente}}<br>ZIP Code {{cp_cliente}}, {{localidad_cliente}} {{provincia_cliente}}, {{nacionalidad_cliente}}<br>{{email_cliente}}</p>
+<p>{{fecha_en}} / {{fecha_es}}</p>
+<p><b>{{abogado1}}</b><br>{{abogado1_domicilio}}<br>{{abogado1_tel}}<br>{{abogado1_mail}}</p>
+<p><b>{{abogado2}}</b><br>{{abogado2_domicilio}}<br>{{abogado2_tel}}<br>{{abogado2_mail}}</p>
+<p><b>Subject: Letter of Attorney for Legal Representation</b></p>
+<p>To whom it may concern,</p>
+<p>I, <b>{{nombre_cliente}}</b>, with identification No. {{dni_cliente}} being of sound mind, hereby authorize the attorneys {{abogado1}} and {{abogado2}}, to represent me and act on my behalf, in all legal matters related to the removal of restrictions on my Instagram and Facebook accounts ({{cuentas_afectadas}}), including, but not limited to:</p>
+<p>1. Mediation: To act on my behalf in all mediation proceedings related to the aforementioned matter, negotiate settlements, and represent my interests in all mediation meetings and discussions.</p>
+<p>2. Litigation: To represent me in any judicial proceedings, attend hearings, file and respond to claims, and take all necessary legal actions in court.</p>
+<p>This power includes the authority to make all decisions and take all actions that I could take personally regarding the described matter. This power of attorney is effective from the date of signing and will remain in effect until I decide to revoke this power in writing.</p>
+<p>Sincerely, {{nombre_cliente}}</p>
+<p><b>Asunto: Carta Poder para Representación Legal</b></p>
+<p>Estimados,</p>
+<p>Yo, <b>{{nombre_cliente}}</b>, en pleno uso de mis facultades, autorizo a los abogados {{abogado1}} y {{abogado2}}, a representarme y actuar en mi nombre en todas las cuestiones legales relacionadas con el levantamiento de restricciones sobre mis cuentas de Instagram y Facebook ({{cuentas_afectadas}}), que incluyen, pero no se limita a:</p>
+<p>1. Mediación: Actuar en mi nombre en todos los procedimientos de mediación relacionados con el asunto, negociar acuerdos y representar mis intereses en todas las reuniones y discusiones de mediación.</p>
+<p>2. Juicio: Representarme en cualquier procedimiento judicial, comparecer en audiencias, presentar y responder a demandas, y tomar todas las acciones legales necesarias en el tribunal.</p>
+<p>Este poder incluye la autoridad para tomar todas las decisiones y realizar todas las acciones que yo podría tomar personalmente en relación con el asunto descrito. Esta carta poder es válida a partir de la fecha de firma y continuará en vigor hasta que yo decida revocarla por escrito.</p>
+<p>Atentamente, {{nombre_cliente}}</p>
+<div class="sig"><div>_______________________<br>{{nombre_cliente}} — DNI {{dni_cliente}}</div></div>`,
+mediacion:`<h1>SOLICITUD DE MEDIACIÓN</h1>
+<p style="text-align:center"><b>Mediador:</b> {{mediador}}</p>
+<p><b>REQUIRENTE</b><br>
+Nombre y Apellido: {{nombre_cliente}}<br>
+Documento: DNI {{dni_cliente}}<br>
+CUIT / CUIL: {{cuit_cliente}}<br>
+Domicilio: {{domicilio_cliente}} ({{localidad_cliente}}, {{provincia_cliente}}) CP {{cp_cliente}}<br>
+Celular: {{tel_cliente}}<br>
+Correo electrónico: {{email_cliente}}</p>
+<p><b>PATROCINANTE LETRADO</b><br>
+Nombre y Apellido: {{patrocinante}}<br>
+Domicilio: {{patrocinante_domicilio}}<br>
+Tomo y Folio: T° {{patrocinante_tomo}} F° {{patrocinante_folio}} {{patrocinante_matricula}}<br>
+Celular: {{patrocinante_tel}}<br>
+Mail: {{patrocinante_mail}}</p>
+<p><b>OBJETO DEL RECLAMO</b><br>{{objeto}}</p>
+{{requeridos_bloque}}
+<p><b>CUENTA AFECTADA</b><br>
+URL de la cuenta: {{cuenta_url}}<br>
+Usuario: {{cuenta_handle}}<br>
+Correo electrónico vinculado: {{cuenta_email}}</p>
+<p><b>SÍNTESIS DEL HECHO</b><br>{{sintesis}}</p>`
+};
+/* ---- Variables disponibles para los modelos editables ---- */
+const DOC_VARS=[
+  ["nombre_cliente","Nombre y apellido del cliente"],["dni_cliente","DNI del cliente"],["cuit_cliente","CUIT/CUIL del cliente"],["dni_o_cuit","DNI o CUIT (el que haya)"],
+  ["domicilio_cliente","Domicilio del cliente"],["localidad_cliente","Localidad"],["provincia_cliente","Provincia"],["cp_cliente","Código postal"],["email_cliente","Email del cliente"],["tel_cliente","Teléfono del cliente"],["nacionalidad_cliente","Nacionalidad"],
+  ["cuenta","Cuenta (usuario o URL)"],["cuenta_url","URL de la cuenta"],["cuenta_handle","Usuario de la cuenta"],["cuenta_email","Email vinculado"],["plataforma","Plataforma"],["cuentas_afectadas","Cuentas afectadas (IG/FB)"],
+  ["monto_total","Monto total"],["adelanto","Adelanto"],["saldo","Saldo"],["devolucion","Devolución"],
+  ["estudio_nombre","Nombre del estudio"],["estudio_domicilio","Domicilio del estudio"],["estudio_mail","Mail del estudio"],["estudio_repr","Representante del estudio"],["jurisdiccion","Jurisdicción"],
+  ["mediador","Mediador"],["objeto","Objeto del reclamo"],
+  ["abogado1","Abogado 1 (nombre)"],["abogado1_domicilio","Abogado 1 domicilio"],["abogado1_tel","Abogado 1 teléfono"],["abogado1_mail","Abogado 1 mail"],
+  ["abogado2","Abogado 2 (nombre)"],["abogado2_domicilio","Abogado 2 domicilio"],["abogado2_tel","Abogado 2 teléfono"],["abogado2_mail","Abogado 2 mail"],
+  ["patrocinante","Patrocinante (nombre)"],["patrocinante_domicilio","Patrocinante domicilio"],["patrocinante_tomo","Patrocinante tomo"],["patrocinante_folio","Patrocinante folio"],["patrocinante_matricula","Patrocinante matrícula"],["patrocinante_tel","Patrocinante teléfono"],["patrocinante_mail","Patrocinante mail"],
+  ["fecha_larga","Fecha (texto largo)"],["fecha_es","Fecha (español)"],["fecha_en","Fecha (inglés)"],
+  ["sintesis","Síntesis del hecho"],["requeridos_bloque","Bloque de requeridos (auto)"]
+];
+const DOC_RAW_KEYS=new Set(["sintesis","requeridos_bloque"]);
+function docVars(c){
+  const cl=c.cliente||{}, f=c.finanzas||{}, E=DB.config.estudio||{}, cu=c.cuenta||{}, m=f.moneda;
+  const ab=DB.abogados||[], a1=ab[0]||{}, a2=ab[1]||{};
+  const pat=(DB.abogados||[]).find(a=>a.id===c.abogadoPatrocinante)||{};
+  const fecha=new Date();
+  const mesesEs=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+  const mesesEn=["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const fb=cu.plataforma==="Facebook"?(cu.handle||""):"";
+  const reqBloque=reqMostrados(c).map((r,i)=>`<p><b>REQUERIDO ${i===0?'A':'B'}:</b><br>Nombre o Razón Social: ${esc(r.nombre)}<br>CUIT: ${esc(r.cuit)}<br>Domicilio: ${esc(r.domicilio)}</p>`).join("");
+  return {
+    nombre_cliente:`${cl.nombre||''} ${cl.apellido||''}`.trim(), dni_cliente:cl.dni||'', cuit_cliente:cl.cuit||'', dni_o_cuit:cl.dni||cl.cuit||'',
+    domicilio_cliente:cl.domicilio||'', localidad_cliente:cl.localidad||'', provincia_cliente:cl.provincia||'', cp_cliente:cl.cp||'', email_cliente:cl.email||'', tel_cliente:cl.tel||'', nacionalidad_cliente:cl.nacionalidad||'Argentina',
+    cuenta:cu.handle||cu.url||'—', cuenta_url:cu.url||'', cuenta_handle:cu.handle||'', cuenta_email:cu.emailVinc||'', plataforma:cu.plataforma||'', cuentas_afectadas:`Instagram: ${cu.handle||"—"}${fb?` - Facebook: ${fb}`:""}`,
+    monto_total:money(f.montoTotal,m), adelanto:money(f.adelanto,m), saldo:money(f.saldo,m), devolucion:money(f.devolucion,m),
+    estudio_nombre:E.nombre||'', estudio_domicilio:E.domicilio||'', estudio_mail:E.mail||'', estudio_repr:E.repr||'', jurisdiccion:E.jurisdiccion||'',
+    mediador:DB.config.mediador||'', objeto:c.objeto||DB.config.objeto||'',
+    abogado1:a1.nombre||'', abogado1_domicilio:a1.domicilio||'', abogado1_tel:a1.tel||'', abogado1_mail:a1.mail||'',
+    abogado2:a2.nombre||'', abogado2_domicilio:a2.domicilio||'', abogado2_tel:a2.tel||'', abogado2_mail:a2.mail||'',
+    patrocinante:pat.nombre||'', patrocinante_domicilio:pat.domicilio||'', patrocinante_tomo:pat.tomo||'', patrocinante_folio:pat.folio||'', patrocinante_matricula:pat.matricula||'', patrocinante_tel:pat.tel||'', patrocinante_mail:pat.mail||'',
+    fecha_larga:longDate(""), fecha_es:`${fecha.getDate()} de ${mesesEs[fecha.getMonth()]} de ${fecha.getFullYear()}`, fecha_en:`${mesesEn[fecha.getMonth()]} ${fecha.getDate()}, ${fecha.getFullYear()}`,
+    sintesis:((c.relato&&(c.relato.sintesis||c.relato.original))||'').replace(/\n/g,"<br>"), requeridos_bloque:reqBloque
+  };
+}
+function renderPlantilla(html,c){ const v=docVars(c); return (html||"").replace(/\{\{\s*(\w+)\s*\}\}/g,(mm,k)=> (k in v)?(DOC_RAW_KEYS.has(k)?v[k]:esc(v[k])):mm); }
+function plantillaSeed(){ DB.config.plantillas=DB.config.plantillas||{}; ["contrato","carta_poder","mediacion"].forEach(k=>{ if(!DB.config.plantillas[k]||!(DB.config.plantillas[k].html||"").trim()) DB.config.plantillas[k]={html:DEFAULT_PLANTILLAS[k],updated:null}; }); }
 function buildDocHtml(c,tipo){
+  const pl=(DB.config.plantillas||{})[tipo];
+  if(pl && (pl.html||"").trim()){ const small=tipo==="carta_poder"; return docHead(small)+renderPlantilla(pl.html,c); }
   if(tipo==="contrato") return tplContrato(c);
   if(tipo==="carta_poder") return tplCartaPoder(c);
   if(tipo==="mediacion") return tplMediacion(c);
   return "";
+}
+/* ---- Editor de modelos (documentos madre) ---- */
+let PL_TIPO=null, PL_RANGE=null;
+const PL_TITULOS={contrato:"Contrato de servicios",carta_poder:"Carta poder",mediacion:"Solicitud de mediación"};
+function openPlantillaEditor(tipo){
+  plantillaSeed(); PL_TIPO=tipo; PL_RANGE=null;
+  const html=(DB.config.plantillas[tipo]||{}).html||"";
+  const pal=DOC_VARS.map(v=>`<button type="button" class="btn btn-ghost btn-sm" style="margin:2px;font-size:11px" onclick="insertVar('${v[0]}')" title="${esc(v[1])}">${'{{'+v[0]+'}}'}</button>`).join("");
+  setCrumb("Modelo · "+PL_TITULOS[tipo],"Configuración");
+  topActions(`<button class="btn btn-ghost" onclick="renderConfig()">← Volver</button><button class="btn btn-primary" onclick="savePlantilla()">💾 Guardar modelo</button>`);
+  document.getElementById("view").innerHTML=`
+    <div class="pagehead"><div><h2>${PL_TITULOS[tipo]} — modelo base</h2><div class="sub">Lo que edites acá se usa como base en todos los casos. Las variables {{...}} se reemplazan solas con los datos de cada caso. El membrete del estudio se agrega automáticamente.</div></div></div>
+    <div class="grid" style="grid-template-columns:1fr 270px;gap:16px;align-items:start">
+      <div class="card"><div class="card-b">
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px;border-bottom:1px solid var(--line);padding-bottom:8px">
+          <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plCmd('bold')"><b>N</b></button>
+          <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plCmd('italic')"><i>C</i></button>
+          <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plCmd('underline')"><u>S</u></button>
+          <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plFormat('h1')">Título</button>
+          <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plFormat('h2')">Subtítulo</button>
+          <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plFormat('p')">Párrafo</button>
+          <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plCmd('insertUnorderedList')">• Lista</button>
+          <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plCmd('justifyLeft')">⯇</button>
+          <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plCmd('justifyCenter')">≡</button>
+          <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plCmd('justifyFull')">☰</button>
+        </div>
+        <div id="pl_editor" contenteditable="true" onkeyup="savePlRange()" onmouseup="savePlRange()" style="min-height:540px;border:1px solid var(--line2);border-radius:8px;padding:28px 34px;background:#fff;font-family:Georgia,'Times New Roman',serif;font-size:13px;line-height:1.55;color:#1a1a1a;overflow:auto">${html}</div>
+      </div></div>
+      <div class="card" style="position:sticky;top:12px"><div class="card-h"><h3>Variables</h3></div><div class="card-b">
+        <div class="sub" style="margin-bottom:8px">Hacé clic para insertarlas donde está el cursor.</div>
+        <div style="max-height:360px;overflow:auto">${pal}</div>
+        <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
+          <button class="btn btn-gold btn-sm" onclick="previewPlantilla()">👁 Vista previa</button>
+          <button class="btn btn-ghost btn-sm" onclick="resetPlantilla()">↺ Restaurar modelo original</button>
+        </div>
+      </div></div>
+    </div>`;
+}
+function plCmd(cmd){ try{document.execCommand(cmd,false,null);}catch(e){} const ed=document.getElementById("pl_editor"); if(ed)ed.focus(); savePlRange(); }
+function plFormat(tag){ try{document.execCommand('formatBlock',false,tag);}catch(e){} const ed=document.getElementById("pl_editor"); if(ed)ed.focus(); savePlRange(); }
+function savePlRange(){ const s=window.getSelection(); if(s&&s.rangeCount){ const r=s.getRangeAt(0); const ed=document.getElementById("pl_editor"); if(ed&&ed.contains(r.commonAncestorContainer)) PL_RANGE=r.cloneRange(); } }
+function insertVar(tok){
+  const ed=document.getElementById("pl_editor"); if(!ed)return; ed.focus();
+  const sel=window.getSelection();
+  if(PL_RANGE){ sel.removeAllRanges(); sel.addRange(PL_RANGE); }
+  if(!document.execCommand('insertText',false,'{{'+tok+'}}')){ ed.innerHTML+=' {{'+tok+'}}'; }
+  savePlRange();
+}
+function savePlantilla(){ const ed=document.getElementById("pl_editor"); if(!ed)return; DB.config.plantillas=DB.config.plantillas||{}; DB.config.plantillas[PL_TIPO]={html:ed.innerHTML,updated:now()}; save(); toast("Modelo guardado ✓ — se usará en los próximos documentos"); }
+function resetPlantilla(){ if(!confirm("¿Restaurar el modelo base original? Se descartan tus cambios de este documento."))return; DB.config.plantillas=DB.config.plantillas||{}; DB.config.plantillas[PL_TIPO]={html:DEFAULT_PLANTILLAS[PL_TIPO],updated:now()}; save(); openPlantillaEditor(PL_TIPO); toast("Modelo restaurado"); }
+function previewPlantilla(){
+  const ed=document.getElementById("pl_editor"); if(!ed)return;
+  const c=(typeof CURRENT!=="undefined"&&CURRENT)||casosActivos()[0]||(DB.casos||[])[0];
+  const small=PL_TIPO==="carta_poder";
+  const body=c?(docHead(small)+renderPlantilla(ed.innerHTML,c)):(docHead(small)+ed.innerHTML);
+  const css=docExportCSS(PL_TIPO);
+  const w=window.open("","_blank");
+  w.document.write(`<html><head><title>Vista previa — ${esc(PL_TITULOS[PL_TIPO])}</title><meta charset="utf-8"><style>${css} body{background:#f0f0f0;padding:24px}.page{background:#fff;max-width:780px;margin:0 auto;padding:48px 56px;box-shadow:0 2px 12px rgba(0,0,0,.15)}</style></head><body><div class="page">${body}</div><p style="text-align:center;color:#888;font-size:10pt;margin-top:16pt">— Vista previa${c?' con datos de: '+esc(clienteFull(c)):' (sin caso de ejemplo: las variables se ven sin reemplazar)'} —</p></body></html>`);
+  w.document.close();
 }
 function longDate(d){
   const meses=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
@@ -1871,6 +2036,14 @@ function renderConfig(){
         </div>`).join("")}
         <button class="btn btn-primary" onclick="saveRequeridos()">Guardar requeridos</button>
       </div></div>
+      <div class="card" style="grid-column:1/-1"><div class="card-h"><h3>Modelos de documentos (base)</h3></div><div class="card-b">
+        <p class="sub" style="margin:-4px 0 14px">Editá el texto madre de cada documento. Se aplica a todos los casos; las variables {{...}} se completan solas con los datos de cada caso. Los documentos ya generados no se modifican.</p>
+        <div class="grid g3" style="gap:12px">
+          <div class="doc-row" style="cursor:pointer" onclick="openPlantillaEditor('contrato')"><div class="meta"><b>Contrato de servicios</b><br><small>Honorarios, plazos y cláusulas</small></div><span class="ic">✏️</span></div>
+          <div class="doc-row" style="cursor:pointer" onclick="openPlantillaEditor('carta_poder')"><div class="meta"><b>Carta poder</b><br><small>Bilingüe, una carilla</small></div><span class="ic">✏️</span></div>
+          <div class="doc-row" style="cursor:pointer" onclick="openPlantillaEditor('mediacion')"><div class="meta"><b>Solicitud de mediación</b><br><small>Requirente, requeridos y síntesis</small></div><span class="ic">✏️</span></div>
+        </div>
+      </div></div>
     </div>`;
 }
 function saveConfig(){ const E=DB.config.estudio; E.nombre=val("co_nom"); E.repr=val("co_repr"); E.mail=val("co_mail"); E.domicilio=val("co_dom"); E.jurisdiccion=val("co_jur"); DB.config.mediador=val("co_med"); save(); toast("Configuración guardada"); }
@@ -1881,7 +2054,7 @@ function saveRequeridos(){ DB.config.requeridos.forEach((r,i)=>{ r.nombre=val("r
    ============================================================ */
 function renderUsuarios(){
   setCrumb("Usuarios y abogados"); topActions("");
-  const us=DB.usuarios.map(u=>`<tr><td><b>${esc(u.nombre)}</b></td><td><span class="badge ${u.rol==='socio'?'b-gold':'b-blue'}">${u.rol}</span></td><td><button class="btn btn-ghost btn-sm" onclick="editUser('${u.id}')">Editar</button></td></tr>`).join("");
+  const us=DB.usuarios.map(u=>`<tr><td><b>${esc(u.nombre)}</b></td><td><span class="badge ${u.rol==='socio'?'b-gold':'b-blue'}">${u.rol==='empleado'?'colaborador':esc(u.rol)}</span></td><td><button class="btn btn-ghost btn-sm" onclick="editUser('${u.id}')">Editar</button></td></tr>`).join("");
   const abs=DB.abogados.map(a=>`<tr><td><b>${esc(a.nombre)}</b><br><small style="color:var(--muted)">${esc(a.mail)}</small></td><td>T° ${esc(a.tomo)} F° ${esc(a.folio)}</td><td>${esc(a.tel)}</td><td><button class="btn btn-ghost btn-sm" onclick="editAb('${a.id}')">Editar</button></td></tr>`).join("");
   document.getElementById("view").innerHTML=`
     <div class="pagehead"><div><h2>Usuarios y abogados</h2><div class="sub">Accesos internos y patrocinantes del estudio</div></div></div>
@@ -1893,10 +2066,10 @@ function renderUsuarios(){
     </div>`;
 }
 function editUser(id){
-  const u=id?DB.usuarios.find(x=>x.id===id):{nombre:"",rol:"empleado"};
+  const u=id?DB.usuarios.find(x=>x.id===id):{nombre:"",rol:"colaborador"};
   modal({title:id?"Editar usuario":"Nuevo usuario", size:"sm", body:`
     ${inp("us_nom","Nombre",u.nombre)}
-    ${sel("us_rol","Rol",["socio","empleado"],u.rol)}`,
+    ${sel("us_rol","Rol",["socio","colaborador"],u.rol==="empleado"?"colaborador":u.rol)}`,
     footer:`${id?`<button class="btn btn-danger" onclick="delUser('${id}')">Eliminar</button>`:""}<div style="flex:1"></div><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveUser('${id||''}')">Guardar</button>`});
 }
 function saveUser(id){ if(id){const u=DB.usuarios.find(x=>x.id===id);u.nombre=val("us_nom");u.rol=val("us_rol");}else{DB.usuarios.push({id:uid("u"),nombre:val("us_nom"),rol:val("us_rol")});} save(); closeModal(); toast("Usuario guardado"); renderUsuarios(); }
@@ -1968,8 +2141,52 @@ function tareaRow(t){
 async function toggleTareaHecha(id){
   const t=(DB.tareas||[]).find(x=>x.id===id); if(!t)return;
   t.estado = t.estado==='realizada' ? 'pendiente' : 'realizada';
-  const r=await tareaUpsert(t); if(r&&CLOUD)Object.assign(t,r);
+  await tareaUpsert(t);
+  syncTareaCalendar(t);
   if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='caso')renderCaso();
+}
+/* ---------- TAREAS ↔ Google Calendar ---------- */
+async function syncTareaCalendar(t, opts){
+  opts=opts||{};
+  if(!CLOUD || !t) return;
+  const asign=(t.asignados||[]).filter(Boolean);
+  const prev=t.eventos||{};
+  const post=async(payload)=>{ const {data:{session}}=await sb.auth.getSession(); return fetch(FUNCTIONS_URL+"/calendar-insert",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify(payload)}).then(r=>r.json()); };
+  // BORRADO total (tarea eliminada/cancelada, sin fecha o sin asignados)
+  if(opts.del || t.estado==='cancelada' || !t.vence || asign.length===0){
+    if(Object.keys(prev).length){
+      try{ await post({delete:true, invitados:Object.keys(prev), eventos:prev}); }catch(e){ console.error("cal del",e); }
+      t.eventos={}; if(!opts.del) await tareaUpsert(t);
+    }
+    return;
+  }
+  // borrar eventos de usuarios que ya no están asignados
+  const removed=Object.keys(prev).filter(u=>!asign.includes(u));
+  if(removed.length){ try{ await post({delete:true, invitados:removed, eventos:prev}); }catch(e){} removed.forEach(u=>delete t.eventos[u]); }
+  // armar evento
+  const nombres=asign.map(id=>userName(id).split(" ")[0]).filter(Boolean).join(", ");
+  const done=t.estado==='realizada';
+  const title=(done?"✓ ":"")+"Tarea GMJ - "+t.titulo+(nombres?" - "+nombres:"");
+  let startISO,endISO,allDay=false;
+  if(t.hora){
+    const dur=parseInt(t.duracion)||60;
+    const s=new Date(t.vence+"T"+t.hora+":00"), e=new Date(s.getTime()+dur*60000);
+    const iso=d=>{const p=n=>String(n).padStart(2,"0");return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+"T"+p(d.getHours())+":"+p(d.getMinutes())+":00";};
+    startISO=iso(s); endISO=iso(e);
+  } else {
+    allDay=true; startISO=t.vence;
+    const d=new Date(t.vence+"T00:00:00"); d.setDate(d.getDate()+1);
+    endISO=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  }
+  const caso=t.caso_id?DB.casos.find(c=>c.id===t.caso_id):null;
+  const det=[t.descripcion||"", caso?("Caso: "+clienteFull(caso)+" ("+caso.id+")"):"", t.observaciones?("Obs: "+t.observaciones):"", "Prioridad: "+(t.prioridad||"media")].filter(Boolean).join("\n");
+  try{
+    const j=await post({invitados:asign, title, startISO, endISO, allDay, details:det, eventos:t.eventos||{}});
+    if(j&&j.eventos){ t.eventos=Object.assign({}, t.eventos, j.eventos); await tareaUpsert(t);
+      const oks=(j.results||[]).filter(x=>x.ok).length, fails=(j.results||[]).filter(x=>!x.ok).length;
+      if(oks) toast("📅 Agendado en "+oks+" calendario/s"+(fails?" · "+fails+" sin Google":"")); else if(fails) toast("Ningún asignado conectó su Google","err");
+    } else if(j&&j.error){ console.error("cal",j.error); }
+  }catch(e){ console.error("syncTareaCalendar",e); }
 }
 function newTareaId(){ return (window.crypto&&crypto.randomUUID)?crypto.randomUUID():(uid("t")+uid("")+uid("")); }
 function tareaModal(id){
@@ -2008,12 +2225,13 @@ async function saveTareaForm(id){
   let t = id ? (DB.tareas||[]).find(x=>x.id===id) : null;
   const base = t || { id:newTareaId(), creado_por:SESSION.id, created_at:new Date().toISOString(), eventos:{} };
   Object.assign(base, { titulo:tit, descripcion:val("tk_desc"), asignados, caso_id:casoId, cliente_nombre:caso?clienteFull(caso):null, vence:val("tk_vence")||null, hora:val("tk_hora")||null, duracion:val("tk_dur")||null, prioridad:val("tk_prio"), estado:val("tk_est"), observaciones:val("tk_obs"), recordatorio:val("tk_rec"), privacidad:val("tk_priv") });
-  const r=await tareaUpsert(base);
-  if(r){ DB.tareas=DB.tareas||[]; const i=DB.tareas.findIndex(x=>x.id===base.id); if(i>=0)DB.tareas[i]=CLOUD?r:base; else DB.tareas.push(CLOUD?r:base); }
+  await tareaUpsert(base);
+  DB.tareas=DB.tareas||[]; const i=DB.tareas.findIndex(x=>x.id===base.id); if(i>=0)DB.tareas[i]=base; else DB.tareas.push(base);
   closeModal(); toast("Tarea guardada");
   if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='caso')renderCaso();
+  syncTareaCalendar(base);
 }
-async function deleteTareaConfirm(id){ if(!confirm("¿Eliminar esta tarea? Esta acción no se puede deshacer."))return; const ok=await tareaDelete(id); if(!ok)return; closeModal(); toast("Tarea eliminada"); if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='caso')renderCaso(); }
+async function deleteTareaConfirm(id){ if(!confirm("¿Eliminar esta tarea? Esta acción no se puede deshacer."))return; const t=(DB.tareas||[]).find(x=>x.id===id); if(t)await syncTareaCalendar(t,{del:true}); const ok=await tareaDelete(id); if(!ok)return; closeModal(); toast("Tarea eliminada"); if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='caso')renderCaso(); }
 
 /* ============================================================
    UI HELPERS (inputs, modal)

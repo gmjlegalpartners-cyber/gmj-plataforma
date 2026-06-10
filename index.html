@@ -297,6 +297,12 @@ const DEFAULT_REQUERIDOS = [
 ];
 const DEFAULT_OBJETO = "Daños y perjuicios derivados de la inhabilitación, suspensión o bloqueo de cuenta de Instagram / Facebook, incluyendo, en caso de corresponder, la afectación de actividad comercial, pérdida de acceso a la cuenta, imposibilidad de comunicación con seguidores/clientes, afectación reputacional y/o retención de fondos de anuncios publicitarios.";
 const GASTOS_DEFAULT = ["Mediación","Honorarios del mediador"];
+const PRIORIDADES=["baja","media","alta","urgente"];
+const PRIO_COLOR={baja:"b-grey",media:"b-blue",alta:"b-amber",urgente:"b-red"};
+const ESTADOS_TAREA=["pendiente","en curso","realizada","vencida","cancelada"];
+const ESTTAREA_COLOR={pendiente:"b-amber","en curso":"b-blue",realizada:"b-green",vencida:"b-red",cancelada:"b-grey"};
+const PRIVACIDADES=[["equipo","Visible para el equipo"],["caso","Visible dentro del caso"],["privada","Privada (solo creador, asignados y socios)"]];
+const TAREA_EJEMPLOS=["Enviar contrato a cliente","Revisar documentación cargada","Solicitar DNI dorso","Generar carta poder","Enviar solicitud de mediación","Confirmar pago del saldo","Cargar audiencia en calendario","Hacer seguimiento del caso"];
 
 /* ---------- LOGO (SVG vectorial GMJ) ---------- */
 const LOGO_FULL = `<svg viewBox="0 0 120 142" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block">
@@ -397,11 +403,12 @@ function uid(p){ return p+Math.random().toString(36).slice(2,8); }
 /* ---------- CAPA DE NUBE (Supabase) ---------- */
 function isSocioRole(){ return SESSION && SESSION.rol==="socio"; }
 async function cloudLoad(){
-  const [st, profs, cs, fin] = await Promise.all([
+  const [st, profs, cs, fin, tk] = await Promise.all([
     sb.from("settings").select("data").eq("id",1).maybeSingle(),
     sb.from("profiles").select("id,nombre,rol"),
     sb.from("casos").select("id,data,form_token"),
-    sb.from("case_finance").select("*")
+    sb.from("case_finance").select("*"),
+    sb.from("tareas").select("*")
   ]);
   const cfg = (st.data && st.data.data) || {};
   DB = {
@@ -409,6 +416,7 @@ async function cloudLoad(){
     abogados: cfg.abogados||[],
     usuarios: (profs.data||[]).map(p=>({id:p.id,nombre:p.nombre,rol:p.rol})),
     casos: [],
+    tareas: tk.data||[],
     counter: cfg.counter||0
   };
   const finMap={}; (fin.data||[]).forEach(f=>finMap[f.caso_id]=f);
@@ -457,7 +465,33 @@ function bindRealtime(){
     .on("postgres_changes",{event:"*",schema:"public",table:"casos"}, cloudRefresh)
     .on("postgres_changes",{event:"*",schema:"public",table:"case_finance"}, cloudRefresh)
     .on("postgres_changes",{event:"*",schema:"public",table:"settings"}, cloudRefresh)
+    .on("postgres_changes",{event:"*",schema:"public",table:"tareas"}, cloudRefresh)
     .subscribe();
+}
+/* ---------- TAREAS: persistencia ---------- */
+async function tareaUpsert(t){
+  if(CLOUD){
+    const row={ id:t.id, titulo:t.titulo, descripcion:t.descripcion||null, asignados:t.asignados||[], creado_por:t.creado_por, caso_id:t.caso_id||null, cliente_nombre:t.cliente_nombre||null, vence:t.vence||null, hora:t.hora||null, duracion:t.duracion||null, prioridad:t.prioridad||"media", estado:t.estado||"pendiente", observaciones:t.observaciones||null, recordatorio:t.recordatorio||null, privacidad:t.privacidad||"equipo", eventos:t.eventos||{}, updated_at:new Date().toISOString() };
+    const {data,error}=await sb.from("tareas").upsert(row).select().maybeSingle();
+    if(error){ console.error("tareaUpsert",error); toast("Error al guardar la tarea: "+error.message,"err"); return null; }
+    return data;
+  } else {
+    DB.tareas=DB.tareas||[]; const i=DB.tareas.findIndex(x=>x.id===t.id);
+    if(i>=0) DB.tareas[i]=t; else DB.tareas.push(t); saveLocal(); return t;
+  }
+}
+async function tareaDelete(id){
+  if(CLOUD){ const {error}=await sb.from("tareas").delete().eq("id",id); if(error){ toast("Error al eliminar: "+error.message,"err"); return false; } }
+  DB.tareas=(DB.tareas||[]).filter(t=>t.id!==id); if(!CLOUD) saveLocal(); return true;
+}
+function tareasDe(casoId){ return (DB.tareas||[]).filter(t=>t.caso_id===casoId); }
+function tareaVisible(t){ // por las dudas (RLS ya filtra en nube)
+  if(isSocio()) return true;
+  return t.creado_por===SESSION.id || (t.asignados||[]).includes(SESSION.id) || (t.privacidad!=="privada" && t.caso_id);
+}
+function tareaEfEstado(t){ // marca vencidas automáticamente para mostrar
+  if(t.estado==="pendiente" && t.vence && t.vence < new Date().toISOString().slice(0,10)) return "vencida";
+  return t.estado;
 }
 let _refreshTimer=null;
 function cloudRefresh(){
@@ -546,6 +580,7 @@ function buildNav(){
   const items=[
     {k:"dashboard", i:"▦", t:"Panel"},
     {k:"casos", i:"📁", t:"Casos"},
+    {k:"tareas", i:"✅", t:"Tareas"},
   ];
   if(isSocio()) items.push({k:"finanzas", i:"💰", t:"Finanzas global"});
   items.push({k:"config", i:"⚙️", t:"Configuración"});
@@ -562,6 +597,7 @@ function go(route, arg){
   ROUTE=route; topActions("");
   if(route==="dashboard"){ setActiveNav("dashboard"); renderDashboard(); }
   else if(route==="casos"){ setActiveNav("casos"); renderCasos(); }
+  else if(route==="tareas"){ setActiveNav("tareas"); renderTareas(); }
   else if(route==="caso"){ setActiveNav("casos"); CURRENT=DB.casos.find(c=>c.id===arg); ACTIVE_TAB="resumen"; EDIT_AUD=null; renderCaso(); }
   else if(route==="finanzas"){ setActiveNav("finanzas"); renderFinanzasGlobal(); }
   else if(route==="config"){ setActiveNav("config"); renderConfig(); }
@@ -632,7 +668,7 @@ function renderDashboard(){
     <div class="grid g4" style="margin-bottom:18px">
       <div class="stat accent"><div class="lab">Casos activos</div><div class="val">${activos}</div><div class="sub">de ${cs.length} totales</div></div>
       <div class="stat amber"><div class="lab">Documentación pendiente</div><div class="val">${pendDoc}</div><div class="sub">requieren seguimiento</div></div>
-      ${isSocio()?finCards:`<div class="stat green"><div class="lab">Cuentas rehabilitadas</div><div class="val">${rehab}</div><div class="sub">resultados positivos</div></div><div class="stat"><div class="lab">Tareas abiertas</div><div class="val">${cs.reduce((s,c)=>s+(c.tareas||[]).filter(t=>!t.hecha).length,0)}</div></div>`}
+      ${isSocio()?finCards:`<div class="stat green"><div class="lab">Cuentas rehabilitadas</div><div class="val">${rehab}</div><div class="sub">resultados positivos</div></div><div class="stat" style="cursor:pointer" onclick="go('tareas')"><div class="lab">Mis tareas abiertas</div><div class="val">${(DB.tareas||[]).filter(t=>(t.creado_por===SESSION.id||(t.asignados||[]).includes(SESSION.id))&&!["realizada","cancelada"].includes(t.estado)).length}</div></div>`}
     </div>
     ${gastosRow}
     <div class="grid" style="grid-template-columns:1.6fr 1fr">
@@ -785,7 +821,7 @@ function renderCaso(){
   const tabBtns=tabs.map(([k,t])=>{
     let pill="";
     if(k==="docs"&&c.docs.length) pill=`<span class="pill">${c.docs.length}</span>`;
-    if(k==="tareas"){const n=(c.tareas||[]).filter(t=>!t.hecha).length; if(n)pill=`<span class="pill">${n}</span>`;}
+    if(k==="tareas"){const n=tareasDe(c.id).filter(t=>!["realizada","cancelada"].includes(t.estado)).length; if(n)pill=`<span class="pill">${n}</span>`;}
     if(k==="doc"&&(c.adjuntos||[]).length) pill=`<span class="pill">${c.adjuntos.length}</span>`;
     return `<button class="${ACTIVE_TAB===k?'active':''}" onclick="ACTIVE_TAB='${k}';renderCaso()">${t}${pill}</button>`;
   }).join("");
@@ -1438,15 +1474,18 @@ function delPago(id){ CURRENT.pagos=CURRENT.pagos.filter(p=>p.id!==id); recalcEs
 
 /* ---------- TAB: TAREAS ---------- */
 function tabTareas(c){
-  const rows=(c.tareas||[]).map(t=>`<div class="driveitem" style="border-bottom:1px solid var(--line)">
-    <input type="checkbox" ${t.hecha?'checked':''} onchange="toggleTarea('${t.id}')">
-    <div style="flex:1;${t.hecha?'text-decoration:line-through;color:var(--muted)':''}">${esc(t.texto)}${t.vence?` <span class="badge ${t.vence<new Date().toISOString().slice(0,10)&&!t.hecha?'b-red':'b-grey'}">${fdate(t.vence)}</span>`:''}</div>
-    <button class="btn btn-ghost btn-sm" onclick="delTarea('${t.id}')">✕</button></div>`).join("")||`<div class="empty">Sin tareas</div>`;
-  return `<div class="card"><div class="card-h"><h3>Tareas pendientes</h3></div><div class="card-b">
-    <div style="display:flex;gap:8px;margin-bottom:14px"><input id="nt_txt" placeholder="Nueva tarea…" style="flex:1;padding:9px 12px;border:1px solid var(--line2);border-radius:8px"><input id="nt_fec" type="date" style="padding:9px;border:1px solid var(--line2);border-radius:8px"><button class="btn btn-primary" onclick="addTarea()">Agregar</button></div>
-    ${rows}</div></div>`;
+  const list=tareasDe(c.id);
+  const activas=list.filter(t=>!["realizada","cancelada"].includes(t.estado));
+  const compl=list.filter(t=>["realizada","cancelada"].includes(t.estado));
+  const rows=arr=>arr.map(tareaRow).join("");
+  // migrar tareas viejas del checklist (c.tareas) a la vista, solo lectura informativa
+  const legacy=(c.tareas||[]).filter(t=>t&&t.texto);
+  const legacyHtml=legacy.length?`<div class="card" style="margin-top:14px"><div class="card-h"><h3>Checklist anterior</h3><span class="badge b-grey">${legacy.length}</span></div><div class="card-b" style="padding:6px 8px">${legacy.map(t=>`<div class="driveitem" style="border-bottom:1px solid var(--line)"><input type="checkbox" ${t.hecha?'checked':''} onchange="toggleTarea('${t.id}')"><div style="flex:1;${t.hecha?'text-decoration:line-through;color:var(--muted)':''}">${esc(t.texto)}${t.vence?` <span class="badge b-grey">${fdate(t.vence)}</span>`:''}</div><button class="btn btn-ghost btn-sm" onclick="delTarea('${t.id}')">✕</button></div>`).join("")}</div></div>`:'';
+  return `<div class="card"><div class="card-h"><h3>Tareas del caso</h3><button class="btn btn-primary btn-sm" onclick="tareaModal()">＋ Nueva tarea</button></div><div class="card-b" style="padding:6px 8px">
+    ${activas.length?rows(activas):'<div class="empty">Sin tareas activas. Creá una con "＋ Nueva tarea".</div>'}
+    ${compl.length?`<div style="margin-top:12px;font-size:12px;color:var(--muted);font-weight:600;padding:0 4px">Completadas</div>${rows(compl)}`:''}
+  </div></div>${legacyHtml}`;
 }
-function addTarea(){ const t=val("nt_txt").trim(); if(!t)return; CURRENT.tareas.push({id:uid("t"),texto:t,hecha:false,vence:val("nt_fec")}); save(); renderCaso(); }
 function toggleTarea(id){ const t=CURRENT.tareas.find(x=>x.id===id); t.hecha=!t.hecha; save(); renderCaso(); }
 function delTarea(id){ CURRENT.tareas=CURRENT.tareas.filter(x=>x.id!==id); save(); renderCaso(); }
 
@@ -1873,6 +1912,108 @@ function editAb(id){
 }
 function saveAb(id){ const o={nombre:val("ab_nom"),domicilio:val("ab_dom"),tomo:val("ab_tomo"),folio:val("ab_folio"),matricula:val("ab_mat"),tel:val("ab_tel"),mail:val("ab_mail")}; if(id){Object.assign(DB.abogados.find(x=>x.id===id),o);}else{o.id=uid("ab");DB.abogados.push(o);} save(); closeModal(); toast("Abogado guardado"); renderUsuarios(); }
 function delAb(id){ DB.abogados=DB.abogados.filter(x=>x.id!==id); save(); closeModal(); renderUsuarios(); }
+
+/* ============================================================
+   TAREAS (vistas + modal)
+   ============================================================ */
+let TFILTER={scope:"mias",fu:"",festado:"",fprio:""};
+function renderTareas(){
+  setCrumb("Tareas");
+  topActions(`<button class="btn btn-primary" onclick="tareaModal()">＋ Nueva tarea</button>`);
+  let list=(DB.tareas||[]).slice();
+  if(TFILTER.scope==="mias") list=list.filter(t=>t.creado_por===SESSION.id || (t.asignados||[]).includes(SESSION.id));
+  if(TFILTER.fu) list=list.filter(t=>(t.asignados||[]).includes(TFILTER.fu));
+  if(TFILTER.festado) list=list.filter(t=>tareaEfEstado(t)===TFILTER.festado);
+  if(TFILTER.fprio) list=list.filter(t=>t.prioridad===TFILTER.fprio);
+  const today=new Date().toISOString().slice(0,10);
+  const activas=list.filter(t=>!["realizada","cancelada"].includes(t.estado));
+  const venc=activas.filter(t=>t.vence&&t.vence<today);
+  const hoy=activas.filter(t=>t.vence===today);
+  const prox=activas.filter(t=>t.vence&&t.vence>today).sort((a,b)=>(a.vence||'').localeCompare(b.vence||''));
+  const sinf=activas.filter(t=>!t.vence);
+  const compl=list.filter(t=>["realizada","cancelada"].includes(t.estado)).slice(0,30);
+  const sec=(titulo,arr,color)=> arr.length?`<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>${titulo}</h3><span class="badge ${color}">${arr.length}</span></div><div class="card-b" style="padding:6px 8px">${arr.map(tareaRow).join("")}</div></div>`:'';
+  const userOpts=DB.usuarios.map(u=>`<option value="${u.id}" ${TFILTER.fu===u.id?'selected':''}>${esc(u.nombre)}</option>`).join("");
+  const estOpts=ESTADOS_TAREA.map(e=>`<option ${TFILTER.festado===e?'selected':''}>${e}</option>`).join("");
+  const prioOpts=PRIORIDADES.map(p=>`<option ${TFILTER.fprio===p?'selected':''}>${p}</option>`).join("");
+  document.getElementById("view").innerHTML=`
+    <div class="pagehead"><div><h2>${TFILTER.scope==='equipo'?'Tareas del equipo':'Mis tareas'}</h2><div class="sub">${activas.length} pendientes${venc.length?` · ${venc.length} vencidas`:''}</div></div></div>
+    <div class="filters">
+      ${isSocio()?`<button class="btn btn-ghost btn-sm" style="${TFILTER.scope==='mias'?'background:var(--primary);color:#fff':''}" onclick="TFILTER.scope='mias';renderTareas()">Mis tareas</button><button class="btn btn-ghost btn-sm" style="${TFILTER.scope==='equipo'?'background:var(--primary);color:#fff':''}" onclick="TFILTER.scope='equipo';renderTareas()">Equipo</button>`:''}
+      ${TFILTER.scope==='equipo'?`<select onchange="TFILTER.fu=this.value;renderTareas()"><option value="">Todos los usuarios</option>${userOpts}</select>`:''}
+      <select onchange="TFILTER.festado=this.value;renderTareas()"><option value="">Todos los estados</option>${estOpts}</select>
+      <select onchange="TFILTER.fprio=this.value;renderTareas()"><option value="">Toda prioridad</option>${prioOpts}</select>
+    </div>
+    ${sec('🔴 Vencidas',venc,'b-red')}
+    ${sec('📅 Hoy',hoy,'b-gold')}
+    ${sec('⏭️ Próximas',prox,'b-blue')}
+    ${sec('📌 Sin fecha',sinf,'b-grey')}
+    ${sec('✓ Completadas / canceladas',compl,'b-green')}
+    ${(venc.length+hoy.length+prox.length+sinf.length+compl.length)===0?'<div class="card"><div class="empty"><div class="ico">✅</div>No hay tareas todavía. Creá una con "＋ Nueva tarea".</div></div>':''}`;
+}
+function tareaRow(t){
+  const est=tareaEfEstado(t);
+  const done=["realizada","cancelada"].includes(t.estado);
+  const asig=(t.asignados||[]).map(id=>userName(id)).join(", ")||"—";
+  const caso=t.caso_id?DB.casos.find(c=>c.id===t.caso_id):null;
+  return `<div class="driveitem" style="border-bottom:1px solid var(--line);align-items:flex-start;gap:10px">
+    <input type="checkbox" ${t.estado==='realizada'?'checked':''} onchange="toggleTareaHecha('${t.id}')" style="margin-top:4px">
+    <div style="flex:1;cursor:pointer" onclick="tareaModal('${t.id}')">
+      <div style="${done?'text-decoration:line-through;color:var(--muted)':'font-weight:600;color:var(--navy)'}">${esc(t.titulo)} <span class="badge ${PRIO_COLOR[t.prioridad]||'b-grey'}">${t.prioridad}</span>${t.privacidad==='privada'?' <span class="badge b-grey">🔒</span>':''}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px">👤 ${esc(asig)}${t.vence?` · 📅 ${fdate(t.vence)}${t.hora?' '+esc(t.hora):''}`:''}${caso?` · 📁 ${esc(clienteFull(caso))}`:''}</div>
+    </div>
+    <span class="badge ${ESTTAREA_COLOR[est]||'b-grey'}">${est}</span>
+  </div>`;
+}
+async function toggleTareaHecha(id){
+  const t=(DB.tareas||[]).find(x=>x.id===id); if(!t)return;
+  t.estado = t.estado==='realizada' ? 'pendiente' : 'realizada';
+  const r=await tareaUpsert(t); if(r&&CLOUD)Object.assign(t,r);
+  if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='caso')renderCaso();
+}
+function newTareaId(){ return (window.crypto&&crypto.randomUUID)?crypto.randomUUID():(uid("t")+uid("")+uid("")); }
+function tareaModal(id){
+  const editing = !!id;
+  const t = editing ? (DB.tareas||[]).find(x=>x.id===id) : {asignados:[SESSION.id], prioridad:"media", estado:"pendiente", privacidad:(ROUTE==='caso'?'caso':'equipo'), caso_id:(ROUTE==='caso'&&CURRENT?CURRENT.id:"")};
+  if(!t){ toast("Tarea no encontrada","err"); return; }
+  const asg=t.asignados||[];
+  const asgChecks=DB.usuarios.map(u=>`<label class="check" style="padding:3px 0;display:inline-flex;margin-right:16px"><input type="checkbox" class="tk_asg" value="${u.id}" ${asg.includes(u.id)?'checked':''}> <span style="font-weight:500">${esc(u.nombre)}</span></label>`).join("");
+  const casoOpts=`<option value="">— Sin caso —</option>`+casosActivos().map(c=>`<option value="${c.id}" ${t.caso_id===c.id?'selected':''}>${esc(clienteFull(c))} · ${c.id}</option>`).join("");
+  const ejem=TAREA_EJEMPLOS.map(e=>`<option value="${esc(e)}"></option>`).join("");
+  const prioOpts=PRIORIDADES.map(p=>`<option ${t.prioridad===p?'selected':''}>${p}</option>`).join("");
+  const estOpts=ESTADOS_TAREA.map(e=>`<option ${(t.estado||'pendiente')===e?'selected':''}>${e}</option>`).join("");
+  const privOpts=PRIVACIDADES.map(([v,l])=>`<option value="${v}" ${(t.privacidad||'equipo')===v?'selected':''}>${esc(l)}</option>`).join("");
+  modal({title:editing?"Editar tarea":"Nueva tarea", size:"", body:`
+    <div class="field"><label>Título <span class="req">*</span></label><input id="tk_tit" list="tk_ej" value="${esc(t.titulo||'')}" placeholder="Ej: Enviar contrato a cliente"><datalist id="tk_ej">${ejem}</datalist></div>
+    <div class="field"><label>Descripción</label><textarea id="tk_desc" rows="2">${esc(t.descripcion||'')}</textarea></div>
+    <div class="field"><label>Asignar a</label><div style="border:1px solid var(--line2);border-radius:8px;padding:8px 10px">${asgChecks||'<span style="color:var(--muted)">No hay usuarios</span>'}</div></div>
+    <div class="frow fr2">
+      <div class="field"><label>Caso vinculado</label><select id="tk_caso">${casoOpts}</select></div>
+      <div class="field"><label>Privacidad</label><select id="tk_priv">${privOpts}</select></div>
+    </div>
+    <div class="frow fr3">${inp("tk_vence","Vence",t.vence||"","date")}${inp("tk_hora","Hora",t.hora||"","time")}${sel("tk_dur","Duración",["","30 min","60 min","90 min","120 min"],t.duracion||"")}</div>
+    <div class="frow fr2">
+      <div class="field"><label>Prioridad</label><select id="tk_prio">${prioOpts}</select></div>
+      <div class="field"><label>Estado</label><select id="tk_est">${estOpts}</select></div>
+    </div>
+    ${inp("tk_rec","Recordatorio (texto)",t.recordatorio||"")}
+    <div class="field"><label>Observaciones</label><textarea id="tk_obs" rows="2">${esc(t.observaciones||'')}</textarea></div>`,
+    footer:`${editing?`<button class="btn btn-danger" onclick="deleteTareaConfirm('${id}')">Eliminar</button>`:''}<div style="flex:1"></div><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveTareaForm('${id||''}')">Guardar tarea</button>`});
+}
+async function saveTareaForm(id){
+  const tit=val("tk_tit").trim(); if(!tit){ toast("El título es obligatorio","err"); return; }
+  const asignados=Array.from(document.querySelectorAll(".tk_asg:checked")).map(x=>x.value);
+  const casoId=val("tk_caso")||null;
+  const caso=casoId?DB.casos.find(c=>c.id===casoId):null;
+  let t = id ? (DB.tareas||[]).find(x=>x.id===id) : null;
+  const base = t || { id:newTareaId(), creado_por:SESSION.id, created_at:new Date().toISOString(), eventos:{} };
+  Object.assign(base, { titulo:tit, descripcion:val("tk_desc"), asignados, caso_id:casoId, cliente_nombre:caso?clienteFull(caso):null, vence:val("tk_vence")||null, hora:val("tk_hora")||null, duracion:val("tk_dur")||null, prioridad:val("tk_prio"), estado:val("tk_est"), observaciones:val("tk_obs"), recordatorio:val("tk_rec"), privacidad:val("tk_priv") });
+  const r=await tareaUpsert(base);
+  if(r){ DB.tareas=DB.tareas||[]; const i=DB.tareas.findIndex(x=>x.id===base.id); if(i>=0)DB.tareas[i]=CLOUD?r:base; else DB.tareas.push(CLOUD?r:base); }
+  closeModal(); toast("Tarea guardada");
+  if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='caso')renderCaso();
+}
+async function deleteTareaConfirm(id){ if(!confirm("¿Eliminar esta tarea? Esta acción no se puede deshacer."))return; const ok=await tareaDelete(id); if(!ok)return; closeModal(); toast("Tarea eliminada"); if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='caso')renderCaso(); }
 
 /* ============================================================
    UI HELPERS (inputs, modal)

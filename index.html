@@ -337,6 +337,14 @@ const ESTADOS_TAREA=["pendiente","en curso","realizada","vencida","cancelada"];
 const ESTTAREA_COLOR={pendiente:"b-amber","en curso":"b-blue",realizada:"b-green",vencida:"b-red",cancelada:"b-grey"};
 const PRIVACIDADES=[["equipo","Visible para el equipo"],["caso","Visible dentro del caso"],["privada","Privada (solo creador, asignados y socios)"]];
 const TAREA_EJEMPLOS=["Enviar contrato a cliente","Revisar documentación cargada","Solicitar DNI dorso","Generar carta poder","Enviar solicitud de mediación","Confirmar pago del saldo","Cargar audiencia en calendario","Hacer seguimiento del caso"];
+const FIN_COBRO=["no_cobrado","cobro_parcial","cobrado_completo","saldo_pendiente","vencido"];
+const FIN_RESULTADO=["en_tramite","favorable","negativo","cerrado_sin_resultado","cancelado_cliente","desistido"];
+const FIN_DEVOLUCION=["no_corresponde","pendiente_dev","parcial_dev","realizada_dev","cancelada_dev"];
+const FIN_LIQUIDACION=["no_liquidado","pendiente_dividir","liquidado_parcial","liquidado_completo"];
+const FIN_LABEL={no_cobrado:"No cobrado",cobro_parcial:"Cobro parcial",cobrado_completo:"Cobrado completo",saldo_pendiente:"Saldo pendiente",vencido:"Vencido",en_tramite:"En trámite",favorable:"Resultado favorable",negativo:"Resultado negativo",cerrado_sin_resultado:"Cerrado sin resultado",cancelado_cliente:"Cancelado por cliente",desistido:"Caso desistido",no_corresponde:"No corresponde",pendiente_dev:"Pendiente de devolución",parcial_dev:"Devolución parcial",realizada_dev:"Devolución realizada",cancelada_dev:"Devolución cancelada",no_liquidado:"No liquidado",pendiente_dividir:"Pendiente de dividir",liquidado_parcial:"Liquidado parcialmente",liquidado_completo:"Liquidado completamente"};
+const FIN_COLOR={no_cobrado:"b-grey",cobro_parcial:"b-amber",cobrado_completo:"b-green",saldo_pendiente:"b-amber",vencido:"b-red",en_tramite:"b-blue",favorable:"b-green",negativo:"b-red",cerrado_sin_resultado:"b-grey",cancelado_cliente:"b-grey",desistido:"b-grey",no_corresponde:"b-grey",pendiente_dev:"b-amber",parcial_dev:"b-amber",realizada_dev:"b-green",cancelada_dev:"b-grey",no_liquidado:"b-grey",pendiente_dividir:"b-amber",liquidado_parcial:"b-amber",liquidado_completo:"b-green"};
+function finLabel(v){ return FIN_LABEL[v]||v||"—"; }
+function finEstadosDefault(){ return {estadoCobro:"no_cobrado",estadoResultado:"en_tramite",estadoDevolucion:"no_corresponde",estadoLiquidacion:"no_liquidado"}; }
 
 /* ---------- LOGO (SVG vectorial GMJ) ---------- */
 const LOGO_FULL = `<svg viewBox="0 0 120 142" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%;display:block">
@@ -460,7 +468,9 @@ async function cloudLoad(){
     const c = row.data||{}; c.id=row.id; c.formToken=row.form_token||c.formToken||null;
     const ff=finMap[row.id];
     if(ff){ c.finanzas=ff.finanzas||c.finanzas; c.pagos=ff.pagos||c.pagos; }
-    else if(!isSocioRole()){ c.finanzas={moneda:"USD",montoTotal:"",adelanto:"",saldo:"",devolucion:"",estadoPago:"",fechaAdelanto:"",fechaSaldo:"",medioPago:"",obs:""}; c.pagos=[]; }
+    if(!c.finanzas) c.finanzas={moneda:"USD",montoTotal:"",adelanto:"",saldo:"",devolucion:"",estadoPago:"pendiente",fechaAdelanto:"",fechaSaldo:"",medioPago:"",obs:"",...finEstadosDefault()};
+    else { const d=finEstadosDefault(); for(const k in d){ if(c.finanzas[k]===undefined) c.finanzas[k]=d[k]; } }
+    if(!c.pagos) c.pagos=[];
     return c;
   });
   DB.casos.sort((a,b)=>(b.id||"").localeCompare(a.id||""));
@@ -476,7 +486,7 @@ async function doCloudSave(){
     if(c){
       const noFin = JSON.parse(JSON.stringify(c)); delete noFin.finanzas; delete noFin.pagos;
       await sb.from("casos").upsert({ id:c.id, data:noFin, cliente_nombre:clienteFull(c), estado:c.estado, form_token:c.formToken||null, updated_at:new Date().toISOString(), updated_by:SESSION.id });
-      if(isSocio()) await sb.from("case_finance").upsert({ caso_id:c.id, finanzas:c.finanzas||{}, pagos:c.pagos||[], updated_at:new Date().toISOString() });
+      await sb.from("case_finance").upsert({ caso_id:c.id, finanzas:c.finanzas||{}, pagos:c.pagos||[], updated_at:new Date().toISOString() });
     }
   }catch(e){ console.error("cloudSave",e); toast("Error guardando en la nube","err"); }
 }
@@ -485,14 +495,14 @@ async function cloudSaveCaseNow(c){
   try{
     const noFin = JSON.parse(JSON.stringify(c)); delete noFin.finanzas; delete noFin.pagos;
     await sb.from("casos").upsert({ id:c.id, data:noFin, cliente_nombre:clienteFull(c), estado:c.estado, form_token:c.formToken||null, updated_at:new Date().toISOString(), updated_by:SESSION.id });
-    if(isSocio()) await sb.from("case_finance").upsert({ caso_id:c.id, finanzas:c.finanzas||{}, pagos:c.pagos||[], updated_at:new Date().toISOString() });
+    await sb.from("case_finance").upsert({ caso_id:c.id, finanzas:c.finanzas||{}, pagos:c.pagos||[], updated_at:new Date().toISOString() });
   }catch(e){ console.error("cloudSaveCaseNow",e); toast("Error guardando en la nube","err"); }
 }
 async function persistCaso(c){ if(CLOUD){ await cloudSaveCaseNow(c); } else { saveLocal(); } }
 async function cloudInsertCase(c){
   const noFin = JSON.parse(JSON.stringify(c)); delete noFin.finanzas; delete noFin.pagos;
   await sb.from("casos").insert({ id:c.id, data:noFin, cliente_nombre:clienteFull(c), estado:c.estado, form_token:c.formToken||null, updated_by:SESSION.id });
-  if(isSocio()) await sb.from("case_finance").upsert({ caso_id:c.id, finanzas:c.finanzas||{}, pagos:c.pagos||[] });
+  await sb.from("case_finance").upsert({ caso_id:c.id, finanzas:c.finanzas||{}, pagos:c.pagos||[] });
   const cfg={ estudio:DB.config.estudio, asistenteMail:DB.config.asistenteMail, mediador:DB.config.mediador, requeridos:DB.config.requeridos, objeto:DB.config.objeto, plantillas:DB.config.plantillas||{}, abogados:DB.abogados, counter:DB.counter };
   await sb.from("settings").upsert({id:1, data:cfg});
 }
@@ -927,7 +937,7 @@ function createCase(){
     cliente:{apellido:ap.toUpperCase(), nombre:no, dni:"", cuit:"", nacionalidad:"Argentina", fechaNac:"", estadoCivil:"", conyuge:"", domicilio:"", localidad:"", provincia:"", cp:"", tel:val("nc_tel"), email:val("nc_email")},
     cuenta:{plataforma:val("nc_plat"), url:"", handle:val("nc_handle"), emailVinc:"", telVinc:"", tipo:"", pautaActiva:false, saldoRetenido:false, cuentasVinc:"", businessManager:false, metodoPago:false, campanasActivas:false, hackeo:false},
     relato:{fechaSusp:"",mensaje:"",tipoSusp:"",apelo:false,recibioResp:false,hackeo:false,recupParcial:false,volvioSusp:false,perdida:"",original:"",sintesis:""},
-    finanzas:{moneda:"USD",montoTotal:"",adelanto:"",saldo:"",fechaAdelanto:"",fechaSaldo:"",devolucion:"",estadoPago:"pendiente",medioPago:"",obs:""},
+    finanzas:{moneda:"USD",montoTotal:"",adelanto:"",saldo:"",fechaAdelanto:"",fechaSaldo:"",devolucion:"",estadoPago:"pendiente",medioPago:"",obs:"",...finEstadosDefault(),hist:[]},
     pagos:[],
     gastos:GASTOS_DEFAULT.map(n=>({id:uid("g"),nombre:n,estado:"pendiente",importe:"",moneda:"ARS",fecha:"",medio:"",obs:"",adjunto:""})),
     docs:[], tareas:[], adjuntos:[], drive:{link:"",creada:false}, objeto:DB.config.objeto, citarFacebook:true, audiencia:null, avance:{},
@@ -951,7 +961,7 @@ function renderCaso(){
     ["resumen","Resumen"],["avance","Avance"],["cliente","Cliente"],["cuenta","Cuenta afectada"],["relato","Relato"],
     ["doc","Documentación"],["drive","Drive"],["docs","Documentos"],["mediacion","Mediación"],["gastos","Gastos"]
   ];
-  if(isSocio()) tabs.push(["finanzas","Finanzas"]);
+  tabs.push(["finanzas","Finanzas"]);
   tabs.push(["tareas","Tareas"],["historial","Historial"],["obs","Observaciones"]);
   const tabBtns=tabs.map(([k,t])=>{
     let pill="";
@@ -994,7 +1004,7 @@ function renderTab(){
   else if(t==="docs") el.innerHTML=tabDocs(c);
   else if(t==="mediacion") el.innerHTML=tabMediacion(c);
   else if(t==="gastos") el.innerHTML=tabGastos(c);
-  else if(t==="finanzas") el.innerHTML= isSocio()?tabFinanzas(c):lockedMsg();
+  else if(t==="finanzas") el.innerHTML= tabFinanzas(c);
   else if(t==="tareas") el.innerHTML=tabTareas(c);
   else if(t==="historial") el.innerHTML=tabHistorial(c);
   else if(t==="obs") el.innerHTML=tabObs(c);
@@ -1589,13 +1599,37 @@ function tabFinanzas(c){
     </div></div>
     <div class="card"><div class="card-h"><h3>Historial de pagos</h3><button class="btn btn-ghost btn-sm" onclick="addPago()">＋ Registrar pago</button></div>
       <table><thead><tr><th>Fecha</th><th>Importe</th><th>Medio</th><th>Obs.</th><th></th></tr></thead><tbody>${pagos}</tbody></table></div>
-  </div>`;
+  </div>
+  ${finEstadoBlock(c)}
+  ${finHistCard(c)}`;
 }
+function finEstadoBlock(c){
+  const f=c.finanzas; const soc=isSocio();
+  const selBox=(id,label,opts,v,locked)=>`<div class="field"><label>${label}</label><select id="${id}" ${locked?'disabled style="background:#f1f5f9;color:var(--muted)"':''}>${opts.map(o=>`<option value="${o}" ${v===o?'selected':''}>${finLabel(o)}</option>`).join("")}</select>${locked?'<div class="hint">Solo socios</div>':''}</div>`;
+  return `<div class="card" style="margin-top:18px"><div class="card-h"><h3>Estado financiero del caso</h3>
+      <span class="badge ${FIN_COLOR[f.estadoCobro]||'b-grey'}">${finLabel(f.estadoCobro)}</span></div><div class="card-b">
+    <div class="frow fr2">${selBox("fe_cobro","Estado de cobro",FIN_COBRO,f.estadoCobro,false)}${selBox("fe_res","Resultado del caso",FIN_RESULTADO,f.estadoResultado,!soc)}</div>
+    <div class="frow fr2">${selBox("fe_dev","Devolución al cliente",FIN_DEVOLUCION,f.estadoDevolucion,!soc)}${selBox("fe_liq","Liquidación entre socios",FIN_LIQUIDACION,f.estadoLiquidacion,!soc)}</div>
+    <button class="btn btn-primary" onclick="saveFinEstados()">Guardar estado financiero</button>
+  </div></div>`;
+}
+function finHistCard(c){
+  const h=(c.finanzas.hist||[]);
+  const rows=h.length?h.map(x=>`<div class="tl-item"><div class="d"></div><div class="act">${esc(x.accion)}${x.detalle?` — <span style="color:var(--muted)">${esc(x.detalle)}</span>`:''}</div><div class="meta">${esc(userName(x.usuario))} · ${esc(x.fecha)}</div></div>`).join(""):'<div class="empty">Sin movimientos financieros registrados</div>';
+  return `<div class="card" style="margin-top:18px"><div class="card-h"><h3>Historial financiero del caso</h3></div><div class="card-b"><div class="timeline">${rows}</div></div></div>`;
+}
+function finLog(c, accion, detalle){ c.finanzas.hist=c.finanzas.hist||[]; c.finanzas.hist.unshift({fecha:now(), usuario:SESSION.id, accion, detalle:detalle||""}); }
+function saveFinEstados(){ const c=CURRENT, f=c.finanzas; const soc=isSocio();
+  f.estadoCobro=val("fe_cobro");
+  if(soc){ f.estadoResultado=val("fe_res"); f.estadoDevolucion=val("fe_dev"); f.estadoLiquidacion=val("fe_liq"); }
+  finLog(c,"Estado financiero actualizado",`cobro: ${finLabel(f.estadoCobro)}${soc?` · resultado: ${finLabel(f.estadoResultado)} · devolución: ${finLabel(f.estadoDevolucion)} · liquidación: ${finLabel(f.estadoLiquidacion)}`:''}`);
+  save(); toast("Estado financiero guardado"); renderCaso(); }
 function saveFinanzas(){ const c=CURRENT, f=c.finanzas;
   f.moneda=val("fi_mon"); f.estadoPago=val("fi_est"); f.montoTotal=val("fi_total"); f.adelanto=val("fi_adel"); f.devolucion=val("fi_dev"); f.fechaAdelanto=val("fi_fadel"); f.fechaSaldo=val("fi_fsaldo"); f.medioPago=val("fi_medio"); f.obs=val("fi_obs");
   const tot=Number(f.montoTotal||0), ade=Number(f.adelanto||0);
   f.saldo = f.montoTotal===""?"":Math.max(tot-ade,0);
   syncAdelanto(c); recalcEstadoPago(c);
+  finLog(c,"Condiciones económicas actualizadas",`total: ${money(f.montoTotal,f.moneda)} · adelanto: ${money(f.adelanto,f.moneda)} · saldo: ${money(f.saldo,f.moneda)}`);
   logAction(c,"Finanzas actualizadas"); save(); toast("Finanzas guardadas"); renderCaso(); }
 function addPago(){
   modal({title:"Registrar pago", size:"sm", body:`
@@ -1604,8 +1638,8 @@ function addPago(){
     ${inp("pa_obs","Observaciones","")}`,
     footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePago()">Registrar</button>`});
 }
-function savePago(){ CURRENT.pagos.push({id:uid("p"),importe:val("pa_imp"),moneda:val("pa_mon"),fecha:val("pa_fec"),medio:val("pa_med"),obs:val("pa_obs")}); recalcEstadoPago(CURRENT); logAction(CURRENT,"Pago registrado: "+money(val("pa_imp"),val("pa_mon"))); save(); closeModal(); toast("Pago registrado"); renderCaso(); }
-function delPago(id){ CURRENT.pagos=CURRENT.pagos.filter(p=>p.id!==id); recalcEstadoPago(CURRENT); save(); renderCaso(); }
+function savePago(){ const imp=val("pa_imp"),mon=val("pa_mon"); CURRENT.pagos.push({id:uid("p"),importe:imp,moneda:mon,fecha:val("pa_fec"),medio:val("pa_med"),obs:val("pa_obs")}); recalcEstadoPago(CURRENT); finLog(CURRENT,"Pago recibido",money(imp,mon)+(val("pa_med")?` · ${val("pa_med")}`:'')); logAction(CURRENT,"Pago registrado: "+money(imp,mon)); save(); closeModal(); toast("Pago registrado"); renderCaso(); }
+function delPago(id){ const p=(CURRENT.pagos||[]).find(x=>x.id===id); CURRENT.pagos=CURRENT.pagos.filter(p=>p.id!==id); if(p)finLog(CURRENT,"Pago eliminado",money(p.importe,p.moneda)); recalcEstadoPago(CURRENT); save(); renderCaso(); }
 
 /* ---------- TAB: TAREAS ---------- */
 function tabTareas(c){

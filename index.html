@@ -307,7 +307,7 @@ const SUPABASE_URL = "https://ybczeovebtsqdkgckcul.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_2cMt9Q29MthejwnnDeWvzQ_Ibn_NLmt";
 const CLOUD = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 const FUNCTIONS_URL = SUPABASE_URL ? SUPABASE_URL.replace(".supabase.co", ".functions.supabase.co") : "";
-const BUILD = "2026.06.10 · B2 activo/historial";
+const BUILD = "2026.06.10 · B3 cambios de divisa";
 let sb = null;
 if (CLOUD && window.supabase) { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 let RT_BOUND = false;
@@ -450,13 +450,14 @@ function uid(p){ return p+Math.random().toString(36).slice(2,8); }
 /* ---------- CAPA DE NUBE (Supabase) ---------- */
 function isSocioRole(){ return SESSION && SESSION.rol==="socio"; }
 async function cloudLoad(){
-  const [st, profs, cs, fin, tk, nt] = await Promise.all([
+  const [st, profs, cs, fin, tk, nt, cd] = await Promise.all([
     sb.from("settings").select("data").eq("id",1).maybeSingle(),
     sb.from("profiles").select("id,nombre,rol"),
     sb.from("casos").select("id,data,form_token"),
     sb.from("case_finance").select("*"),
     sb.from("tareas").select("*"),
-    sb.from("notificaciones").select("*").order("created_at",{ascending:false}).limit(50)
+    sb.from("notificaciones").select("*").order("created_at",{ascending:false}).limit(50),
+    sb.from("cambios_divisa").select("*").order("fecha",{ascending:false})
   ]);
   const cfg = (st.data && st.data.data) || {};
   DB = {
@@ -466,6 +467,7 @@ async function cloudLoad(){
     casos: [],
     tareas: tk.data||[],
     notificaciones: nt.data||[],
+    cambios: cd.data||[],
     counter: cfg.counter||0
   };
   const finMap={}; (fin.data||[]).forEach(f=>finMap[f.caso_id]=f);
@@ -517,6 +519,7 @@ function bindRealtime(){
     .on("postgres_changes",{event:"*",schema:"public",table:"casos"}, cloudRefresh)
     .on("postgres_changes",{event:"*",schema:"public",table:"case_finance"}, cloudRefresh)
     .on("postgres_changes",{event:"*",schema:"public",table:"settings"}, cloudRefresh)
+    .on("postgres_changes",{event:"*",schema:"public",table:"cambios_divisa"}, cloudRefresh)
     .subscribe();
   // canal propio para tareas (refresco liviano, no interrumpe)
   sb.channel("gmj-tareas")
@@ -1551,15 +1554,16 @@ function buildCalUrl(c,a){
 
 /* ---------- TAB: GASTOS ---------- */
 function tabGastos(c){
-  const rows=c.gastos.map(g=>`<tr>
-    <td><b>${esc(g.nombre)}</b></td>
+  const cambioDe=id=>(DB.cambios||[]).find(x=>x.id===id);
+  const rows=c.gastos.map(g=>{ const cx=g.cambioId?cambioDe(g.cambioId):null; return `<tr>
+    <td><b>${esc(g.nombre)}</b>${cx?`<br><small style="color:var(--gold)">💱 financiado con cambio de ${money(cx.monto_origen,cx.moneda_origen)}</small>`:''}</td>
     <td><select onchange="setGasto('${g.id}','estado',this.value)" style="padding:5px 8px;border:1px solid var(--line2);border-radius:6px">
       ${["pendiente","abonado","no corresponde"].map(s=>`<option ${g.estado===s?'selected':''}>${s}</option>`).join("")}</select></td>
     <td>${money(g.importe,g.moneda)}</td>
     <td>${fdate(g.fecha)}</td>
     <td>${esc(g.medio||"—")}</td>
     <td><button class="btn btn-ghost btn-sm" onclick="editGasto('${g.id}')">Editar</button></td>
-  </tr>`).join("");
+  </tr>`;}).join("");
   return `<div class="card"><div class="card-h"><h3>Gastos del expediente</h3><button class="btn btn-ghost btn-sm" onclick="addGasto()">＋ Agregar gasto</button></div>
     <div class="card-b" style="padding-bottom:6px"><div class="alert alert-info"><span>ℹ️</span><div>Cada caso incluye por defecto <b>Mediación</b> y <b>Honorarios del mediador</b> como checklist de control.</div></div></div>
     <table><thead><tr><th>Gasto</th><th>Estado</th><th>Importe</th><th>Fecha pago</th><th>Medio</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
@@ -1574,10 +1578,11 @@ function editGasto(id){
     <div class="frow fr2">${inp("ge_imp","Importe",g.importe,"number")}${inp("ge_fec","Fecha de pago",g.fecha,"date")}</div>
     ${inp("ge_med","Medio de pago",g.medio)}
     ${inp("ge_obs","Observaciones",g.obs)}
+    ${(DB.cambios&&DB.cambios.length)?`<div class="field"><label>Financiado por un cambio de divisa (opcional)</label><select id="ge_cambio"><option value="">— Ninguno —</option>${DB.cambios.map(x=>`<option value="${x.id}" ${g.cambioId===x.id?'selected':''}>${fdate(x.fecha)} · ${money(x.monto_origen,x.moneda_origen)}→${money(x.monto_destino,x.moneda_destino)}${x.motivo?' · '+esc(x.motivo):''}</option>`).join("")}</select><div class="hint">Indica de qué cambio de USD provino el dinero usado para pagar este gasto.</div></div>`:''}
     <div class="fileinput" style="margin-top:6px">📎 Adjuntar comprobante (en versión instalada)</div>`,
     footer:`<button class="btn btn-danger" onclick="delGasto('${id}')">Eliminar</button><div style="flex:1"></div><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveGasto('${id}')">Guardar</button>`});
 }
-function saveGasto(id){ const g=CURRENT.gastos.find(x=>x.id===id); g.nombre=val("ge_nom"); g.estado=val("ge_est"); g.moneda=val("ge_mon"); g.importe=val("ge_imp"); g.fecha=val("ge_fec"); g.medio=val("ge_med"); g.obs=val("ge_obs"); save(); closeModal(); toast("Gasto guardado"); renderCaso(); }
+function saveGasto(id){ const g=CURRENT.gastos.find(x=>x.id===id); g.nombre=val("ge_nom"); g.estado=val("ge_est"); g.moneda=val("ge_mon"); g.importe=val("ge_imp"); g.fecha=val("ge_fec"); g.medio=val("ge_med"); g.obs=val("ge_obs"); if(document.getElementById("ge_cambio"))g.cambioId=val("ge_cambio")||""; save(); closeModal(); toast("Gasto guardado"); renderCaso(); }
 function delGasto(id){ CURRENT.gastos=CURRENT.gastos.filter(x=>x.id!==id); save(); closeModal(); renderCaso(); }
 
 /* ---------- TAB: FINANZAS (socios) ---------- */
@@ -2151,7 +2156,7 @@ function casoEsHistorial(c){ const f=c.finanzas||{}; return f.estadoLiquidacion=
 function dosMon(o){ return `<span style="white-space:nowrap">${money(o.USD,"USD")}</span> · <span style="white-space:nowrap">${money(o.ARS,"ARS")}</span>`; }
 function calcFinanzasGlobal(){
   const z=()=>({USD:0,ARS:0}); const cur=m=>(m==="ARS"?"ARS":"USD");
-  const a={pendCobro:z(),pendDev:z(),pendGasto:z(),pendLiq:z(),cobrado:z(),gastosPag:z(),devRealizada:z()};
+  const a={pendCobro:z(),pendDev:z(),pendGasto:z(),pendLiq:z(),cobrado:z(),gastosPag:z(),devRealizada:z(),fxOut:z(),fxIn:z()};
   casosActivos().forEach(c=>{
     const f=c.finanzas||{}; const m=cur(f.moneda); const cob=cobradoDe(c);
     a.cobrado[m]+=cob;
@@ -2161,11 +2166,52 @@ function calcFinanzasGlobal(){
       if(cob>0) a.pendLiq[m]+=Math.max(cob-(f.estadoDevolucion==="realizada_dev"?Number(f.devolucion||0):0),0);
     }
     if(f.estadoDevolucion==="realizada_dev") a.devRealizada[m]+=Number(f.devolucion||0);
-    (c.gastos||[]).forEach(g=>{ const gm=cur(g.moneda); const imp=Number(g.importe||0); if(g.estado==='pagado') a.gastosPag[gm]+=imp; else a.pendGasto[gm]+=imp; });
+    (c.gastos||[]).forEach(g=>{ const gm=cur(g.moneda); const imp=Number(g.importe||0); if(!imp||g.estado==='no corresponde')return; if(g.estado==='abonado') a.gastosPag[gm]+=imp; else a.pendGasto[gm]+=imp; });
   });
-  a.caja={USD:a.cobrado.USD-a.gastosPag.USD-a.devRealizada.USD, ARS:a.cobrado.ARS-a.gastosPag.ARS-a.devRealizada.ARS};
+  // cambios de divisa: salen de la moneda origen, entran en la destino
+  (DB.cambios||[]).forEach(x=>{ const mo=cur(x.moneda_origen), md=cur(x.moneda_destino); a.fxOut[mo]+=Number(x.monto_origen||0); a.fxIn[md]+=Number(x.monto_destino||0); });
+  a.caja={
+    USD: a.cobrado.USD - a.gastosPag.USD - a.devRealizada.USD - a.fxOut.USD + a.fxIn.USD,
+    ARS: a.cobrado.ARS - a.gastosPag.ARS - a.devRealizada.ARS - a.fxOut.ARS + a.fxIn.ARS
+  };
   return a;
 }
+/* ---------- CAMBIOS DE DIVISA (caja, solo socios) ---------- */
+async function cambioUpsert(x, isNew){
+  if(CLOUD){
+    const row={id:x.id,fecha:x.fecha||null,moneda_origen:x.moneda_origen,monto_origen:Number(x.monto_origen||0),moneda_destino:x.moneda_destino,monto_destino:Number(x.monto_destino||0),tipo_cambio:Number(x.tipo_cambio||0),medio:x.medio||null,motivo:x.motivo||null,caso_id:x.caso_id||null,gasto_id:x.gasto_id||null,usuario:x.usuario,obs:x.obs||null,comprobante:x.comprobante||null};
+    const ins = isNew===true || !(DB.cambios||[]).some(c=>c.id===x.id);
+    let res; if(ins) res=await sb.from("cambios_divisa").insert(row).select().maybeSingle(); else res=await sb.from("cambios_divisa").update(row).eq("id",x.id).select().maybeSingle();
+    if(res.error){ console.error("cambioUpsert",res.error); toast("Error al guardar el cambio: "+res.error.message,"err"); return null; } return res.data;
+  } else { DB.cambios=DB.cambios||[]; const i=DB.cambios.findIndex(c=>c.id===x.id); if(i>=0)DB.cambios[i]=x; else DB.cambios.unshift(x); saveLocal(); return x; }
+}
+async function cambioDelete(id){ if(CLOUD){ const {error}=await sb.from("cambios_divisa").delete().eq("id",id); if(error){ toast("Error al eliminar: "+error.message,"err"); return false; } } DB.cambios=(DB.cambios||[]).filter(c=>c.id!==id); if(!CLOUD)saveLocal(); return true; }
+function cambioModal(id){
+  const editing=!!id; const x=editing?(DB.cambios||[]).find(c=>c.id===id):{moneda_origen:"USD",moneda_destino:"ARS",fecha:new Date().toISOString().slice(0,10),usuario:SESSION.id};
+  if(!x){ toast("Cambio no encontrado","err"); return; }
+  const casoOpts=`<option value="">— Sin caso —</option>`+casosActivos().map(c=>`<option value="${c.id}" ${x.caso_id===c.id?'selected':''}>${esc(clienteFull(c))}</option>`).join("");
+  modal({title:editing?"Editar cambio de divisa":"Registrar cambio de divisa", size:"", body:`
+    <div class="frow fr3">${inp("cx_fecha","Fecha",x.fecha||"","date")}${sel("cx_mo","Moneda origen",["USD","ARS"],x.moneda_origen||"USD")}${inp("cx_io","Monto que entregás",x.monto_origen||"","number")}</div>
+    <div class="frow fr3">${sel("cx_md","Moneda destino",["ARS","USD"],x.moneda_destino||"ARS")}${inp("cx_id","Monto que recibís",x.monto_destino||"","number")}${inp("cx_tc","Tipo de cambio (auto)",x.tipo_cambio||"","number")}</div>
+    <div class="frow fr2">${inp("cx_medio","Medio utilizado",x.medio||"")}<div class="field"><label>Caso vinculado (opcional)</label><select id="cx_caso">${casoOpts}</select></div></div>
+    ${inp("cx_motivo","Motivo (ej: pago de mediación)",x.motivo||"")}
+    <div class="field"><label>Observaciones</label><textarea id="cx_obs" rows="2">${esc(x.obs||'')}</textarea></div>
+    <div class="alert alert-info"><span>💱</span><div>El cambio resta de la caja en <b>${esc(x.moneda_origen||'USD')}</b> y suma en <b>${esc(x.moneda_destino||'ARS')}</b>. Si lo vinculás a un gasto, queda registrado de dónde salió ese dinero.</div></div>`,
+    footer:`${editing?`<button class="btn btn-danger" onclick="cambioDeleteConfirm('${id}')">Eliminar</button>`:''}<div style="flex:1"></div><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveCambio('${id||''}')">Guardar</button>`});
+}
+async function saveCambio(id){
+  const mo=val("cx_mo"),md=val("cx_md"); const io=Number(val("cx_io")||0), idd=Number(val("cx_id")||0);
+  if(!io||!idd){ toast("Cargá los dos montos","err"); return; }
+  if(mo===md){ toast("Las monedas de origen y destino deben ser distintas","err"); return; }
+  const tc=val("cx_tc")?Number(val("cx_tc")):(io?+(idd/io).toFixed(2):0);
+  const isNew=!id;
+  const base = id?(DB.cambios||[]).find(c=>c.id===id):{id:newTareaId(), usuario:SESSION.id, created_at:new Date().toISOString()};
+  Object.assign(base,{fecha:val("cx_fecha")||null,moneda_origen:mo,monto_origen:io,moneda_destino:md,monto_destino:idd,tipo_cambio:tc,medio:val("cx_medio"),motivo:val("cx_motivo"),caso_id:val("cx_caso")||null,obs:val("cx_obs")});
+  const r=await cambioUpsert(base,isNew);
+  if(r){ DB.cambios=DB.cambios||[]; const i=DB.cambios.findIndex(c=>c.id===base.id); if(i>=0)DB.cambios[i]=CLOUD?r:base; else DB.cambios.unshift(CLOUD?r:base); }
+  closeModal(); toast("Cambio de divisa registrado"); if(ROUTE==="finanzas")renderFinanzasGlobal();
+}
+function cambioDeleteConfirm(id){ if(!confirm("¿Eliminar este cambio de divisa?"))return; cambioDelete(id).then(ok=>{ if(ok){ closeModal(); toast("Cambio eliminado"); if(ROUTE==="finanzas")renderFinanzasGlobal(); } }); }
 let FINFILTER={q:"",cobro:"",res:"",dev:"",liq:"",mon:""};
 function renderFinanzasGlobal(){
   setCrumb("Finanzas global"); topActions("");
@@ -2195,6 +2241,18 @@ function renderFinanzasGlobal(){
   const actRows=act.length?act.map(c=>fila(c,false)).join(""):`<tr><td colspan="9" class="empty">Sin casos que requieran acción</td></tr>`;
   const histRows=histo.length?histo.map(c=>fila(c,true)).join(""):`<tr><td colspan="8" class="empty">Sin casos en el historial</td></tr>`;
   const opt=(arr,v)=>arr.map(o=>`<option value="${o}" ${v===o?'selected':''}>${finLabel(o)}</option>`).join("");
+  // cambios de divisa
+  const cambios=(DB.cambios||[]);
+  const cxRows=cambios.length?cambios.map(x=>{ const caso=x.caso_id?DB.casos.find(c=>c.id===x.caso_id):null;
+    return `<tr class="clickable" onclick="cambioModal('${x.id}')"><td>${fdate(x.fecha)}</td><td>${money(x.monto_origen,x.moneda_origen)} → ${money(x.monto_destino,x.moneda_destino)}</td><td>TC ${esc(String(x.tipo_cambio||'—'))}</td><td>${esc(x.motivo||'—')}</td><td>${caso?esc(clienteFull(caso)):'—'}</td><td>${esc(userName(x.usuario))}</td></tr>`;
+  }).join(""):`<tr><td colspan="6" class="empty">Sin cambios de divisa registrados</td></tr>`;
+  // movimientos de caja (cobros, gastos, cambios)
+  const movs=[];
+  casosActivos().forEach(c=>{ (c.pagos||[]).forEach(p=>movs.push({fecha:p.fecha,tipo:"Cobro",detalle:clienteFull(c),monto:Number(p.importe||0),moneda:p.moneda,signo:1}));
+    (c.gastos||[]).forEach(g=>{ if(g.estado==='abonado'&&Number(g.importe||0)) movs.push({fecha:g.fecha,tipo:"Gasto",detalle:g.nombre+" · "+clienteFull(c),monto:Number(g.importe||0),moneda:g.moneda,signo:-1}); }); });
+  (DB.cambios||[]).forEach(x=>movs.push({fecha:x.fecha,tipo:"Cambio",detalle:`${money(x.monto_origen,x.moneda_origen)} → ${money(x.monto_destino,x.moneda_destino)}${x.motivo?' · '+x.motivo:''}`,fx:true,signo:0}));
+  movs.sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""));
+  const movRows=movs.length?movs.slice(0,80).map(m=>`<tr><td>${fdate(m.fecha)}</td><td><span class="badge ${m.tipo==='Cobro'?'b-green':m.tipo==='Gasto'?'b-red':'b-blue'}">${m.tipo}</span></td><td>${esc(m.detalle)}</td><td style="text-align:right;font-weight:600;color:${m.signo>0?'#1c7a40':m.signo<0?'#c0392b':'var(--muted)'}">${m.fx?'—':(m.signo>0?'+ ':'− ')+money(m.monto,m.moneda)}</td></tr>`).join(""):`<tr><td colspan="4" class="empty">Sin movimientos</td></tr>`;
   document.getElementById("view").innerHTML=`
     <div class="pagehead"><div><h2>Finanzas global del estudio</h2><div class="sub">Solo socios · ${activos.length} activos · ${histo.length} en historial</div></div></div>
 
@@ -2209,7 +2267,7 @@ function renderFinanzasGlobal(){
       <div class="stat"><div class="lab">Pendiente de gastos</div><div class="val" style="font-size:18px">${dosMon(a.pendGasto)}</div></div>
       <div class="stat green"><div class="lab">Cobrado total</div><div class="val" style="font-size:18px">${dosMon(a.cobrado)}</div></div>
     </div>
-    <div class="alert alert-info" style="margin-bottom:16px"><span>ℹ️</span><div>La <b>caja</b> es estimada: se afina cuando carguemos los <b>cambios de divisa</b> (próxima etapa) y la <b>liquidación entre socios</b>. Un caso pasa al historial cuando su liquidación queda <b>“Liquidado completamente”</b>.</div></div>
+    <div class="alert alert-info" style="margin-bottom:16px"><span>ℹ️</span><div>La <b>caja</b> ya incluye los <b>cambios de divisa</b>. Se terminará de afinar con la <b>liquidación entre socios</b> (próxima etapa). Un caso pasa al historial cuando su liquidación queda <b>“Liquidado completamente”</b>.</div></div>
 
     <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 10px">Casos que requieren acción</div>
     <div class="filters" style="margin-bottom:10px">
@@ -2223,7 +2281,17 @@ function renderFinanzasGlobal(){
     <div class="card" style="margin-bottom:24px"><table><thead><tr><th>Cliente</th><th>Mon.</th><th>Total</th><th>Cobrado</th><th>Pend.</th><th>Cobro</th><th>Resultado</th><th>Devolución</th><th>Liquidación</th></tr></thead><tbody>${actRows}</tbody></table></div>
 
     <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 10px">Historial (cerrados y liquidados)</div>
-    <div class="card"><table><thead><tr><th>Cliente</th><th>Mon.</th><th>Total</th><th>Cobrado</th><th>Cobro</th><th>Resultado</th><th>Devolución</th><th>Liquidación</th></tr></thead><tbody>${histRows}</tbody></table></div>`;
+    <div class="card" style="margin-bottom:24px"><table><thead><tr><th>Cliente</th><th>Mon.</th><th>Total</th><th>Cobrado</th><th>Cobro</th><th>Resultado</th><th>Devolución</th><th>Liquidación</th></tr></thead><tbody>${histRows}</tbody></table></div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:4px 0 10px"><div class="sec-title" style="font-weight:700;color:var(--navy)">💱 Cambios de divisa</div><button class="btn btn-primary btn-sm" onclick="cambioModal()">＋ Registrar cambio</button></div>
+    <div class="grid g2" style="margin-bottom:10px">
+      <div class="stat"><div class="lab">Cambiado de USD → ARS</div><div class="val" style="font-size:18px">${money(a.fxOut.USD,"USD")} → ${money(a.fxIn.ARS,"ARS")}</div></div>
+      <div class="stat"><div class="lab">Cambiado de ARS → USD</div><div class="val" style="font-size:18px">${money(a.fxOut.ARS,"ARS")} → ${money(a.fxIn.USD,"USD")}</div></div>
+    </div>
+    <div class="card" style="margin-bottom:24px"><table><thead><tr><th>Fecha</th><th>Cambio</th><th>T.C.</th><th>Motivo</th><th>Caso</th><th>Registró</th></tr></thead><tbody>${cxRows}</tbody></table></div>
+
+    <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 10px">Movimientos de caja</div>
+    <div class="card"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Detalle</th><th style="text-align:right">Monto</th></tr></thead><tbody>${movRows}</tbody></table></div>`;
 }
 
 /* ============================================================

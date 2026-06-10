@@ -61,6 +61,19 @@ a{color:var(--primary);text-decoration:none}
 .topbar{background:#fff;border-bottom:1px solid var(--line);padding:0 28px;height:62px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:15}
 .topbar .crumb{font-size:13px;color:var(--muted)}
 .topbar .crumb b{color:var(--navy);font-weight:600;font-size:16px;display:block}
+.bell-btn{position:relative;width:38px;height:38px;border-radius:9px;border:1px solid var(--line);background:#fff;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:.15s}
+.bell-btn:hover{background:var(--bg)}
+.bell-badge{position:absolute;top:-5px;right:-5px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#e23b3b;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;border:2px solid #fff}
+.notif-panel{position:absolute;right:0;top:46px;width:360px;max-height:460px;overflow:auto;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.16);z-index:40}
+.notif-h{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:#fff}
+.notif-h h4{margin:0;font-size:14px;color:var(--navy)}
+.notif-item{display:flex;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+.notif-item:hover{background:var(--bg)}
+.notif-item.unread{background:#f3f8ff}
+.notif-item .ni-ic{flex-shrink:0;font-size:17px}
+.notif-item .ni-t{font-weight:600;color:var(--navy);font-size:13px}
+.notif-item .ni-b{color:var(--muted);font-size:12px;margin-top:1px}
+.notif-item .ni-d{color:var(--muted);font-size:11px;margin-top:3px}
 .content{padding:26px 28px 60px}
 
 /* COMPONENTS */
@@ -248,7 +261,10 @@ tr.clickable:hover{background:#f8fafc}
   <div class="main">
     <div class="topbar">
       <div class="crumb" id="crumb"><b>Panel</b></div>
-      <div id="topActions"></div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <div id="topActions"></div>
+        <div id="notifBell" style="position:relative"></div>
+      </div>
     </div>
     <div class="content" id="view"></div>
   </div>
@@ -403,12 +419,13 @@ function uid(p){ return p+Math.random().toString(36).slice(2,8); }
 /* ---------- CAPA DE NUBE (Supabase) ---------- */
 function isSocioRole(){ return SESSION && SESSION.rol==="socio"; }
 async function cloudLoad(){
-  const [st, profs, cs, fin, tk] = await Promise.all([
+  const [st, profs, cs, fin, tk, nt] = await Promise.all([
     sb.from("settings").select("data").eq("id",1).maybeSingle(),
     sb.from("profiles").select("id,nombre,rol"),
     sb.from("casos").select("id,data,form_token"),
     sb.from("case_finance").select("*"),
-    sb.from("tareas").select("*")
+    sb.from("tareas").select("*"),
+    sb.from("notificaciones").select("*").order("created_at",{ascending:false}).limit(50)
   ]);
   const cfg = (st.data && st.data.data) || {};
   DB = {
@@ -417,6 +434,7 @@ async function cloudLoad(){
     usuarios: (profs.data||[]).map(p=>({id:p.id,nombre:p.nombre,rol:p.rol})),
     casos: [],
     tareas: tk.data||[],
+    notificaciones: nt.data||[],
     counter: cfg.counter||0
   };
   const finMap={}; (fin.data||[]).forEach(f=>finMap[f.caso_id]=f);
@@ -466,7 +484,15 @@ function bindRealtime(){
     .on("postgres_changes",{event:"*",schema:"public",table:"case_finance"}, cloudRefresh)
     .on("postgres_changes",{event:"*",schema:"public",table:"settings"}, cloudRefresh)
     .on("postgres_changes",{event:"*",schema:"public",table:"tareas"}, cloudRefresh)
+    .on("postgres_changes",{event:"INSERT",schema:"public",table:"notificaciones",filter:"user_id=eq."+SESSION.id}, onNotifInsert)
     .subscribe();
+}
+function onNotifInsert(payload){
+  const n=payload.new; if(!n) return;
+  DB.notificaciones=DB.notificaciones||[]; if(DB.notificaciones.some(x=>x.id===n.id)) return;
+  DB.notificaciones.unshift(n);
+  renderBell();
+  toast("🔔 "+(n.titulo||"Nueva notificación"));
 }
 /* ---------- TAREAS: persistencia ---------- */
 async function tareaUpsert(t){
@@ -493,6 +519,62 @@ function tareaEfEstado(t){ // marca vencidas automáticamente para mostrar
   if(t.estado==="pendiente" && t.vence && t.vence < new Date().toISOString().slice(0,10)) return "vencida";
   return t.estado;
 }
+/* ---------- NOTIFICACIONES INTERNAS ---------- */
+const NOTIF_IC={tarea_asignada:"📌",tarea_actualizada:"✏️",tarea_completada:"✅",tarea_cancelada:"🚫",general:"🔔"};
+async function notifCreate(userId, tipo, titulo, cuerpo, tareaId, casoId){
+  if(!CLOUD || !userId || userId===SESSION.id) return; // no notificar al que hace la acción
+  try{ await sb.from("notificaciones").insert({ user_id:userId, actor_id:SESSION.id, tipo:tipo||"general", titulo:titulo||"", cuerpo:cuerpo||"", tarea_id:tareaId||null, caso_id:casoId||null }); }
+  catch(e){ console.error("notifCreate",e); }
+}
+function notifsMine(){ return (DB.notificaciones||[]); }
+function notifUnread(){ return notifsMine().filter(n=>!n.leida).length; }
+function renderBell(){
+  const el=document.getElementById("notifBell"); if(!el) return;
+  if(!CLOUD){ el.innerHTML=""; return; }
+  const u=notifUnread();
+  el.innerHTML=`<button class="bell-btn" onclick="toggleNotifPanel(event)" title="Notificaciones">🔔${u?`<span class="bell-badge">${u>9?'9+':u}</span>`:""}</button>`;
+}
+let NOTIF_OPEN=false;
+function toggleNotifPanel(ev){
+  if(ev) ev.stopPropagation();
+  NOTIF_OPEN=!NOTIF_OPEN;
+  const el=document.getElementById("notifBell"); if(!el) return;
+  renderBell();
+  if(!NOTIF_OPEN) return;
+  const items=notifsMine();
+  const rows=items.length?items.slice(0,40).map(n=>`<div class="notif-item ${n.leida?'':'unread'}" onclick="openNotif('${n.id}')">
+      <div class="ni-ic">${NOTIF_IC[n.tipo]||"🔔"}</div>
+      <div style="flex:1"><div class="ni-t">${esc(n.titulo||"")}</div>${n.cuerpo?`<div class="ni-b">${esc(n.cuerpo)}</div>`:""}<div class="ni-d">${esc(fdatetime(n.created_at))}</div></div>
+    </div>`).join(""):`<div class="empty" style="padding:26px">Sin notificaciones</div>`;
+  const panel=document.createElement("div");
+  panel.className="notif-panel"; panel.id="notifPanel";
+  panel.innerHTML=`<div class="notif-h"><h4>Notificaciones</h4>${items.some(n=>!n.leida)?`<button class="btn btn-ghost btn-sm" onclick="markAllNotifRead(event)">Marcar todo leído</button>`:""}</div>${rows}`;
+  el.appendChild(panel);
+  setTimeout(()=>document.addEventListener("click",closeNotifOutside),0);
+}
+function closeNotifOutside(e){
+  const el=document.getElementById("notifBell");
+  if(el && !el.contains(e.target)){ NOTIF_OPEN=false; const p=document.getElementById("notifPanel"); if(p)p.remove(); document.removeEventListener("click",closeNotifOutside); }
+}
+async function markNotifRead(id){
+  const n=(DB.notificaciones||[]).find(x=>x.id===id); if(n && !n.leida){ n.leida=true; if(CLOUD){ try{ await sb.from("notificaciones").update({leida:true}).eq("id",id); }catch(e){} } }
+}
+async function markAllNotifRead(ev){
+  if(ev) ev.stopPropagation();
+  const unread=(DB.notificaciones||[]).filter(n=>!n.leida);
+  unread.forEach(n=>n.leida=true);
+  if(CLOUD && unread.length){ try{ await sb.from("notificaciones").update({leida:true}).in("id",unread.map(n=>n.id)); }catch(e){} }
+  NOTIF_OPEN=false; const p=document.getElementById("notifPanel"); if(p)p.remove(); renderBell();
+}
+async function openNotif(id){
+  const n=(DB.notificaciones||[]).find(x=>x.id===id); if(!n) return;
+  await markNotifRead(id);
+  NOTIF_OPEN=false; const p=document.getElementById("notifPanel"); if(p)p.remove();
+  renderBell();
+  if(n.tarea_id && (DB.tareas||[]).some(t=>t.id===n.tarea_id)){ if(ROUTE!=='tareas')go('tareas'); setTimeout(()=>tareaModal(n.tarea_id),60); }
+  else if(n.caso_id && DB.casos.some(c=>c.id===n.caso_id)){ go('caso', n.caso_id); }
+}
+function fdatetime(s){ if(!s) return ""; const d=new Date(s); if(isNaN(d)) return esc(s); const p=n=>String(n).padStart(2,"0"); return `${p(d.getDate())}/${p(d.getMonth()+1)} ${p(d.getHours())}:${p(d.getMinutes())}`; }
 let _refreshTimer=null;
 function cloudRefresh(){
   if(_refreshTimer) clearTimeout(_refreshTimer);
@@ -502,6 +584,7 @@ function cloudRefresh(){
     await cloudLoad();
     if(ROUTE==="caso" && curId){ CURRENT=DB.casos.find(c=>c.id===curId)||null; ACTIVE_TAB=tab; if(CURRENT) renderCaso(); else go("casos"); }
     else if(ROUTE) go(ROUTE);
+    renderBell();
   }, 250);
 }
 function isSocio(){ return SESSION && SESSION.rol==="socio"; }
@@ -573,8 +656,8 @@ let ROUTE="dashboard";
 function initApp(){
   document.getElementById("uav").textContent = SESSION.nombre.split(" ").map(s=>s[0]).slice(0,2).join("");
   document.getElementById("unm").textContent = SESSION.nombre;
-  document.getElementById("url").textContent = isSocio()?"Socio / Administrador":"Empleado";
-  setLogos(); buildNav(); go("dashboard");
+  document.getElementById("url").textContent = isSocio()?"Socio / Administrador":"Colaborador";
+  setLogos(); buildNav(); renderBell(); go("dashboard");
 }
 function buildNav(){
   const items=[
@@ -2140,9 +2223,12 @@ function tareaRow(t){
 }
 async function toggleTareaHecha(id){
   const t=(DB.tareas||[]).find(x=>x.id===id); if(!t)return;
-  t.estado = t.estado==='realizada' ? 'pendiente' : 'realizada';
+  const completando = t.estado!=='realizada';
+  t.estado = completando ? 'realizada' : 'pendiente';
   await tareaUpsert(t);
   syncTareaCalendar(t);
+  if(completando && t.creado_por && t.creado_por!==SESSION.id)
+    notifCreate(t.creado_por,"tarea_completada","Tarea completada: "+t.titulo,"Por "+userName(SESSION.id),t.id,t.caso_id);
   if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='caso')renderCaso();
 }
 /* ---------- TAREAS ↔ Google Calendar ---------- */
@@ -2223,6 +2309,8 @@ async function saveTareaForm(id){
   const casoId=val("tk_caso")||null;
   const caso=casoId?DB.casos.find(c=>c.id===casoId):null;
   let t = id ? (DB.tareas||[]).find(x=>x.id===id) : null;
+  const prevAsign = (t && Array.isArray(t.asignados)) ? t.asignados.slice() : [];
+  const prevEstado = t ? t.estado : null;
   const base = t || { id:newTareaId(), creado_por:SESSION.id, created_at:new Date().toISOString(), eventos:{} };
   Object.assign(base, { titulo:tit, descripcion:val("tk_desc"), asignados, caso_id:casoId, cliente_nombre:caso?clienteFull(caso):null, vence:val("tk_vence")||null, hora:val("tk_hora")||null, duracion:val("tk_dur")||null, prioridad:val("tk_prio"), estado:val("tk_est"), observaciones:val("tk_obs"), recordatorio:val("tk_rec"), privacidad:val("tk_priv") });
   await tareaUpsert(base);
@@ -2230,6 +2318,12 @@ async function saveTareaForm(id){
   closeModal(); toast("Tarea guardada");
   if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='caso')renderCaso();
   syncTareaCalendar(base);
+  // notificar a los nuevos asignados
+  const detalle=(base.vence?("Vence "+fdate(base.vence)+(base.hora?" "+base.hora:"")):"Sin fecha")+(caso?(" · "+clienteFull(caso)):"");
+  asignados.filter(u=>!prevAsign.includes(u)).forEach(u=>notifCreate(u,"tarea_asignada","Te asignaron: "+tit,detalle,base.id,casoId));
+  // notificar al creador si un asignado la marcó completada/cancelada desde el form
+  if(prevEstado && prevEstado!==base.estado && ["realizada","cancelada"].includes(base.estado) && base.creado_por!==SESSION.id)
+    notifCreate(base.creado_por, base.estado==="realizada"?"tarea_completada":"tarea_cancelada", (base.estado==="realizada"?"Tarea completada: ":"Tarea cancelada: ")+tit, "Por "+userName(SESSION.id), base.id, casoId);
 }
 async function deleteTareaConfirm(id){ if(!confirm("¿Eliminar esta tarea? Esta acción no se puede deshacer."))return; const t=(DB.tareas||[]).find(x=>x.id===id); if(t)await syncTareaCalendar(t,{del:true}); const ok=await tareaDelete(id); if(!ok)return; closeModal(); toast("Tarea eliminada"); if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='caso')renderCaso(); }
 

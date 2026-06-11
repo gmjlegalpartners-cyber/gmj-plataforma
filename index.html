@@ -307,7 +307,7 @@ const SUPABASE_URL = "https://ybczeovebtsqdkgckcul.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_2cMt9Q29MthejwnnDeWvzQ_Ibn_NLmt";
 const CLOUD = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 const FUNCTIONS_URL = SUPABASE_URL ? SUPABASE_URL.replace(".supabase.co", ".functions.supabase.co") : "";
-const BUILD = "2026.06.10 · B8 gastos unificados";
+const BUILD = "2026.06.10 · B9 panel con pestañas";
 let sb = null;
 if (CLOUD && window.supabase) { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 let RT_BOUND = false;
@@ -2394,7 +2394,22 @@ async function saveCambio(id){
   closeModal(); toast("Cambio de divisa registrado"); if(ROUTE==="finanzas")renderFinanzasGlobal();
 }
 function cambioDeleteConfirm(id){ if(!confirm("¿Eliminar este cambio de divisa?"))return; cambioDelete(id).then(ok=>{ if(ok){ closeModal(); toast("Cambio eliminado"); if(ROUTE==="finanzas")renderFinanzasGlobal(); } }); }
-let FINFILTER={q:"",cobro:"",res:"",dev:"",liq:"",mon:""};
+let FINFILTER={q:"",cobro:"",res:"",dev:"",liq:"",mon:"",liqSocio:""};
+let FINTAB="resumen";
+function setFinTab(t){ FINTAB=t; renderFinanzasGlobal(); }
+function liqHistorialRows(filtroSocio){
+  const rows=[];
+  (DB.liquidaciones||[]).forEach(l=>{ const caso=l.caso_id?DB.casos.find(c=>c.id===l.caso_id):null;
+    (l.reparto||[]).forEach(r=>{ if(filtroSocio && r.socio_id!==filtroSocio) return; rows.push({fecha:l.fecha, cliente:caso?clienteFull(caso):'—', socio:r.nombre||userName(r.socio_id), monto:Number(r.monto||0), moneda:l.moneda, estado:l.estado, liqId:l.id}); }); });
+  rows.sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""));
+  return rows;
+}
+function openLiqById(id){ const l=(DB.liquidaciones||[]).find(x=>x.id===id); if(l) liqModal(l.caso_id, id); }
+function resumenPorSocio(){
+  const acc={};
+  (DB.liquidaciones||[]).forEach(l=>{ const m=l.moneda==='ARS'?'ARS':'USD'; (l.reparto||[]).forEach(r=>{ const k=r.socio_id||r.nombre; acc[k]=acc[k]||{nombre:r.nombre||userName(r.socio_id),USD:0,ARS:0}; acc[k][m]+=Number(r.monto||0); }); });
+  return acc;
+}
 function renderFinanzasGlobal(){
   setCrumb("Finanzas global"); topActions("");
   const a=calcFinanzasGlobal();
@@ -2446,29 +2461,38 @@ function renderFinanzasGlobal(){
   movs.sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""));
   const movBadge=t=>t==='Cobro'?'b-green':t==='Gasto'?'b-red':t==='Liquidación'?'b-gold':'b-blue';
   const movRows=movs.length?movs.slice(0,80).map(m=>`<tr><td>${fdate(m.fecha)}</td><td><span class="badge ${movBadge(m.tipo)}">${m.tipo}</span></td><td>${esc(m.detalle)}</td><td style="text-align:right;font-weight:600;color:${m.signo>0?'#1c7a40':m.signo<0?'#c0392b':'var(--muted)'}">${m.fx?'—':(m.signo>0?'+ ':'− ')+money(m.monto,m.moneda)}</td></tr>`).join(""):`<tr><td colspan="4" class="empty">Sin movimientos</td></tr>`;
-  document.getElementById("view").innerHTML=`
-    <div class="pagehead"><div><h2>Finanzas global del estudio</h2><div class="sub">Solo socios · ${activos.length} activos · ${histo.length} en historial</div></div></div>
-
-    <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 10px">💰 Plata del estudio</div>
-    <div class="grid g2" style="margin-bottom:8px">
-      <div class="stat green" style="border-left:4px solid #1c7a40"><div class="lab">✅ Caja DISPONIBLE (es del estudio)</div><div class="val" style="font-size:20px">${dosMon(a.caja)}</div><div class="sub">plata libre, sin compromisos pendientes</div></div>
-      <div class="stat amber" style="border-left:4px solid #d99411"><div class="lab">⏸️ En stand by — posible devolución a clientes</div><div class="val" style="font-size:20px">${dosMon(a.reservaDev)}</div><div class="sub">cobrada, pero podría devolverse según resultado del caso</div></div>
-    </div>
-    <div class="alert alert-warn" style="margin-bottom:14px"><span>⏸️</span><div>El monto <b>en stand by</b> NO es plata del estudio todavía: es la <b>devolución pactada</b> de casos que aún no se resolvieron. Si el caso termina favorable, esa plata pasa a la caja disponible; si termina negativo, se devuelve al cliente. Por eso no debe repartirse ni gastarse hasta cerrar el caso.</div></div>
-
-    <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 10px">Pendientes</div>
+  // ---- pestañas ----
+  const TABS=[["resumen","Resumen"],["casos","Casos"],["gastos","Gastos"],["liquidaciones","Liquidaciones"],["cambios","Cambios de divisa"],["movimientos","Movimientos"]];
+  const tabBar=`<div class="tabs" style="margin-bottom:18px">${TABS.map(([k,t])=>`<button class="${FINTAB===k?'active':''}" onclick="setFinTab('${k}')">${t}</button>`).join("")}</div>`;
+  // ---- liquidaciones: listos para liquidar + historial + por socio ----
+  const listos=activos.filter(c=>netLiquidableCaso(c)>0);
+  const listosCards=listos.length?listos.map(c=>{ const f=c.finanzas||{}; return `<div class="card" style="padding:0"><div class="card-b" style="padding:12px 14px">
+      <div style="font-weight:700;color:var(--navy)">${esc(clienteFull(c))}</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">${finLabel(f.estadoResultado)} · ${finLabel(f.estadoCobro)}</div>
+      <div style="display:flex;align-items:flex-end;justify-content:space-between">
+        <div><div style="font-size:12px;color:var(--muted)">para repartir</div><div style="font-size:18px;font-weight:700;color:#1c7a40">${money(netLiquidableCaso(c),f.moneda)}</div></div>
+        <button class="btn btn-primary btn-sm" onclick="liqModal('${c.id}')">⚖️ Liquidar</button>
+      </div></div></div>`;}).join(""):'<div class="card"><div class="empty">No hay casos con plata lista para repartir. Aparecen acá cuando el caso está cobrado y resuelto.</div></div>';
+  const lhRows=liqHistorialRows(FINFILTER.liqSocio);
+  const liqHistRows=lhRows.length?lhRows.map(r=>`<tr class="clickable" onclick="openLiqById('${r.liqId}')"><td>${fdate(r.fecha)}</td><td>${esc(r.cliente)}</td><td><b>${esc(r.socio)}</b></td><td style="text-align:right">${money(r.monto,r.moneda)}</td><td><span class="badge ${FIN_COLOR[r.estado]||(r.estado==='pendiente'?'b-amber':'b-green')}">${esc(LIQ_EST[r.estado]||r.estado)}</span></td></tr>`).join(""):`<tr><td colspan="5" class="empty">Sin liquidaciones registradas</td></tr>`;
+  const porSocio=resumenPorSocio();
+  const socioCards=Object.values(porSocio).length?Object.values(porSocio).map(s=>`<div class="stat"><div class="lab">${esc(s.nombre)}</div><div class="val" style="font-size:16px">${money(s.USD,"USD")} · ${money(s.ARS,"ARS")}</div></div>`).join(""):'<div class="empty">Sin datos</div>';
+  const socioFiltro=`<select onchange="FINFILTER.liqSocio=this.value;renderFinanzasGlobal()"><option value="">Todos los socios</option>${socios().map(u=>`<option value="${u.id}" ${FINFILTER.liqSocio===u.id?'selected':''}>${esc(u.nombre)}</option>`).join("")}</select>`;
+  // ---- contenido por pestaña ----
+  let cont="";
+  if(FINTAB==="resumen"){ cont=`
     <div class="grid g4" style="margin-bottom:8px">
       <div class="stat"><div class="lab">Pendiente de cobro</div><div class="val" style="font-size:17px">${dosMon(a.pendCobro)}</div></div>
-      <div class="stat"><div class="lab">Pendiente de liquidar (socios)</div><div class="val" style="font-size:17px">${dosMon(a.pendLiq)}</div><div class="sub">ya descuenta lo de stand by</div></div>
+      <div class="stat"><div class="lab">Pendiente de liquidar</div><div class="val" style="font-size:17px">${dosMon(a.pendLiq)}</div></div>
       <div class="stat"><div class="lab">Devolución a realizar</div><div class="val" style="font-size:17px">${dosMon(a.pendDev)}</div></div>
       <div class="stat"><div class="lab">Pendiente de gastos</div><div class="val" style="font-size:17px">${dosMon(a.pendGasto)}</div></div>
     </div>
-    <div class="grid g2" style="margin-bottom:18px">
+    <div class="grid g2" style="margin-bottom:8px">
       <div class="stat green"><div class="lab">Cobrado total (histórico)</div><div class="val" style="font-size:17px">${dosMon(a.cobrado)}</div></div>
-      <div class="stat"><div class="lab">Caja bruta (antes de reservar stand by)</div><div class="val" style="font-size:17px">${dosMon(a.cajaBruta)}</div></div>
+      <div class="stat"><div class="lab">Caja bruta (antes de stand by)</div><div class="val" style="font-size:17px">${dosMon(a.cajaBruta)}</div></div>
     </div>
-
-    <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 10px">Casos que requieren acción</div>
+    <div class="alert alert-warn"><span>⏸️</span><div>El monto <b>en stand by</b> es la <b>devolución pactada</b> de casos sin resolver: no es plata del estudio todavía. Si el caso termina favorable pasa a la caja; si termina negativo se devuelve. Por eso no se reparte ni se gasta hasta cerrar el caso.</div></div>`;
+  } else if(FINTAB==="casos"){ cont=`
     <div class="filters" style="margin-bottom:10px">
       <input placeholder="Buscar cliente…" value="${esc(F.q)}" oninput="FINFILTER.q=this.value;renderFinanzasGlobal()" style="min-width:180px">
       <select onchange="FINFILTER.mon=this.value;renderFinanzasGlobal()"><option value="">Moneda</option><option ${F.mon==='USD'?'selected':''}>USD</option><option ${F.mon==='ARS'?'selected':''}>ARS</option></select>
@@ -2477,28 +2501,44 @@ function renderFinanzasGlobal(){
       <select onchange="FINFILTER.dev=this.value;renderFinanzasGlobal()"><option value="">Devolución</option>${opt(FIN_DEVOLUCION,F.dev)}</select>
       <select onchange="FINFILTER.liq=this.value;renderFinanzasGlobal()"><option value="">Liquidación</option>${opt(FIN_LIQUIDACION,F.liq)}</select>
     </div>
+    <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 8px">Casos que requieren acción</div>
     <div class="card" style="margin-bottom:24px;overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Mon.</th><th>Total</th><th>Cobrado</th><th>Pend.</th><th>Para liquidar</th><th>Cobro</th><th>Resultado</th><th>Devolución</th><th>Liquidación</th></tr></thead><tbody>${actRows}</tbody></table></div>
-
-    <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 10px">Historial (cerrados y liquidados)</div>
-    <div class="card" style="margin-bottom:24px"><table><thead><tr><th>Cliente</th><th>Mon.</th><th>Total</th><th>Cobrado</th><th>Cobro</th><th>Resultado</th><th>Devolución</th><th>Liquidación</th></tr></thead><tbody>${histRows}</tbody></table></div>
-
-    <div style="display:flex;align-items:center;justify-content:space-between;margin:4px 0 10px"><div class="sec-title" style="font-weight:700;color:var(--navy)">🧾 Gastos del estudio (casos + generales)</div><button class="btn btn-primary btn-sm" onclick="gastoGenModal()">＋ Gasto general</button></div>
-    <div class="grid g4" style="margin-bottom:10px">
-      <div class="stat green"><div class="lab">Abonados USD · ARS</div><div class="val" style="font-size:16px">${money(gAb.USD,"USD")} · ${money(gAb.ARS,"ARS")}</div></div>
-      <div class="stat amber"><div class="lab">Pendientes USD · ARS</div><div class="val" style="font-size:16px">${money(gPe.USD,"USD")} · ${money(gPe.ARS,"ARS")}</div></div>
-      <div class="stat" style="grid-column:span 2"><div class="lab">Total gastos (abonados)</div><div class="val" style="font-size:16px">${money(gAb.USD,"USD")} · ${money(gAb.ARS,"ARS")}</div><div class="sub">los gastos de cada caso (mediación, honorarios, etc.) también aparecen acá</div></div>
+    <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 8px">Historial (cerrados y liquidados)</div>
+    <div class="card" style="overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Mon.</th><th>Total</th><th>Cobrado</th><th>Cobro</th><th>Resultado</th><th>Devolución</th><th>Liquidación</th></tr></thead><tbody>${histRows}</tbody></table></div>`;
+  } else if(FINTAB==="gastos"){ cont=`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 10px"><div class="sec-title" style="font-weight:700;color:var(--navy)">Gastos del estudio (casos + generales)</div><button class="btn btn-primary btn-sm" onclick="gastoGenModal()">＋ Gasto general</button></div>
+    <div class="grid g3" style="margin-bottom:10px">
+      <div class="stat green"><div class="lab">Abonados (USD · ARS)</div><div class="val" style="font-size:16px">${money(gAb.USD,"USD")} · ${money(gAb.ARS,"ARS")}</div></div>
+      <div class="stat amber"><div class="lab">Pendientes (USD · ARS)</div><div class="val" style="font-size:16px">${money(gPe.USD,"USD")} · ${money(gPe.ARS,"ARS")}</div></div>
+      <div class="stat"><div class="lab">Total de gastos</div><div class="val" style="font-size:16px">${gastos.length}</div><div class="sub">incluye gastos de cada caso</div></div>
     </div>
-    <div class="card" style="margin-bottom:24px;overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Origen</th><th>Importe</th><th>Estado</th><th>Medio</th></tr></thead><tbody>${gxRows}</tbody></table></div>
-
-    <div style="display:flex;align-items:center;justify-content:space-between;margin:4px 0 10px"><div class="sec-title" style="font-weight:700;color:var(--navy)">💱 Cambios de divisa</div><button class="btn btn-primary btn-sm" onclick="cambioModal()">＋ Registrar cambio</button></div>
+    <div class="card" style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Origen</th><th>Importe</th><th>Estado</th><th>Medio</th></tr></thead><tbody>${gxRows}</tbody></table></div>`;
+  } else if(FINTAB==="liquidaciones"){ cont=`
+    <div class="sec-title" style="font-weight:700;color:var(--navy);margin:0 0 8px">⬇ Listos para liquidar</div>
+    <div class="grid g3" style="margin-bottom:22px">${listosCards}</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:4px 0 8px"><div class="sec-title" style="font-weight:700;color:var(--navy)">Historial de liquidaciones</div>${socioFiltro}</div>
+    <div class="card" style="margin-bottom:22px;overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Socio</th><th style="text-align:right">Monto</th><th>Estado</th></tr></thead><tbody>${liqHistRows}</tbody></table></div>
+    <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 8px">Resumen por socio (histórico)</div>
+    <div class="grid g4">${socioCards}</div>`;
+  } else if(FINTAB==="cambios"){ cont=`
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 10px"><div class="sec-title" style="font-weight:700;color:var(--navy)">Cambios de divisa</div><button class="btn btn-primary btn-sm" onclick="cambioModal()">＋ Registrar cambio</button></div>
     <div class="grid g2" style="margin-bottom:10px">
       <div class="stat"><div class="lab">Cambiado de USD → ARS</div><div class="val" style="font-size:18px">${money(a.fxOut.USD,"USD")} → ${money(a.fxIn.ARS,"ARS")}</div></div>
       <div class="stat"><div class="lab">Cambiado de ARS → USD</div><div class="val" style="font-size:18px">${money(a.fxOut.ARS,"ARS")} → ${money(a.fxIn.USD,"USD")}</div></div>
     </div>
-    <div class="card" style="margin-bottom:24px"><table><thead><tr><th>Fecha</th><th>Cambio</th><th>T.C.</th><th>Motivo</th><th>Caso</th><th>Registró</th></tr></thead><tbody>${cxRows}</tbody></table></div>
-
-    <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 10px">Movimientos de caja</div>
-    <div class="card"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Detalle</th><th style="text-align:right">Monto</th></tr></thead><tbody>${movRows}</tbody></table></div>`;
+    <div class="card" style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Cambio</th><th>T.C.</th><th>Motivo</th><th>Caso</th><th>Registró</th></tr></thead><tbody>${cxRows}</tbody></table></div>`;
+  } else { cont=`
+    <div class="sec-title" style="font-weight:700;color:var(--navy);margin:0 0 8px">Movimientos de caja</div>
+    <div class="card" style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Tipo</th><th>Detalle</th><th style="text-align:right">Monto</th></tr></thead><tbody>${movRows}</tbody></table></div>`;
+  }
+  document.getElementById("view").innerHTML=`
+    <div class="pagehead"><div><h2>Finanzas del estudio</h2><div class="sub">Solo socios · ${activos.length} activos · ${histo.length} en historial</div></div></div>
+    <div class="grid g2" style="margin-bottom:16px">
+      <div class="stat green" style="border-left:4px solid #1c7a40"><div class="lab">✅ Caja disponible (del estudio)</div><div class="val" style="font-size:20px">${dosMon(a.caja)}</div><div class="sub">plata libre, sin compromisos</div></div>
+      <div class="stat amber" style="border-left:4px solid #d99411"><div class="lab">⏸️ En stand by (posible devolución)</div><div class="val" style="font-size:20px">${dosMon(a.reservaDev)}</div><div class="sub">se define al cerrar el caso</div></div>
+    </div>
+    ${tabBar}
+    ${cont}`;
 }
 
 /* ============================================================

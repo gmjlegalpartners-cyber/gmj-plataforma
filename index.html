@@ -307,7 +307,7 @@ const SUPABASE_URL = "https://ybczeovebtsqdkgckcul.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_2cMt9Q29MthejwnnDeWvzQ_Ibn_NLmt";
 const CLOUD = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 const FUNCTIONS_URL = SUPABASE_URL ? SUPABASE_URL.replace(".supabase.co", ".functions.supabase.co") : "";
-const BUILD = "2026.06.10 · B9 panel con pestañas";
+const BUILD = "2026.06.10 · B10 admin usuarios";
 let sb = null;
 if (CLOUD && window.supabase) { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 let RT_BOUND = false;
@@ -2601,8 +2601,18 @@ function saveRequeridos(){ DB.config.requeridos.forEach((r,i)=>{ r.nombre=val("r
    ============================================================ */
 function renderUsuarios(){
   setCrumb("Usuarios y abogados"); topActions("");
-  const us=DB.usuarios.map(u=>`<tr><td><b>${esc(u.nombre)}</b></td><td><span class="badge ${u.rol==='socio'?'b-gold':'b-blue'}">${u.rol==='empleado'?'colaborador':esc(u.rol)}</span></td><td><button class="btn btn-ghost btn-sm" onclick="editUser('${u.id}')">Editar</button></td></tr>`).join("");
   const abs=DB.abogados.map(a=>`<tr><td><b>${esc(a.nombre)}</b><br><small style="color:var(--muted)">${esc(a.mail)}</small></td><td>T° ${esc(a.tomo)} F° ${esc(a.folio)}</td><td>${esc(a.tel)}</td><td><button class="btn btn-ghost btn-sm" onclick="editAb('${a.id}')">Editar</button></td></tr>`).join("");
+  if(CLOUD){
+    document.getElementById("view").innerHTML=`
+      <div class="pagehead"><div><h2>Usuarios y abogados</h2><div class="sub">Gestioná los accesos a la plataforma</div></div></div>
+      <div class="card" style="margin-bottom:18px"><div class="card-h"><h3>Usuarios de la plataforma</h3><button class="btn btn-primary btn-sm" onclick="newUserModal()">＋ Nuevo usuario</button></div>
+        <div class="card-b" id="usersTable"><div class="empty">Cargando usuarios…</div></div></div>
+      <div class="card"><div class="card-h"><h3>Abogados patrocinantes</h3><button class="btn btn-ghost btn-sm" onclick="editAb()">＋ Nuevo</button></div>
+        <table><thead><tr><th>Nombre</th><th>Tomo/Folio</th><th>Tel</th><th></th></tr></thead><tbody>${abs}</tbody></table></div>`;
+    loadAdminUsers();
+    return;
+  }
+  const us=DB.usuarios.map(u=>`<tr><td><b>${esc(u.nombre)}</b></td><td><span class="badge ${u.rol==='socio'?'b-gold':'b-blue'}">${u.rol==='empleado'?'colaborador':esc(u.rol)}</span></td><td><button class="btn btn-ghost btn-sm" onclick="editUser('${u.id}')">Editar</button></td></tr>`).join("");
   document.getElementById("view").innerHTML=`
     <div class="pagehead"><div><h2>Usuarios y abogados</h2><div class="sub">Accesos internos y patrocinantes del estudio</div></div></div>
     <div class="grid g2">
@@ -2611,6 +2621,76 @@ function renderUsuarios(){
       <div class="card"><div class="card-h"><h3>Abogados patrocinantes</h3><button class="btn btn-ghost btn-sm" onclick="editAb()">＋ Nuevo</button></div>
         <table><thead><tr><th>Nombre</th><th>Tomo/Folio</th><th>Tel</th><th></th></tr></thead><tbody>${abs}</tbody></table></div>
     </div>`;
+}
+/* ---------- Usuarios en la nube (vía función admin-users, solo socios) ---------- */
+let ADMIN_USERS=[];
+async function adminUsersCall(payload){
+  try{ const {data:{session}}=await sb.auth.getSession();
+    const r=await fetch(FUNCTIONS_URL+"/admin-users",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    return await r.json();
+  }catch(e){ return {error:String(e)}; }
+}
+async function loadAdminUsers(){
+  const el=document.getElementById("usersTable"); if(el)el.innerHTML='<div class="empty">Cargando usuarios…</div>';
+  const j=await adminUsersCall({action:"list"});
+  if(!j.ok){ if(el)el.innerHTML=`<div class="empty">No se pudo cargar la lista${j.error?(' ('+esc(j.error)+')'):''}.${/solo-socios/.test(j.error||'')?' Solo los socios pueden gestionar usuarios.':''}</div>`; return; }
+  ADMIN_USERS=j.users||[]; renderUsersTable();
+}
+function renderUsersTable(){
+  const el=document.getElementById("usersTable"); if(!el)return;
+  const rows=ADMIN_USERS.map(u=>`<tr>
+    <td><b>${esc(u.nombre||'—')}</b><br><small style="color:var(--muted)">${esc(u.email||'')}</small></td>
+    <td><span class="badge ${u.rol==='socio'?'b-gold':'b-blue'}">${u.rol==='empleado'?'colaborador':esc(u.rol)}</span></td>
+    <td><small style="color:var(--muted)">${u.ultimo?fdatetime(u.ultimo):'nunca'}</small></td>
+    <td style="white-space:nowrap;text-align:right"><button class="btn btn-ghost btn-sm" onclick="editUserCloud('${u.id}')">Editar</button> <button class="btn btn-ghost btn-sm" onclick="resetPassCloud('${u.id}')">🔑</button></td>
+  </tr>`).join("")||`<tr><td colspan="4" class="empty">Sin usuarios</td></tr>`;
+  el.innerHTML=`<table><thead><tr><th>Usuario</th><th>Rol</th><th>Último ingreso</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function newUserModal(){
+  modal({title:"Nuevo usuario", size:"sm", body:`
+    ${inp("nu_nom","Nombre y apellido","")}
+    ${inp("nu_mail","Email (con el que entra)","","email")}
+    ${inp("nu_pass","Contraseña inicial","")}
+    ${sel("nu_rol","Rol",["socio","colaborador"],"colaborador")}
+    <div class="alert alert-info"><span>🔑</span><div>El usuario entra con ese email y contraseña. Después puede cambiarla. El email se confirma solo.</div></div>`,
+    footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="createUserCloud()">Crear usuario</button>`});
+}
+async function createUserCloud(){
+  const email=val("nu_mail").trim(), pass=val("nu_pass");
+  if(!email||!pass){ toast("Email y contraseña son obligatorios","err"); return; }
+  if(pass.length<6){ toast("La contraseña debe tener al menos 6 caracteres","err"); return; }
+  toast("Creando usuario…");
+  const j=await adminUsersCall({action:"create",nombre:val("nu_nom"),email,password:pass,rol:val("nu_rol")});
+  if(!j.ok){ toast("Error: "+(j.error||"no se pudo crear"),"err"); return; }
+  closeModal(); toast("Usuario creado ✓"); loadAdminUsers();
+}
+function editUserCloud(id){ const u=ADMIN_USERS.find(x=>x.id===id); if(!u)return;
+  modal({title:"Editar usuario", size:"sm", body:`
+    ${inp("eu_nom","Nombre",u.nombre||"")}
+    <div class="field"><label>Email</label><input id="eu_mail" value="${esc(u.email||'')}"></div>
+    ${sel("eu_rol","Rol",["socio","colaborador"],u.rol==='empleado'?'colaborador':u.rol)}`,
+    footer:`<button class="btn btn-danger" onclick="delUserCloud('${id}')">Eliminar</button><div style="flex:1"></div><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveUserCloud('${id}')">Guardar</button>`});
+}
+async function saveUserCloud(id){ const u=ADMIN_USERS.find(x=>x.id===id)||{};
+  const payload={action:"update",id,nombre:val("eu_nom"),rol:val("eu_rol")};
+  const email=val("eu_mail").trim(); if(email && email!==u.email) payload.email=email;
+  const j=await adminUsersCall(payload);
+  if(!j.ok){ toast("Error: "+(j.error||""),"err"); return; }
+  closeModal(); toast("Usuario actualizado"); loadAdminUsers();
+}
+async function delUserCloud(id){ if(!confirm("¿Eliminar este usuario? No podrá volver a entrar a la plataforma."))return;
+  const j=await adminUsersCall({action:"delete",id});
+  if(!j.ok){ toast("Error: "+(j.error||""),"err"); return; }
+  closeModal(); toast("Usuario eliminado"); loadAdminUsers();
+}
+function resetPassCloud(id){ const u=ADMIN_USERS.find(x=>x.id===id); if(!u)return;
+  modal({title:"Cambiar contraseña", size:"sm", body:`<div class="sub" style="margin-bottom:8px">${esc(u.email||'')}</div>${inp("rp_pass","Nueva contraseña","")}<div class="hint">Mínimo 6 caracteres. Pasásela al usuario.</div>`,
+    footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="doResetPass('${id}')">Cambiar contraseña</button>`});
+}
+async function doResetPass(id){ const p=val("rp_pass"); if(!p||p.length<6){ toast("Mínimo 6 caracteres","err"); return; }
+  const j=await adminUsersCall({action:"password",id,password:p});
+  if(!j.ok){ toast("Error: "+(j.error||""),"err"); return; }
+  closeModal(); toast("Contraseña actualizada ✓");
 }
 function editUser(id){
   const u=id?DB.usuarios.find(x=>x.id===id):{nombre:"",rol:"colaborador"};

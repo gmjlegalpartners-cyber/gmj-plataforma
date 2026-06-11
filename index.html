@@ -307,7 +307,7 @@ const SUPABASE_URL = "https://ybczeovebtsqdkgckcul.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_2cMt9Q29MthejwnnDeWvzQ_Ibn_NLmt";
 const CLOUD = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 const FUNCTIONS_URL = SUPABASE_URL ? SUPABASE_URL.replace(".supabase.co", ".functions.supabase.co") : "";
-const BUILD = "2026.06.10 · B6 plan de pagos";
+const BUILD = "2026.06.10 · B7 caja vs stand by";
 let sb = null;
 if (CLOUD && window.supabase) { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 let RT_BOUND = false;
@@ -430,7 +430,7 @@ function migrate(){
   (DB.config.requeridos||[]).forEach(q=>{ if(/meta/i.test(q.nombre) && /menlo park|1 meta way/i.test(q.domicilio||"")){ q.domicilio="7300 Gateway Boulevard, Shipping & Receiving Dock 15, Newark, CA 94560, United States of America."; changed=true; } });
   if(DB.config.asistenteMail===undefined){ DB.config.asistenteMail="asistente@gmj-abogados.com.ar"; changed=true; }
   // asegurar campos nuevos en casos existentes
-  (DB.casos||[]).forEach(c=>{ if(c.citarFacebook===undefined){ c.citarFacebook=true; changed=true; } if(c.avance===undefined){ c.avance={}; changed=true; } if(c.audiencia===undefined){ c.audiencia=null; changed=true; } });
+  (DB.casos||[]).forEach(c=>{ if(c.citarFacebook===undefined){ c.citarFacebook=true; changed=true; } if(c.avance===undefined){ c.avance={}; changed=true; } if(c.audiencia===undefined){ c.audiencia=null; changed=true; } if(c.finanzas) recalcEstadoPago(c); });
   if(changed) save();
 }
 function cobradoDe(c){ const f=c.finanzas; return (c.pagos||[]).reduce((s,p)=>s+(p.moneda===f.moneda?Number(p.importe||0):0),0); }
@@ -451,7 +451,11 @@ function syncSaldo(c){
     else { c.pagos.push({id:uid("p"),importe:saldo,moneda:f.moneda,fecha:f.fechaSaldoPago||new Date().toISOString().slice(0,10),medio:f.medioSaldo||f.medioPago,obs:"Saldo / diferencia",esSaldo:true}); }
   } else if(p){ c.pagos=c.pagos.filter(x=>!x.esSaldo); }
 }
-function recalcEstadoPago(c){ const f=c.finanzas; if(f.estadoPago==='vencido') return; const cob=cobradoDe(c); const tot=Number(f.montoTotal||0); f.estadoPago = cob<=0?'pendiente':(tot>0&&cob>=tot?'completo':'parcial'); }
+function recalcEstadoPago(c){ const f=c.finanzas; const cob=cobradoDe(c); const tot=Number(f.montoTotal||0);
+  if(f.estadoPago!=='vencido') f.estadoPago = cob<=0?'pendiente':(tot>0&&cob>=tot?'completo':'parcial');
+  // mantener sincronizado el estado de cobro nuevo (salvo override manual a vencido/saldo)
+  if(f.estadoCobro!=='vencido' && f.estadoCobro!=='saldo_pendiente') f.estadoCobro = cob<=0?'no_cobrado':(tot>0&&cob>=tot?'cobrado_completo':'cobro_parcial');
+}
 function saveLocal(){ localStorage.setItem("gmj_db_v1", JSON.stringify(DB)); }
 function save(){ if(CLOUD){ cloudSave(); } else { saveLocal(); } }
 function uid(p){ return p+Math.random().toString(36).slice(2,8); }
@@ -494,6 +498,7 @@ async function cloudLoad(){
     return c;
   });
   DB.casos.sort((a,b)=>(b.id||"").localeCompare(a.id||""));
+  DB.casos.forEach(c=>{ if(c.finanzas) recalcEstadoPago(c); });
   _tareasSig=tareasSignature(DB.tareas);
 }
 let _saveTimer=null;
@@ -1610,11 +1615,11 @@ function tabFinanzas(c){
     <div class="stat gold"><div class="lab">Monto total</div><div class="val">${money(f.montoTotal,f.moneda)}</div></div>
     <div class="stat green"><div class="lab">Cobrado</div><div class="val">${money(cobrado,f.moneda)}</div></div>
     <div class="stat amber"><div class="lab">Pendiente</div><div class="val">${money(pend,f.moneda)}</div></div>
-    <div class="stat accent"><div class="lab">Devolución pactada</div><div class="val">${money(f.devolucion,f.moneda)}</div></div>
+    <div class="stat accent"><div class="lab">Devolución pactada</div><div class="val">${money(f.devolucion,f.moneda)}</div><div class="sub">${Number(f.devolucion||0)>0?(f.estadoResultado==='favorable'?'no se devuelve (favorable)':['realizada_dev','cancelada_dev'].includes(f.estadoDevolucion)?finLabel(f.estadoDevolucion):'⏸️ en stand by hasta resolver'):'—'}</div></div>
   </div>
   <div class="grid g2">
     <div class="card"><div class="card-h"><h3>Condiciones económicas</h3></div><div class="card-b">
-      <div class="frow fr2">${sel("fi_mon","Moneda",["USD","ARS"],f.moneda)}${sel("fi_est","Estado de pago",["pendiente","parcial","completo","vencido"],f.estadoPago)}</div>
+      <div class="frow fr2">${sel("fi_mon","Moneda",["USD","ARS"],f.moneda)}<div class="field"><label>Estado de cobro (automático)</label><div style="padding:9px 12px;border:1px solid var(--line2);border-radius:8px;background:#f8fafc"><span class="badge ${FIN_COLOR[f.estadoCobro]||'b-grey'}">${finLabel(f.estadoCobro)}</span></div><div class="hint">Se calcula con los pagos del Plan de pagos</div></div></div>
       <div class="frow fr2">${inp("fi_total","Monto total pactado",f.montoTotal,"number")}${inp("fi_adel","Adelanto abonado",f.adelanto,"number")}</div>
       <div class="frow fr2"><div class="field"><label>Saldo pendiente (automático)</label><input id="fi_saldo" value="${esc(f.saldo)}" disabled style="background:#f1f5f9;color:var(--muted)"><div class="hint">Monto total − adelanto. Para marcarlo pagado usá el <b>Plan de pagos</b> abajo.</div></div>${inp("fi_dev","Devolución (resultado negativo)",f.devolucion,"number")}</div>
       <div class="frow fr2">${inp("fi_fadel","Fecha pago adelanto",f.fechaAdelanto,"date")}${inp("fi_fsaldo","Fecha prevista saldo",f.fechaSaldo,"date")}</div>
@@ -1681,7 +1686,7 @@ function saveFinEstados(){ const c=CURRENT, f=c.finanzas; const soc=isSocio();
   finLog(c,"Estado financiero actualizado",`cobro: ${finLabel(f.estadoCobro)}${soc?` · resultado: ${finLabel(f.estadoResultado)} · devolución: ${finLabel(f.estadoDevolucion)} · liquidación: ${finLabel(f.estadoLiquidacion)}`:''}`);
   save(); toast("Estado financiero guardado"); renderCaso(); }
 function saveFinanzas(){ const c=CURRENT, f=c.finanzas;
-  f.moneda=val("fi_mon"); f.estadoPago=val("fi_est"); f.montoTotal=val("fi_total"); f.adelanto=val("fi_adel"); f.devolucion=val("fi_dev"); f.fechaAdelanto=val("fi_fadel"); f.fechaSaldo=val("fi_fsaldo"); f.medioPago=val("fi_medio"); f.obs=val("fi_obs");
+  f.moneda=val("fi_mon"); f.montoTotal=val("fi_total"); f.adelanto=val("fi_adel"); f.devolucion=val("fi_dev"); f.fechaAdelanto=val("fi_fadel"); f.fechaSaldo=val("fi_fsaldo"); f.medioPago=val("fi_medio"); f.obs=val("fi_obs");
   const tot=Number(f.montoTotal||0), ade=Number(f.adelanto||0);
   f.saldo = f.montoTotal===""?"":Math.max(tot-ade,0);
   syncAdelanto(c); syncSaldo(c); recalcEstadoPago(c);
@@ -2201,28 +2206,37 @@ function casoEsHistorial(c){ const f=c.finanzas||{}; return f.estadoLiquidacion=
 function dosMon(o){ return `<span style="white-space:nowrap">${money(o.USD,"USD")}</span> · <span style="white-space:nowrap">${money(o.ARS,"ARS")}</span>`; }
 function calcFinanzasGlobal(){
   const z=()=>({USD:0,ARS:0}); const cur=m=>(m==="ARS"?"ARS":"USD");
-  const a={pendCobro:z(),pendDev:z(),pendGasto:z(),pendLiq:z(),cobrado:z(),gastosPag:z(),devRealizada:z(),fxOut:z(),fxIn:z(),liquidado:z()};
+  const a={pendCobro:z(),pendDev:z(),pendGasto:z(),pendLiq:z(),cobrado:z(),gastosPag:z(),devRealizada:z(),fxOut:z(),fxIn:z(),liquidado:z(),reservaDev:z()};
   // liquidado por caso (suma de repartos)
   const liqByCaso={};
   (DB.liquidaciones||[]).forEach(l=>{ const m=cur(l.moneda); const dist=(l.reparto||[]).reduce((s,r)=>s+Number(r.monto||0),0); a.liquidado[m]+=dist; liqByCaso[l.caso_id]=(liqByCaso[l.caso_id]||0)+dist; });
   casosActivos().forEach(c=>{
-    const f=c.finanzas||{}; const m=cur(f.moneda); const cob=cobradoDe(c);
+    const f=c.finanzas||{}; const m=cur(f.moneda); const cob=cobradoDe(c); const dev=Number(f.devolucion||0);
     a.cobrado[m]+=cob;
+    // ¿la devolución pactada está "en stand by"? (cobrada pero podríamos tener que devolverla)
+    // Se reserva mientras el caso no se resolvió favorable y la devolución no se realizó/canceló.
+    const devEnStandBy = dev>0 && f.estadoResultado!=='favorable' && !['realizada_dev','cancelada_dev'].includes(f.estadoDevolucion);
+    const reservaCaso = devEnStandBy ? Math.min(dev, cob) : 0; // sólo se puede reservar lo efectivamente cobrado
     if(!casoEsHistorial(c)){
       a.pendCobro[m]+=Math.max(Number(f.montoTotal||0)-cob,0);
-      if(["pendiente_dev","parcial_dev"].includes(f.estadoDevolucion)) a.pendDev[m]+=Number(f.devolucion||0);
-      if(cob>0){ const neto=cob-(f.estadoDevolucion==="realizada_dev"?Number(f.devolucion||0):0); a.pendLiq[m]+=Math.max(neto-(liqByCaso[c.id]||0),0); }
+      if(devEnStandBy) a.reservaDev[m]+=reservaCaso;
+      if(["pendiente_dev","parcial_dev"].includes(f.estadoDevolucion)) a.pendDev[m]+=dev;
+      // pendiente de liquidar: lo cobrado, menos devoluciones ya hechas, menos lo reservado en stand by, menos lo ya liquidado
+      if(cob>0){ const neto=cob-(f.estadoDevolucion==="realizada_dev"?dev:0)-reservaCaso; a.pendLiq[m]+=Math.max(neto-(liqByCaso[c.id]||0),0); }
     }
-    if(f.estadoDevolucion==="realizada_dev") a.devRealizada[m]+=Number(f.devolucion||0);
+    if(f.estadoDevolucion==="realizada_dev") a.devRealizada[m]+=dev;
     (c.gastos||[]).forEach(g=>{ const gm=cur(g.moneda); const imp=Number(g.importe||0); if(!imp||g.estado==='no corresponde')return; if(g.estado==='abonado') a.gastosPag[gm]+=imp; else a.pendGasto[gm]+=imp; });
   });
   // gastos generales del estudio (no atados a un caso)
   (DB.gastosGen||[]).forEach(g=>{ const gm=cur(g.moneda); const imp=Number(g.importe||0); if(!imp)return; if(g.estado==='pendiente') a.pendGasto[gm]+=imp; else a.gastosPag[gm]+=imp; });
   (DB.cambios||[]).forEach(x=>{ const mo=cur(x.moneda_origen), md=cur(x.moneda_destino); a.fxOut[mo]+=Number(x.monto_origen||0); a.fxIn[md]+=Number(x.monto_destino||0); });
-  a.caja={
+  // caja bruta (toda la plata que entró menos lo que salió)
+  a.cajaBruta={
     USD: a.cobrado.USD - a.gastosPag.USD - a.devRealizada.USD - a.fxOut.USD + a.fxIn.USD - a.liquidado.USD,
     ARS: a.cobrado.ARS - a.gastosPag.ARS - a.devRealizada.ARS - a.fxOut.ARS + a.fxIn.ARS - a.liquidado.ARS
   };
+  // caja DISPONIBLE real del estudio = bruta menos lo reservado por posibles devoluciones (stand by)
+  a.caja={ USD: a.cajaBruta.USD - a.reservaDev.USD, ARS: a.cajaBruta.ARS - a.reservaDev.ARS };
   return a;
 }
 /* ---------- LIQUIDACIÓN ENTRE SOCIOS (solo socios) ---------- */
@@ -2405,18 +2419,24 @@ function renderFinanzasGlobal(){
   document.getElementById("view").innerHTML=`
     <div class="pagehead"><div><h2>Finanzas global del estudio</h2><div class="sub">Solo socios · ${activos.length} activos · ${histo.length} en historial</div></div></div>
 
-    <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 10px">Resumen activo</div>
-    <div class="grid g3" style="margin-bottom:8px">
-      <div class="stat accent"><div class="lab">Caja estimada (USD · ARS)</div><div class="val" style="font-size:18px">${dosMon(a.caja)}</div><div class="sub">cobrado − gastos pagados − devoluciones</div></div>
-      <div class="stat amber"><div class="lab">Pendiente de cobro</div><div class="val" style="font-size:18px">${dosMon(a.pendCobro)}</div></div>
-      <div class="stat gold"><div class="lab">Pendiente de liquidar entre socios</div><div class="val" style="font-size:18px">${dosMon(a.pendLiq)}</div></div>
+    <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 10px">💰 Plata del estudio</div>
+    <div class="grid g2" style="margin-bottom:8px">
+      <div class="stat green" style="border-left:4px solid #1c7a40"><div class="lab">✅ Caja DISPONIBLE (es del estudio)</div><div class="val" style="font-size:20px">${dosMon(a.caja)}</div><div class="sub">plata libre, sin compromisos pendientes</div></div>
+      <div class="stat amber" style="border-left:4px solid #d99411"><div class="lab">⏸️ En stand by — posible devolución a clientes</div><div class="val" style="font-size:20px">${dosMon(a.reservaDev)}</div><div class="sub">cobrada, pero podría devolverse según resultado del caso</div></div>
     </div>
-    <div class="grid g3" style="margin-bottom:18px">
-      <div class="stat"><div class="lab">Pendiente de devolución</div><div class="val" style="font-size:18px">${dosMon(a.pendDev)}</div></div>
-      <div class="stat"><div class="lab">Pendiente de gastos</div><div class="val" style="font-size:18px">${dosMon(a.pendGasto)}</div></div>
-      <div class="stat green"><div class="lab">Cobrado total</div><div class="val" style="font-size:18px">${dosMon(a.cobrado)}</div></div>
+    <div class="alert alert-warn" style="margin-bottom:14px"><span>⏸️</span><div>El monto <b>en stand by</b> NO es plata del estudio todavía: es la <b>devolución pactada</b> de casos que aún no se resolvieron. Si el caso termina favorable, esa plata pasa a la caja disponible; si termina negativo, se devuelve al cliente. Por eso no debe repartirse ni gastarse hasta cerrar el caso.</div></div>
+
+    <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 10px">Pendientes</div>
+    <div class="grid g4" style="margin-bottom:8px">
+      <div class="stat"><div class="lab">Pendiente de cobro</div><div class="val" style="font-size:17px">${dosMon(a.pendCobro)}</div></div>
+      <div class="stat"><div class="lab">Pendiente de liquidar (socios)</div><div class="val" style="font-size:17px">${dosMon(a.pendLiq)}</div><div class="sub">ya descuenta lo de stand by</div></div>
+      <div class="stat"><div class="lab">Devolución a realizar</div><div class="val" style="font-size:17px">${dosMon(a.pendDev)}</div></div>
+      <div class="stat"><div class="lab">Pendiente de gastos</div><div class="val" style="font-size:17px">${dosMon(a.pendGasto)}</div></div>
     </div>
-    <div class="alert alert-info" style="margin-bottom:16px"><span>ℹ️</span><div>La <b>caja</b> ya descuenta gastos, devoluciones, <b>cambios de divisa</b> y lo <b>liquidado entre socios</b>. Un caso pasa al historial cuando su liquidación queda <b>“Liquidado completamente”</b>. La liquidación se registra desde la pestaña <b>Finanzas</b> de cada caso.</div></div>
+    <div class="grid g2" style="margin-bottom:18px">
+      <div class="stat green"><div class="lab">Cobrado total (histórico)</div><div class="val" style="font-size:17px">${dosMon(a.cobrado)}</div></div>
+      <div class="stat"><div class="lab">Caja bruta (antes de reservar stand by)</div><div class="val" style="font-size:17px">${dosMon(a.cajaBruta)}</div></div>
+    </div>
 
     <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 10px">Casos que requieren acción</div>
     <div class="filters" style="margin-bottom:10px">

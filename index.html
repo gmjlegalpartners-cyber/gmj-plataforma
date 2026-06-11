@@ -307,7 +307,7 @@ const SUPABASE_URL = "https://ybczeovebtsqdkgckcul.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_2cMt9Q29MthejwnnDeWvzQ_Ibn_NLmt";
 const CLOUD = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 const FUNCTIONS_URL = SUPABASE_URL ? SUPABASE_URL.replace(".supabase.co", ".functions.supabase.co") : "";
-const BUILD = "2026.06.10 · B11 imagenes + drive compartido";
+const BUILD = "2026.06.11 · B12 editar imagenes (mover/tamaño/capas)";
 let sb = null;
 if (CLOUD && window.supabase) { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 let RT_BOUND = false;
@@ -1926,7 +1926,8 @@ function openPlantillaEditor(tipo){
           <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plCmd('justifyFull')">☰</button>
           <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plInsertImage()" title="Insertar imagen">🖼 Imagen</button>
         </div>
-        <div id="pl_editor" contenteditable="true" onkeyup="savePlRange()" onmouseup="savePlRange()" style="min-height:540px;border:1px solid var(--line2);border-radius:8px;padding:28px 34px;background:#fff;font-family:Georgia,'Times New Roman',serif;font-size:13px;line-height:1.55;color:#1a1a1a;overflow:auto">${html}</div>
+        <div class="sub" id="pl_imghint" style="margin-bottom:8px">📌 Hacé clic en una imagen para moverla, cambiar su tamaño o ponerla delante/detrás del texto.</div>
+        <div id="pl_editor" contenteditable="true" onkeyup="savePlRange()" onmouseup="savePlRange()" onclick="plEditorClick(event)" onscroll="plImgReposition()" style="position:relative;min-height:540px;border:1px solid var(--line2);border-radius:8px;padding:28px 34px;background:#fff;font-family:Georgia,'Times New Roman',serif;font-size:13px;line-height:1.55;color:#1a1a1a;overflow:auto">${html}</div>
       </div></div>
       <div class="card" style="position:sticky;top:12px"><div class="card-h"><h3>Variables</h3></div><div class="card-b">
         <div class="sub" style="margin-bottom:8px">Hacé clic para insertarlas donde está el cursor.</div>
@@ -1949,13 +1950,132 @@ function plInsertImage(){
     const rd=new FileReader();
     rd.onload=()=>{ const ed=document.getElementById("pl_editor"); if(!ed)return; ed.focus();
       const sel=window.getSelection(); if(PL_RANGE){ sel.removeAllRanges(); sel.addRange(PL_RANGE); }
-      const html='<img src="'+rd.result+'" style="max-width:100%;height:auto;display:block;margin:8px 0">';
+      const html='<img class="pl-img" src="'+rd.result+'" style="width:240px;height:auto;display:block;margin:8px 0;cursor:pointer">';
       if(!document.execCommand('insertHTML',false,html)){ ed.innerHTML+=html; }
       savePlRange();
+      // seleccionar la imagen recién insertada
+      setTimeout(()=>{ const imgs=ed.querySelectorAll("img"); if(imgs.length) plImgSelect(imgs[imgs.length-1]); },30);
     };
     rd.readAsDataURL(f);
   };
   fi.click();
+}
+
+/* ===== Edición de imágenes dentro del modelo (mover / tamaño / delante-detrás) ===== */
+let PL_IMG=null;
+function plEditorClick(e){
+  const t=e.target;
+  if(t && t.tagName==="IMG" && t.closest("#pl_editor")){ e.preventDefault(); plImgSelect(t); }
+  else if(!(t && t.closest && t.closest("#plImgBar"))){ plImgDeselect(); }
+}
+function plImgUIEnsure(){
+  if(document.getElementById("plImgBar")) return;
+  const bar=document.createElement("div"); bar.id="plImgBar";
+  bar.style.cssText="position:fixed;z-index:99999;display:none;background:#1f2937;color:#fff;border-radius:8px;padding:5px;box-shadow:0 6px 22px rgba(0,0,0,.28);font-size:11px;gap:3px;align-items:center;flex-wrap:wrap;max-width:330px";
+  const b=(label,fn,title)=>`<button type="button" title="${title||''}" data-fn="${fn}" style="background:#374151;color:#fff;border:none;border-radius:5px;padding:4px 7px;margin:1px;cursor:pointer;font-size:11px">${label}</button>`;
+  bar.innerHTML =
+    b("−","resize:-20","Más chica")+b("+","resize:20","Más grande")+
+    `<span style="opacity:.4;margin:0 2px">|</span>`+
+    b("25%","width:25")+b("50%","width:50")+b("100%","width:100")+
+    `<span style="opacity:.4;margin:0 2px">|</span>`+
+    b("En línea","wrap:inline","La imagen sigue el texto")+
+    b("Izq","wrap:left","Texto a la derecha")+
+    b("Centro","wrap:center")+
+    b("Der","wrap:right","Texto a la izquierda")+
+    `<span style="opacity:.4;margin:0 2px">|</span>`+
+    b("Detrás","wrap:behind","Detrás del texto, se puede arrastrar")+
+    b("Delante","wrap:front","Delante del texto, se puede arrastrar")+
+    `<span style="opacity:.4;margin:0 2px">|</span>`+
+    b("🗑","del","Quitar imagen");
+  bar.addEventListener("mousedown",(e)=>{ e.preventDefault(); });
+  bar.addEventListener("click",(e)=>{
+    const btn=e.target.closest("button[data-fn]"); if(!btn||!PL_IMG)return;
+    const [fn,arg]=btn.getAttribute("data-fn").split(":");
+    if(fn==="resize") plImgResize(parseInt(arg,10));
+    else if(fn==="width") plImgWidth(parseInt(arg,10));
+    else if(fn==="wrap") plImgWrap(arg);
+    else if(fn==="del"){ const ed=document.getElementById("pl_editor"); PL_IMG.remove(); plImgDeselect(); if(ed)ed.focus(); }
+  });
+  document.body.appendChild(bar);
+  const h=document.createElement("div"); h.id="plImgHandle";
+  h.style.cssText="position:fixed;z-index:99999;display:none;width:14px;height:14px;background:#2563eb;border:2px solid #fff;border-radius:50%;cursor:nwse-resize;box-shadow:0 1px 4px rgba(0,0,0,.4)";
+  h.addEventListener("mousedown",plImgResizeStart);
+  document.body.appendChild(h);
+  const ol=document.createElement("div"); ol.id="plImgOutline";
+  ol.style.cssText="position:fixed;z-index:99998;display:none;border:2px dashed #2563eb;pointer-events:none;border-radius:2px";
+  document.body.appendChild(ol);
+  window.addEventListener("scroll",plImgReposition,true);
+  window.addEventListener("resize",plImgReposition);
+}
+function plImgSelect(img){
+  plImgUIEnsure(); PL_IMG=img;
+  img.onmousedown=plImgDragStart;
+  plImgReposition();
+  document.getElementById("plImgBar").style.display="flex";
+  document.getElementById("plImgHandle").style.display="block";
+  document.getElementById("plImgOutline").style.display="block";
+}
+function plImgDeselect(){
+  if(PL_IMG){ PL_IMG.onmousedown=null; PL_IMG=null; }
+  ["plImgBar","plImgHandle","plImgOutline"].forEach(id=>{ const el=document.getElementById(id); if(el)el.style.display="none"; });
+}
+function plImgReposition(){
+  if(!PL_IMG) return;
+  const r=PL_IMG.getBoundingClientRect();
+  const bar=document.getElementById("plImgBar");
+  const h=document.getElementById("plImgHandle");
+  const ol=document.getElementById("plImgOutline");
+  if(ol){ ol.style.left=(r.left-2)+"px"; ol.style.top=(r.top-2)+"px"; ol.style.width=(r.width)+"px"; ol.style.height=(r.height)+"px"; }
+  if(h){ h.style.left=(r.right-7)+"px"; h.style.top=(r.bottom-7)+"px"; }
+  if(bar){ let top=r.top-44; if(top<6)top=r.bottom+8; let left=r.left; if(left+330>window.innerWidth)left=Math.max(6,window.innerWidth-336); bar.style.left=left+"px"; bar.style.top=top+"px"; }
+}
+function plImgResize(deltaPct){
+  if(!PL_IMG) return;
+  const w=PL_IMG.getBoundingClientRect().width;
+  PL_IMG.style.width=Math.max(40,Math.round(w*(1+deltaPct/100)))+"px";
+  PL_IMG.style.height="auto"; plImgReposition();
+}
+function plImgWidth(pct){
+  if(!PL_IMG) return;
+  PL_IMG.style.width=pct+"%"; PL_IMG.style.height="auto"; plImgReposition();
+}
+function plImgWrap(mode){
+  if(!PL_IMG) return;
+  const ed=document.getElementById("pl_editor"); const s=PL_IMG.style;
+  s.float=""; s.position=""; s.zIndex=""; s.left=""; s.top=""; s.display=""; s.margin=""; s.verticalAlign=""; s.cursor="pointer";
+  if(mode==="inline"){ s.display="inline-block"; s.margin="0 4px"; s.verticalAlign="middle"; }
+  else if(mode==="left"){ s.float="left"; s.margin="4px 14px 8px 0"; }
+  else if(mode==="right"){ s.float="right"; s.margin="4px 0 8px 14px"; }
+  else if(mode==="center"){ s.display="block"; s.margin="10px auto"; }
+  else if(mode==="behind"||mode==="front"){
+    const er=ed.getBoundingClientRect(); const ir=PL_IMG.getBoundingClientRect();
+    s.position="absolute"; s.display="block"; s.margin="0";
+    s.left=Math.max(0,Math.round(ir.left-er.left+ed.scrollLeft))+"px";
+    s.top=Math.max(0,Math.round(ir.top-er.top+ed.scrollTop))+"px";
+    s.zIndex = mode==="behind" ? "-1" : "5";
+    s.cursor="move";
+  }
+  plImgReposition();
+}
+function plImgResizeStart(e){
+  if(!PL_IMG) return; e.preventDefault(); e.stopPropagation();
+  const startX=e.clientX, startW=PL_IMG.getBoundingClientRect().width;
+  const move=(ev)=>{ PL_IMG.style.width=Math.max(40,Math.round(startW+(ev.clientX-startX)))+"px"; PL_IMG.style.height="auto"; plImgReposition(); };
+  const up=()=>{ document.removeEventListener("mousemove",move); document.removeEventListener("mouseup",up); };
+  document.addEventListener("mousemove",move); document.addEventListener("mouseup",up);
+}
+function plImgDragStart(e){
+  if(!PL_IMG || getComputedStyle(PL_IMG).position!=="absolute") return;
+  e.preventDefault(); e.stopPropagation();
+  const ed=document.getElementById("pl_editor"); const er=ed.getBoundingClientRect(); const ir=PL_IMG.getBoundingClientRect();
+  const offX=e.clientX-ir.left, offY=e.clientY-ir.top;
+  const move=(ev)=>{
+    let left=Math.round(ev.clientX-er.left-offX+ed.scrollLeft);
+    let top=Math.round(ev.clientY-er.top-offY+ed.scrollTop);
+    PL_IMG.style.left=Math.max(0,left)+"px"; PL_IMG.style.top=Math.max(0,top)+"px"; plImgReposition();
+  };
+  const up=()=>{ document.removeEventListener("mousemove",move); document.removeEventListener("mouseup",up); };
+  document.addEventListener("mousemove",move); document.addEventListener("mouseup",up);
 }
 function insertVar(tok){
   const ed=document.getElementById("pl_editor"); if(!ed)return; ed.focus();
@@ -1964,7 +2084,7 @@ function insertVar(tok){
   if(!document.execCommand('insertText',false,'{{'+tok+'}}')){ ed.innerHTML+=' {{'+tok+'}}'; }
   savePlRange();
 }
-function savePlantilla(){ const ed=document.getElementById("pl_editor"); if(!ed)return; DB.config.plantillas=DB.config.plantillas||{}; DB.config.plantillas[PL_TIPO]={html:ed.innerHTML,updated:now()}; save(); toast("Modelo guardado ✓ — se usará en los próximos documentos"); }
+function savePlantilla(){ const ed=document.getElementById("pl_editor"); if(!ed)return; plImgDeselect(); DB.config.plantillas=DB.config.plantillas||{}; DB.config.plantillas[PL_TIPO]={html:ed.innerHTML,updated:now()}; save(); toast("Modelo guardado ✓ — se usará en los próximos documentos"); }
 function resetPlantilla(){ if(!confirm("¿Restaurar el modelo base original? Se descartan tus cambios de este documento."))return; DB.config.plantillas=DB.config.plantillas||{}; DB.config.plantillas[PL_TIPO]={html:DEFAULT_PLANTILLAS[PL_TIPO],updated:now()}; save(); openPlantillaEditor(PL_TIPO); toast("Modelo restaurado"); }
 function previewPlantilla(){
   const ed=document.getElementById("pl_editor"); if(!ed)return;
@@ -1973,7 +2093,7 @@ function previewPlantilla(){
   const body=c?(docHead(small)+renderPlantilla(ed.innerHTML,c)):(docHead(small)+ed.innerHTML);
   const css=docExportCSS(PL_TIPO);
   const w=window.open("","_blank");
-  w.document.write(`<html><head><title>Vista previa — ${esc(PL_TITULOS[PL_TIPO])}</title><meta charset="utf-8"><style>${css} body{background:#f0f0f0;padding:24px}.page{background:#fff;max-width:780px;margin:0 auto;padding:48px 56px;box-shadow:0 2px 12px rgba(0,0,0,.15)}</style></head><body><div class="page">${body}</div><p style="text-align:center;color:#888;font-size:10pt;margin-top:16pt">— Vista previa${c?' con datos de: '+esc(clienteFull(c)):' (sin caso de ejemplo: las variables se ven sin reemplazar)'} —</p></body></html>`);
+  w.document.write(`<html><head><title>Vista previa — ${esc(PL_TITULOS[PL_TIPO])}</title><meta charset="utf-8"><style>${css} body{background:#f0f0f0;padding:24px}.page{position:relative;background:#fff;max-width:780px;margin:0 auto;padding:48px 56px;box-shadow:0 2px 12px rgba(0,0,0,.15)}.page img{max-width:100%}</style></head><body><div class="page">${body}</div><p style="text-align:center;color:#888;font-size:10pt;margin-top:16pt">— Vista previa${c?' con datos de: '+esc(clienteFull(c)):' (sin caso de ejemplo: las variables se ven sin reemplazar)'} —</p></body></html>`);
   w.document.close();
 }
 function longDate(d){

@@ -307,7 +307,7 @@ const SUPABASE_URL = "https://ybczeovebtsqdkgckcul.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_2cMt9Q29MthejwnnDeWvzQ_Ibn_NLmt";
 const CLOUD = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 const FUNCTIONS_URL = SUPABASE_URL ? SUPABASE_URL.replace(".supabase.co", ".functions.supabase.co") : "";
-const BUILD = "2026.06.10 · B10 admin usuarios";
+const BUILD = "2026.06.10 · B11 imagenes + drive compartido";
 let sb = null;
 if (CLOUD && window.supabase) { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 let RT_BOUND = false;
@@ -1924,6 +1924,7 @@ function openPlantillaEditor(tipo){
           <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plCmd('justifyLeft')">⯇</button>
           <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plCmd('justifyCenter')">≡</button>
           <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plCmd('justifyFull')">☰</button>
+          <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plInsertImage()" title="Insertar imagen">🖼 Imagen</button>
         </div>
         <div id="pl_editor" contenteditable="true" onkeyup="savePlRange()" onmouseup="savePlRange()" style="min-height:540px;border:1px solid var(--line2);border-radius:8px;padding:28px 34px;background:#fff;font-family:Georgia,'Times New Roman',serif;font-size:13px;line-height:1.55;color:#1a1a1a;overflow:auto">${html}</div>
       </div></div>
@@ -1940,6 +1941,22 @@ function openPlantillaEditor(tipo){
 function plCmd(cmd){ try{document.execCommand(cmd,false,null);}catch(e){} const ed=document.getElementById("pl_editor"); if(ed)ed.focus(); savePlRange(); }
 function plFormat(tag){ try{document.execCommand('formatBlock',false,tag);}catch(e){} const ed=document.getElementById("pl_editor"); if(ed)ed.focus(); savePlRange(); }
 function savePlRange(){ const s=window.getSelection(); if(s&&s.rangeCount){ const r=s.getRangeAt(0); const ed=document.getElementById("pl_editor"); if(ed&&ed.contains(r.commonAncestorContainer)) PL_RANGE=r.cloneRange(); } }
+function plInsertImage(){
+  savePlRange();
+  const fi=document.createElement("input"); fi.type="file"; fi.accept="image/*";
+  fi.onchange=()=>{ const f=fi.files&&fi.files[0]; if(!f)return;
+    if(f.size>3*1024*1024){ toast("La imagen es muy grande (máx 3 MB)","err"); return; }
+    const rd=new FileReader();
+    rd.onload=()=>{ const ed=document.getElementById("pl_editor"); if(!ed)return; ed.focus();
+      const sel=window.getSelection(); if(PL_RANGE){ sel.removeAllRanges(); sel.addRange(PL_RANGE); }
+      const html='<img src="'+rd.result+'" style="max-width:100%;height:auto;display:block;margin:8px 0">';
+      if(!document.execCommand('insertHTML',false,html)){ ed.innerHTML+=html; }
+      savePlRange();
+    };
+    rd.readAsDataURL(f);
+  };
+  fi.click();
+}
 function insertVar(tok){
   const ed=document.getElementById("pl_editor"); if(!ed)return; ed.focus();
   const sel=window.getSelection();

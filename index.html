@@ -307,7 +307,7 @@ const SUPABASE_URL = "https://ybczeovebtsqdkgckcul.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_2cMt9Q29MthejwnnDeWvzQ_Ibn_NLmt";
 const CLOUD = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 const FUNCTIONS_URL = SUPABASE_URL ? SUPABASE_URL.replace(".supabase.co", ".functions.supabase.co") : "";
-const BUILD = "2026.06.10 · B5 gastos generales";
+const BUILD = "2026.06.10 · B6 plan de pagos";
 let sb = null;
 if (CLOUD && window.supabase) { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 let RT_BOUND = false;
@@ -441,6 +441,15 @@ function syncAdelanto(c){
     if(p){ p.importe=ade; p.moneda=f.moneda; p.fecha=f.fechaAdelanto||p.fecha||new Date().toISOString().slice(0,10); p.medio=f.medioPago||p.medio; }
     else { c.pagos.push({id:uid("p"),importe:ade,moneda:f.moneda,fecha:f.fechaAdelanto||new Date().toISOString().slice(0,10),medio:f.medioPago,obs:"Adelanto inicial",esAdelanto:true}); }
   } else if(p){ c.pagos=c.pagos.filter(x=>!x.esAdelanto); }
+}
+function saldoDe(c){ const f=c.finanzas; return Math.max(Number(f.montoTotal||0)-Number(f.adelanto||0),0); }
+function syncSaldo(c){
+  const f=c.finanzas; c.pagos=c.pagos||[]; const saldo=saldoDe(c);
+  let p=c.pagos.find(x=>x.esSaldo);
+  if(f.saldoPagado && saldo>0){
+    if(p){ p.importe=saldo; p.moneda=f.moneda; p.fecha=f.fechaSaldoPago||p.fecha||new Date().toISOString().slice(0,10); p.medio=f.medioSaldo||f.medioPago||p.medio; }
+    else { c.pagos.push({id:uid("p"),importe:saldo,moneda:f.moneda,fecha:f.fechaSaldoPago||new Date().toISOString().slice(0,10),medio:f.medioSaldo||f.medioPago,obs:"Saldo / diferencia",esSaldo:true}); }
+  } else if(p){ c.pagos=c.pagos.filter(x=>!x.esSaldo); }
 }
 function recalcEstadoPago(c){ const f=c.finanzas; if(f.estadoPago==='vencido') return; const cob=cobradoDe(c); const tot=Number(f.montoTotal||0); f.estadoPago = cob<=0?'pendiente':(tot>0&&cob>=tot?'completo':'parcial'); }
 function saveLocal(){ localStorage.setItem("gmj_db_v1", JSON.stringify(DB)); }
@@ -1607,16 +1616,17 @@ function tabFinanzas(c){
     <div class="card"><div class="card-h"><h3>Condiciones económicas</h3></div><div class="card-b">
       <div class="frow fr2">${sel("fi_mon","Moneda",["USD","ARS"],f.moneda)}${sel("fi_est","Estado de pago",["pendiente","parcial","completo","vencido"],f.estadoPago)}</div>
       <div class="frow fr2">${inp("fi_total","Monto total pactado",f.montoTotal,"number")}${inp("fi_adel","Adelanto abonado",f.adelanto,"number")}</div>
-      <div class="frow fr2"><div class="field"><label>Saldo pendiente (automático)</label><input id="fi_saldo" value="${esc(f.saldo)}" disabled style="background:#f1f5f9;color:var(--muted)"><div class="hint">Se calcula: monto total − adelanto</div></div>${inp("fi_dev","Devolución (resultado negativo)",f.devolucion,"number")}</div>
+      <div class="frow fr2"><div class="field"><label>Saldo pendiente (automático)</label><input id="fi_saldo" value="${esc(f.saldo)}" disabled style="background:#f1f5f9;color:var(--muted)"><div class="hint">Monto total − adelanto. Para marcarlo pagado usá el <b>Plan de pagos</b> abajo.</div></div>${inp("fi_dev","Devolución (resultado negativo)",f.devolucion,"number")}</div>
       <div class="frow fr2">${inp("fi_fadel","Fecha pago adelanto",f.fechaAdelanto,"date")}${inp("fi_fsaldo","Fecha prevista saldo",f.fechaSaldo,"date")}</div>
       ${inp("fi_medio","Medio de pago",f.medioPago)}
       <div class="field"><label>Observaciones financieras</label><textarea id="fi_obs" rows="2">${esc(f.obs)}</textarea></div>
       <div class="alert alert-info"><span>🔗</span><div>Estos montos se usan automáticamente al generar el contrato.</div></div>
       <button class="btn btn-primary" onclick="saveFinanzas()">Guardar finanzas</button>
     </div></div>
-    <div class="card"><div class="card-h"><h3>Historial de pagos</h3><button class="btn btn-ghost btn-sm" onclick="addPago()">＋ Registrar pago</button></div>
+    <div class="card"><div class="card-h"><h3>Historial de pagos</h3><button class="btn btn-ghost btn-sm" onclick="addPago()">＋ Registrar otro pago</button></div>
       <table><thead><tr><th>Fecha</th><th>Importe</th><th>Medio</th><th>Obs.</th><th></th></tr></thead><tbody>${pagos}</tbody></table></div>
   </div>
+  ${finPlanPagos(c)}
   ${finEstadoBlock(c)}
   ${finLiqBlock(c)}
   ${finHistCard(c)}`;
@@ -1636,6 +1646,34 @@ function finHistCard(c){
   const rows=h.length?h.map(x=>`<div class="tl-item"><div class="d"></div><div class="act">${esc(x.accion)}${x.detalle?` — <span style="color:var(--muted)">${esc(x.detalle)}</span>`:''}</div><div class="meta">${esc(userName(x.usuario))} · ${esc(x.fecha)}</div></div>`).join(""):'<div class="empty">Sin movimientos financieros registrados</div>';
   return `<div class="card" style="margin-top:18px"><div class="card-h"><h3>Historial financiero del caso</h3></div><div class="card-b"><div class="timeline">${rows}</div></div></div>`;
 }
+function finPlanPagos(c){
+  const f=c.finanzas; const ade=Number(f.adelanto||0); const saldo=saldoDe(c);
+  const adePagado = ade>0;
+  const saldoPagado = !!f.saldoPagado;
+  const fila=(num,titulo,monto,pagado,fecha,medio,accion)=>`<div class="driveitem" style="border-bottom:1px solid var(--line);align-items:center;gap:10px">
+     <div style="width:26px;height:26px;border-radius:50%;background:${pagado?'#e8f7ee':'#fff5e6'};color:${pagado?'#1c7a40':'#b07d1a'};display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">${pagado?'✓':num}</div>
+     <div style="flex:1"><b>${titulo}</b> · ${money(monto,f.moneda)}<br><small style="color:var(--muted)">${pagado?('Pagado'+(fecha?' el '+fdate(fecha):'')+(medio?' · '+esc(medio):'')):'Pendiente de pago'}</small></div>
+     <div>${accion||(pagado?'<span class="badge b-green">Pagado</span>':'<span class="badge b-amber">Pendiente</span>')}</div></div>`;
+  return `<div class="card" style="margin-top:18px"><div class="card-h"><h3>Plan de pagos</h3><span class="badge ${saldoPagado&&adePagado?'b-green':'b-amber'}">${adePagado&&saldoPagado?'Cobrado completo':adePagado?'Falta el saldo':'Sin pagos'}</span></div><div class="card-b" style="padding:6px 8px">
+    ${fila('1','Adelanto',ade,adePagado,f.fechaAdelanto,f.medioPago, adePagado?'<span class="badge b-green">Pagado</span>':'<span class="badge b-grey">Cargá el adelanto arriba</span>')}
+    ${saldo>0?fila('2','Saldo / diferencia',saldo,saldoPagado,f.fechaSaldoPago,f.medioSaldo, saldoPagado?`<button class="btn btn-ghost btn-sm" onclick="desmarcarSaldo()">Deshacer</button>`:`<button class="btn btn-primary btn-sm" onclick="marcarSaldoPagado()">✓ Registrar pago del saldo</button>`):'<div class="empty" style="padding:10px">Sin saldo: el adelanto cubre el total.</div>'}
+  </div></div>`;
+}
+function marcarSaldoPagado(){ const c=CURRENT,f=c.finanzas; const saldo=saldoDe(c);
+  modal({title:"Registrar pago del saldo", size:"sm", body:`
+    <div class="alert alert-info"><span>💵</span><div>Vas a registrar el pago del <b>saldo / diferencia</b>: <b>${money(saldo,f.moneda)}</b></div></div>
+    <div class="frow fr2">${inp("sp_fec","Fecha del pago",new Date().toISOString().slice(0,10),"date")}${inp("sp_med","Medio de pago",f.medioPago||"")}</div>
+    ${inp("sp_obs","Observaciones (opcional)","")}`,
+    footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="confirmSaldoPagado()">Confirmar pago del saldo</button>`});
+}
+function confirmSaldoPagado(){ const c=CURRENT,f=c.finanzas; const saldo=saldoDe(c);
+  f.saldoPagado=true; f.fechaSaldoPago=val("sp_fec"); f.medioSaldo=val("sp_med");
+  syncSaldo(c); recalcEstadoPago(c);
+  const tot=Number(f.montoTotal||0); if(f.estadoCobro!=='vencido') f.estadoCobro = (tot>0 && cobradoDe(c)>=tot)?'cobrado_completo':'cobro_parcial';
+  finLog(c,"Pago del saldo registrado", money(saldo,f.moneda)+(f.medioSaldo?' · '+f.medioSaldo:'')+(val("sp_obs")?' · '+val("sp_obs"):''));
+  save(); closeModal(); toast("Saldo registrado como pagado ✓"); renderCaso();
+}
+function desmarcarSaldo(){ if(!confirm("¿Deshacer el pago del saldo?"))return; const c=CURRENT,f=c.finanzas; f.saldoPagado=false; syncSaldo(c); recalcEstadoPago(c); if(f.estadoCobro==='cobrado_completo')f.estadoCobro='cobro_parcial'; finLog(c,"Pago del saldo deshecho",""); save(); renderCaso(); }
 function finLog(c, accion, detalle){ c.finanzas.hist=c.finanzas.hist||[]; c.finanzas.hist.unshift({fecha:now(), usuario:SESSION.id, accion, detalle:detalle||""}); }
 function saveFinEstados(){ const c=CURRENT, f=c.finanzas; const soc=isSocio();
   f.estadoCobro=val("fe_cobro");
@@ -1646,7 +1684,7 @@ function saveFinanzas(){ const c=CURRENT, f=c.finanzas;
   f.moneda=val("fi_mon"); f.estadoPago=val("fi_est"); f.montoTotal=val("fi_total"); f.adelanto=val("fi_adel"); f.devolucion=val("fi_dev"); f.fechaAdelanto=val("fi_fadel"); f.fechaSaldo=val("fi_fsaldo"); f.medioPago=val("fi_medio"); f.obs=val("fi_obs");
   const tot=Number(f.montoTotal||0), ade=Number(f.adelanto||0);
   f.saldo = f.montoTotal===""?"":Math.max(tot-ade,0);
-  syncAdelanto(c); recalcEstadoPago(c);
+  syncAdelanto(c); syncSaldo(c); recalcEstadoPago(c);
   finLog(c,"Condiciones económicas actualizadas",`total: ${money(f.montoTotal,f.moneda)} · adelanto: ${money(f.adelanto,f.moneda)} · saldo: ${money(f.saldo,f.moneda)}`);
   logAction(c,"Finanzas actualizadas"); save(); toast("Finanzas guardadas"); renderCaso(); }
 function addPago(){
@@ -1657,7 +1695,7 @@ function addPago(){
     footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePago()">Registrar</button>`});
 }
 function savePago(){ const imp=val("pa_imp"),mon=val("pa_mon"); CURRENT.pagos.push({id:uid("p"),importe:imp,moneda:mon,fecha:val("pa_fec"),medio:val("pa_med"),obs:val("pa_obs")}); recalcEstadoPago(CURRENT); finLog(CURRENT,"Pago recibido",money(imp,mon)+(val("pa_med")?` · ${val("pa_med")}`:'')); logAction(CURRENT,"Pago registrado: "+money(imp,mon)); save(); closeModal(); toast("Pago registrado"); renderCaso(); }
-function delPago(id){ const p=(CURRENT.pagos||[]).find(x=>x.id===id); CURRENT.pagos=CURRENT.pagos.filter(p=>p.id!==id); if(p)finLog(CURRENT,"Pago eliminado",money(p.importe,p.moneda)); recalcEstadoPago(CURRENT); save(); renderCaso(); }
+function delPago(id){ const p=(CURRENT.pagos||[]).find(x=>x.id===id); CURRENT.pagos=CURRENT.pagos.filter(x=>x.id!==id); if(p){ if(p.esSaldo)CURRENT.finanzas.saldoPagado=false; if(p.esAdelanto)CURRENT.finanzas.adelanto=""; finLog(CURRENT,"Pago eliminado",money(p.importe,p.moneda)); } recalcEstadoPago(CURRENT); save(); renderCaso(); }
 
 /* ---------- TAB: TAREAS ---------- */
 function tabTareas(c){

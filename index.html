@@ -307,7 +307,7 @@ const SUPABASE_URL = "https://ybczeovebtsqdkgckcul.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_2cMt9Q29MthejwnnDeWvzQ_Ibn_NLmt";
 const CLOUD = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 const FUNCTIONS_URL = SUPABASE_URL ? SUPABASE_URL.replace(".supabase.co", ".functions.supabase.co") : "";
-const BUILD = "2026.06.10 · B4 liquidación socios";
+const BUILD = "2026.06.10 · B5 gastos generales";
 let sb = null;
 if (CLOUD && window.supabase) { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 let RT_BOUND = false;
@@ -450,7 +450,7 @@ function uid(p){ return p+Math.random().toString(36).slice(2,8); }
 /* ---------- CAPA DE NUBE (Supabase) ---------- */
 function isSocioRole(){ return SESSION && SESSION.rol==="socio"; }
 async function cloudLoad(){
-  const [st, profs, cs, fin, tk, nt, cd, lq] = await Promise.all([
+  const [st, profs, cs, fin, tk, nt, cd, lq, gg] = await Promise.all([
     sb.from("settings").select("data").eq("id",1).maybeSingle(),
     sb.from("profiles").select("id,nombre,rol"),
     sb.from("casos").select("id,data,form_token"),
@@ -458,7 +458,8 @@ async function cloudLoad(){
     sb.from("tareas").select("*"),
     sb.from("notificaciones").select("*").order("created_at",{ascending:false}).limit(50),
     sb.from("cambios_divisa").select("*").order("fecha",{ascending:false}),
-    sb.from("liquidaciones").select("*").order("fecha",{ascending:false})
+    sb.from("liquidaciones").select("*").order("fecha",{ascending:false}),
+    sb.from("gastos_generales").select("*").order("fecha",{ascending:false})
   ]);
   const cfg = (st.data && st.data.data) || {};
   DB = {
@@ -470,6 +471,7 @@ async function cloudLoad(){
     notificaciones: nt.data||[],
     cambios: cd.data||[],
     liquidaciones: lq.data||[],
+    gastosGen: gg.data||[],
     counter: cfg.counter||0
   };
   const finMap={}; (fin.data||[]).forEach(f=>finMap[f.caso_id]=f);
@@ -523,6 +525,7 @@ function bindRealtime(){
     .on("postgres_changes",{event:"*",schema:"public",table:"settings"}, cloudRefresh)
     .on("postgres_changes",{event:"*",schema:"public",table:"cambios_divisa"}, cloudRefresh)
     .on("postgres_changes",{event:"*",schema:"public",table:"liquidaciones"}, cloudRefresh)
+    .on("postgres_changes",{event:"*",schema:"public",table:"gastos_generales"}, cloudRefresh)
     .subscribe();
   // canal propio para tareas (refresco liviano, no interrumpe)
   sb.channel("gmj-tareas")
@@ -2175,6 +2178,8 @@ function calcFinanzasGlobal(){
     if(f.estadoDevolucion==="realizada_dev") a.devRealizada[m]+=Number(f.devolucion||0);
     (c.gastos||[]).forEach(g=>{ const gm=cur(g.moneda); const imp=Number(g.importe||0); if(!imp||g.estado==='no corresponde')return; if(g.estado==='abonado') a.gastosPag[gm]+=imp; else a.pendGasto[gm]+=imp; });
   });
+  // gastos generales del estudio (no atados a un caso)
+  (DB.gastosGen||[]).forEach(g=>{ const gm=cur(g.moneda); const imp=Number(g.importe||0); if(!imp)return; if(g.estado==='pendiente') a.pendGasto[gm]+=imp; else a.gastosPag[gm]+=imp; });
   (DB.cambios||[]).forEach(x=>{ const mo=cur(x.moneda_origen), md=cur(x.moneda_destino); a.fxOut[mo]+=Number(x.monto_origen||0); a.fxIn[md]+=Number(x.monto_destino||0); });
   a.caja={
     USD: a.cobrado.USD - a.gastosPag.USD - a.devRealizada.USD - a.fxOut.USD + a.fxIn.USD - a.liquidado.USD,
@@ -2241,6 +2246,39 @@ function finLiqBlock(c){
      <span class="badge ${FIN_COLOR[l.estado]||'b-grey'}">${esc(LIQ_EST[l.estado]||l.estado)}</span></div>`).join(""):'<div class="empty">Sin liquidaciones registradas</div>';
   return `<div class="card" style="margin-top:18px"><div class="card-h"><h3>Liquidación entre socios</h3><button class="btn btn-primary btn-sm" onclick="liqModal('${c.id}')">＋ Registrar liquidación</button></div><div class="card-b" style="padding:6px 8px">${rows}</div></div>`;
 }
+/* ---------- GASTOS GENERALES DEL ESTUDIO (solo socios) ---------- */
+async function gastoGenUpsert(g,isNew){
+  if(CLOUD){
+    const row={id:g.id,fecha:g.fecha||null,concepto:g.concepto||null,moneda:g.moneda||"ARS",importe:Number(g.importe||0),estado:g.estado||"abonado",medio:g.medio||null,cambio_id:g.cambio_id||null,obs:g.obs||null,comprobante:g.comprobante||null,usuario:g.usuario};
+    const ins=isNew===true || !(DB.gastosGen||[]).some(x=>x.id===g.id);
+    let res; if(ins) res=await sb.from("gastos_generales").insert(row).select().maybeSingle(); else res=await sb.from("gastos_generales").update(row).eq("id",g.id).select().maybeSingle();
+    if(res.error){ console.error("gastoGenUpsert",res.error); toast("Error al guardar el gasto: "+res.error.message,"err"); return null; } return res.data;
+  } else { DB.gastosGen=DB.gastosGen||[]; const i=DB.gastosGen.findIndex(x=>x.id===g.id); if(i>=0)DB.gastosGen[i]=g; else DB.gastosGen.unshift(g); saveLocal(); return g; }
+}
+async function gastoGenDelete(id){ if(CLOUD){ const {error}=await sb.from("gastos_generales").delete().eq("id",id); if(error){toast("Error al eliminar: "+error.message,"err");return false;} } DB.gastosGen=(DB.gastosGen||[]).filter(x=>x.id!==id); if(!CLOUD)saveLocal(); return true; }
+function gastoGenModal(id){
+  const editing=!!id; const g=editing?(DB.gastosGen||[]).find(x=>x.id===id):{fecha:new Date().toISOString().slice(0,10),moneda:"ARS",estado:"abonado",usuario:SESSION.id};
+  if(!g){ toast("Gasto no encontrado","err"); return; }
+  const cambioSel=(DB.cambios&&DB.cambios.length)?`<div class="field"><label>Financiado por un cambio de divisa (opcional)</label><select id="gg_cambio"><option value="">— Ninguno —</option>${DB.cambios.map(x=>`<option value="${x.id}" ${g.cambio_id===x.id?'selected':''}>${fdate(x.fecha)} · ${money(x.monto_origen,x.moneda_origen)}→${money(x.monto_destino,x.moneda_destino)}${x.motivo?' · '+esc(x.motivo):''}</option>`).join("")}</select></div>`:'';
+  modal({title:editing?"Editar gasto general":"Registrar gasto general", size:"", body:`
+    ${inp("gg_concepto","Concepto (ej: alquiler, sueldos, librería)",g.concepto||"")}
+    <div class="frow fr3">${inp("gg_fecha","Fecha",g.fecha||"","date")}${sel("gg_mon","Moneda",["ARS","USD"],g.moneda||"ARS")}${inp("gg_imp","Importe",g.importe||"","number")}</div>
+    <div class="frow fr2">${sel("gg_est","Estado",["abonado","pendiente"],g.estado||"abonado")}${inp("gg_medio","Medio de pago",g.medio||"")}</div>
+    ${cambioSel}
+    <div class="field"><label>Observaciones</label><textarea id="gg_obs" rows="2">${esc(g.obs||'')}</textarea></div>
+    <div class="alert alert-info"><span>🏢</span><div>Gasto del estudio no asociado a un caso. Si está <b>abonado</b>, se descuenta de la caja general.</div></div>`,
+    footer:`${editing?`<button class="btn btn-danger" onclick="gastoGenDeleteConfirm('${id}')">Eliminar</button>`:''}<div style="flex:1"></div><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveGastoGen('${id||''}')">Guardar</button>`});
+}
+async function saveGastoGen(id){
+  const conc=val("gg_concepto").trim(); if(!conc){ toast("Cargá el concepto","err"); return; }
+  const isNew=!id;
+  const base=id?(DB.gastosGen||[]).find(x=>x.id===id):{id:newTareaId(),usuario:SESSION.id,created_at:new Date().toISOString()};
+  Object.assign(base,{concepto:conc,fecha:val("gg_fecha")||null,moneda:val("gg_mon"),importe:Number(val("gg_imp")||0),estado:val("gg_est"),medio:val("gg_medio"),cambio_id:(document.getElementById("gg_cambio")?val("gg_cambio"):"")||null,obs:val("gg_obs")});
+  const r=await gastoGenUpsert(base,isNew);
+  if(r){ DB.gastosGen=DB.gastosGen||[]; const i=DB.gastosGen.findIndex(x=>x.id===base.id); if(i>=0)DB.gastosGen[i]=CLOUD?r:base; else DB.gastosGen.unshift(CLOUD?r:base); }
+  closeModal(); toast("Gasto general guardado"); if(ROUTE==="finanzas")renderFinanzasGlobal();
+}
+function gastoGenDeleteConfirm(id){ if(!confirm("¿Eliminar este gasto general?"))return; gastoGenDelete(id).then(ok=>{ if(ok){ closeModal(); toast("Gasto eliminado"); if(ROUTE==="finanzas")renderFinanzasGlobal(); } }); }
 /* ---------- CAMBIOS DE DIVISA (caja, solo socios) ---------- */
 async function cambioUpsert(x, isNew){
   if(CLOUD){
@@ -2311,12 +2349,18 @@ function renderFinanzasGlobal(){
   const cxRows=cambios.length?cambios.map(x=>{ const caso=x.caso_id?DB.casos.find(c=>c.id===x.caso_id):null;
     return `<tr class="clickable" onclick="cambioModal('${x.id}')"><td>${fdate(x.fecha)}</td><td>${money(x.monto_origen,x.moneda_origen)} → ${money(x.monto_destino,x.moneda_destino)}</td><td>TC ${esc(String(x.tipo_cambio||'—'))}</td><td>${esc(x.motivo||'—')}</td><td>${caso?esc(clienteFull(caso)):'—'}</td><td>${esc(userName(x.usuario))}</td></tr>`;
   }).join(""):`<tr><td colspan="6" class="empty">Sin cambios de divisa registrados</td></tr>`;
+  // gastos generales del estudio
+  const gg=(DB.gastosGen||[]);
+  const ggRows=gg.length?gg.map(x=>{ const cx=x.cambio_id?(DB.cambios||[]).find(c=>c.id===x.cambio_id):null;
+    return `<tr class="clickable" onclick="gastoGenModal('${x.id}')"><td>${fdate(x.fecha)}</td><td><b>${esc(x.concepto||'—')}</b>${cx?`<br><small style="color:var(--gold)">💱 financiado con cambio de ${money(cx.monto_origen,cx.moneda_origen)}</small>`:''}</td><td>${money(x.importe,x.moneda)}</td><td><span class="badge ${x.estado==='abonado'?'b-green':'b-amber'}">${esc(x.estado)}</span></td><td>${esc(x.medio||'—')}</td><td>${esc(userName(x.usuario))}</td></tr>`;
+  }).join(""):`<tr><td colspan="6" class="empty">Sin gastos generales registrados</td></tr>`;
   // movimientos de caja (cobros, gastos, cambios)
   const movs=[];
   casosActivos().forEach(c=>{ (c.pagos||[]).forEach(p=>movs.push({fecha:p.fecha,tipo:"Cobro",detalle:clienteFull(c),monto:Number(p.importe||0),moneda:p.moneda,signo:1}));
     (c.gastos||[]).forEach(g=>{ if(g.estado==='abonado'&&Number(g.importe||0)) movs.push({fecha:g.fecha,tipo:"Gasto",detalle:g.nombre+" · "+clienteFull(c),monto:Number(g.importe||0),moneda:g.moneda,signo:-1}); }); });
   (DB.cambios||[]).forEach(x=>movs.push({fecha:x.fecha,tipo:"Cambio",detalle:`${money(x.monto_origen,x.moneda_origen)} → ${money(x.monto_destino,x.moneda_destino)}${x.motivo?' · '+x.motivo:''}`,fx:true,signo:0}));
   (DB.liquidaciones||[]).forEach(l=>{ const caso=l.caso_id?DB.casos.find(c=>c.id===l.caso_id):null; movs.push({fecha:l.fecha,tipo:"Liquidación",detalle:`${caso?clienteFull(caso):'—'} · ${(l.reparto||[]).map(r=>r.nombre+' '+money(r.monto,l.moneda)).join(', ')}`,monto:(l.reparto||[]).reduce((s,r)=>s+Number(r.monto||0),0),moneda:l.moneda,signo:-1}); });
+  (DB.gastosGen||[]).forEach(g=>{ if(g.estado!=='pendiente'&&Number(g.importe||0)) movs.push({fecha:g.fecha,tipo:"Gasto",detalle:(g.concepto||'Gasto general')+" · (general)",monto:Number(g.importe||0),moneda:g.moneda,signo:-1}); });
   movs.sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""));
   const movBadge=t=>t==='Cobro'?'b-green':t==='Gasto'?'b-red':t==='Liquidación'?'b-gold':'b-blue';
   const movRows=movs.length?movs.slice(0,80).map(m=>`<tr><td>${fdate(m.fecha)}</td><td><span class="badge ${movBadge(m.tipo)}">${m.tipo}</span></td><td>${esc(m.detalle)}</td><td style="text-align:right;font-weight:600;color:${m.signo>0?'#1c7a40':m.signo<0?'#c0392b':'var(--muted)'}">${m.fx?'—':(m.signo>0?'+ ':'− ')+money(m.monto,m.moneda)}</td></tr>`).join(""):`<tr><td colspan="4" class="empty">Sin movimientos</td></tr>`;
@@ -2349,6 +2393,9 @@ function renderFinanzasGlobal(){
 
     <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 10px">Historial (cerrados y liquidados)</div>
     <div class="card" style="margin-bottom:24px"><table><thead><tr><th>Cliente</th><th>Mon.</th><th>Total</th><th>Cobrado</th><th>Cobro</th><th>Resultado</th><th>Devolución</th><th>Liquidación</th></tr></thead><tbody>${histRows}</tbody></table></div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:4px 0 10px"><div class="sec-title" style="font-weight:700;color:var(--navy)">🏢 Gastos generales del estudio</div><button class="btn btn-primary btn-sm" onclick="gastoGenModal()">＋ Registrar gasto</button></div>
+    <div class="card" style="margin-bottom:24px"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Importe</th><th>Estado</th><th>Medio</th><th>Registró</th></tr></thead><tbody>${ggRows}</tbody></table></div>
 
     <div style="display:flex;align-items:center;justify-content:space-between;margin:4px 0 10px"><div class="sec-title" style="font-weight:700;color:var(--navy)">💱 Cambios de divisa</div><button class="btn btn-primary btn-sm" onclick="cambioModal()">＋ Registrar cambio</button></div>
     <div class="grid g2" style="margin-bottom:10px">

@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.06.12 · B16 contrato compacto 2 pag + firmas mas grandes";
+const BUILD = "2026.06.12 · B17 editor pro en docs del caso + firmas alineadas";
 let sb = null;
 if (CLOUD && window.supabase) { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 let RT_BOUND = false;
@@ -1757,15 +1757,32 @@ function previewDoc(tipo){
   const c=CURRENT; const v=validateDoc(c,tipo);
   if(!v.ok){ toast("Faltan datos obligatorios","err"); return; }
   const html=buildDocHtml(c,tipo);
+  const tb=`<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;border-bottom:1px solid var(--line);padding-bottom:8px">
+    <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plCmd('bold')"><b>N</b></button>
+    <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plCmd('italic')"><i>C</i></button>
+    <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plCmd('underline')"><u>S</u></button>
+    <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plFormat('h1')">Título</button>
+    <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plFormat('h2')">Subtítulo</button>
+    <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plFormat('p')">Párrafo</button>
+    <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plCmd('insertUnorderedList')">• Lista</button>
+    <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plCmd('justifyLeft')">⯇</button>
+    <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plCmd('justifyCenter')">≡</button>
+    <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plCmd('justifyFull')">☰</button>
+    <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plInsertImage()" title="Insertar imagen">🖼 Imagen</button>
+  </div>`;
   modal({title:"Previsualización — "+docTitle(tipo), size:"lg", body:`
-    <div class="alert alert-info"><span>✏️</span><div>Podés editar el texto antes de generar. Al confirmar se guarda en Drive y queda registrado.</div></div>
-    <div id="docEdit" contenteditable="true" class="docview" style="border:1px solid var(--line);border-radius:8px;padding:30px 36px;background:#fff">${html}</div>`,
-    footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+    <div class="alert alert-info"><span>✏️</span><div>Editá libremente el documento (texto, formato e imágenes). Las imágenes del modelo ya vienen incluidas; hacé clic en una para moverla o cambiar su tamaño. Al confirmar se guarda y queda registrado.</div></div>
+    ${tb}
+    <div id="docEdit" contenteditable="true" class="docview" onkeyup="savePlRange()" onmouseup="savePlRange()" onclick="plEditorClick(event)" onscroll="plImgReposition()" style="position:relative;border:1px solid var(--line);border-radius:8px;padding:30px 36px;background:#fff;max-height:60vh;overflow:auto">${html}</div>`,
+    footer:`<button class="btn btn-ghost" onclick="plImgDeselect();PL_EDITOR_ID='pl_editor';closeModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="finalizeDoc('${tipo}')">✓ Generar y guardar</button>`});
+  PL_EDITOR_ID="docEdit"; PL_RANGE=null;
 }
 function finalizeDoc(tipo){
   const c=CURRENT;
+  plImgDeselect();
   const content=document.getElementById("docEdit").innerHTML;
+  PL_EDITOR_ID="pl_editor";
   const ver=(c.docs.filter(d=>d.tipo===tipo).length)+1;
   const doc={id:uid("d"),tipo,version:ver,estado:"borrador",fecha:now(),generadoPor:SESSION.id,html:content};
   c.docs.push(doc);
@@ -1949,9 +1966,12 @@ function buildDocHtml(c,tipo){
 }
 /* ---- Editor de modelos (documentos madre) ---- */
 let PL_TIPO=null, PL_RANGE=null;
+// Editor activo (modelo en Configuración = "pl_editor"; documento de un caso = "docEdit").
+let PL_EDITOR_ID="pl_editor";
+function plEd(){ return document.getElementById(PL_EDITOR_ID); }
 const PL_TITULOS={contrato:"Contrato de servicios",carta_poder:"Carta poder",mediacion:"Solicitud de mediación"};
 function openPlantillaEditor(tipo){
-  plantillaSeed(); PL_TIPO=tipo; PL_RANGE=null;
+  plantillaSeed(); PL_TIPO=tipo; PL_RANGE=null; PL_EDITOR_ID="pl_editor";
   const html=(DB.config.plantillas[tipo]||{}).html||"";
   const pal=DOC_VARS.map(v=>`<button type="button" class="btn btn-ghost btn-sm" style="margin:2px;font-size:11px" onclick="insertVar('${v[0]}')" title="${esc(v[1])}">${'{{'+v[0]+'}}'}</button>`).join("");
   setCrumb("Modelo · "+PL_TITULOS[tipo],"Configuración");
@@ -1986,16 +2006,16 @@ function openPlantillaEditor(tipo){
       </div></div>
     </div>`;
 }
-function plCmd(cmd){ try{document.execCommand(cmd,false,null);}catch(e){} const ed=document.getElementById("pl_editor"); if(ed)ed.focus(); savePlRange(); }
-function plFormat(tag){ try{document.execCommand('formatBlock',false,tag);}catch(e){} const ed=document.getElementById("pl_editor"); if(ed)ed.focus(); savePlRange(); }
-function savePlRange(){ const s=window.getSelection(); if(s&&s.rangeCount){ const r=s.getRangeAt(0); const ed=document.getElementById("pl_editor"); if(ed&&ed.contains(r.commonAncestorContainer)) PL_RANGE=r.cloneRange(); } }
+function plCmd(cmd){ try{document.execCommand(cmd,false,null);}catch(e){} const ed=plEd(); if(ed)ed.focus(); savePlRange(); }
+function plFormat(tag){ try{document.execCommand('formatBlock',false,tag);}catch(e){} const ed=plEd(); if(ed)ed.focus(); savePlRange(); }
+function savePlRange(){ const s=window.getSelection(); if(s&&s.rangeCount){ const r=s.getRangeAt(0); const ed=plEd(); if(ed&&ed.contains(r.commonAncestorContainer)) PL_RANGE=r.cloneRange(); } }
 function plInsertImage(){
   savePlRange();
   const fi=document.createElement("input"); fi.type="file"; fi.accept="image/*";
   fi.onchange=()=>{ const f=fi.files&&fi.files[0]; if(!f)return;
     if(f.size>3*1024*1024){ toast("La imagen es muy grande (máx 3 MB)","err"); return; }
     const rd=new FileReader();
-    rd.onload=()=>{ const ed=document.getElementById("pl_editor"); if(!ed)return; ed.focus();
+    rd.onload=()=>{ const ed=plEd(); if(!ed)return; ed.focus();
       const sel=window.getSelection(); if(PL_RANGE){ sel.removeAllRanges(); sel.addRange(PL_RANGE); }
       const html='<img class="pl-img" src="'+rd.result+'" style="width:240px;height:auto;display:block;margin:8px 0;cursor:pointer">';
       if(!document.execCommand('insertHTML',false,html)){ ed.innerHTML+=html; }
@@ -2012,7 +2032,7 @@ function plInsertImage(){
 let PL_IMG=null;
 function plEditorClick(e){
   const t=e.target;
-  if(t && t.tagName==="IMG" && t.closest("#pl_editor")){ e.preventDefault(); plImgSelect(t); }
+  if(t && t.tagName==="IMG" && t.closest("#"+PL_EDITOR_ID)){ e.preventDefault(); plImgSelect(t); }
   else if(!(t && t.closest && t.closest("#plImgBar"))){ plImgDeselect(); }
 }
 function plImgUIEnsure(){
@@ -2041,7 +2061,7 @@ function plImgUIEnsure(){
     if(fn==="resize") plImgResize(parseInt(arg,10));
     else if(fn==="width") plImgWidth(parseInt(arg,10));
     else if(fn==="wrap") plImgWrap(arg);
-    else if(fn==="del"){ const ed=document.getElementById("pl_editor"); PL_IMG.remove(); plImgDeselect(); if(ed)ed.focus(); }
+    else if(fn==="del"){ const ed=plEd(); PL_IMG.remove(); plImgDeselect(); if(ed)ed.focus(); }
   });
   document.body.appendChild(bar);
   const h=document.createElement("div"); h.id="plImgHandle";
@@ -2088,7 +2108,7 @@ function plImgWidth(pct){
 }
 function plImgWrap(mode){
   if(!PL_IMG) return;
-  const ed=document.getElementById("pl_editor"); const s=PL_IMG.style;
+  const ed=plEd(); const s=PL_IMG.style;
   s.float=""; s.position=""; s.zIndex=""; s.left=""; s.top=""; s.display=""; s.margin=""; s.verticalAlign=""; s.cursor="pointer";
   if(mode==="inline"){ s.display="inline-block"; s.margin="0 4px"; s.verticalAlign="middle"; }
   else if(mode==="left"){ s.float="left"; s.margin="4px 14px 8px 0"; }
@@ -2114,7 +2134,7 @@ function plImgResizeStart(e){
 function plImgDragStart(e){
   if(!PL_IMG || getComputedStyle(PL_IMG).position!=="absolute") return;
   e.preventDefault(); e.stopPropagation();
-  const ed=document.getElementById("pl_editor"); const er=ed.getBoundingClientRect(); const ir=PL_IMG.getBoundingClientRect();
+  const ed=plEd(); const er=ed.getBoundingClientRect(); const ir=PL_IMG.getBoundingClientRect();
   const offX=e.clientX-ir.left, offY=e.clientY-ir.top;
   const move=(ev)=>{
     let left=Math.round(ev.clientX-er.left-offX+ed.scrollLeft);
@@ -2125,16 +2145,16 @@ function plImgDragStart(e){
   document.addEventListener("mousemove",move); document.addEventListener("mouseup",up);
 }
 function insertVar(tok){
-  const ed=document.getElementById("pl_editor"); if(!ed)return; ed.focus();
+  const ed=plEd(); if(!ed)return; ed.focus();
   const sel=window.getSelection();
   if(PL_RANGE){ sel.removeAllRanges(); sel.addRange(PL_RANGE); }
   if(!document.execCommand('insertText',false,'{{'+tok+'}}')){ ed.innerHTML+=' {{'+tok+'}}'; }
   savePlRange();
 }
-function savePlantilla(){ const ed=document.getElementById("pl_editor"); if(!ed)return; plImgDeselect(); DB.config.plantillas=DB.config.plantillas||{}; DB.config.plantillas[PL_TIPO]={html:ed.innerHTML,updated:now()}; save(); toast("Modelo guardado ✓ — se usará en los próximos documentos"); }
+function savePlantilla(){ const ed=plEd(); if(!ed)return; plImgDeselect(); DB.config.plantillas=DB.config.plantillas||{}; DB.config.plantillas[PL_TIPO]={html:ed.innerHTML,updated:now()}; save(); toast("Modelo guardado ✓ — se usará en los próximos documentos"); }
 function resetPlantilla(){ if(!confirm("¿Restaurar el modelo base original? Se descartan tus cambios de este documento."))return; DB.config.plantillas=DB.config.plantillas||{}; DB.config.plantillas[PL_TIPO]={html:DEFAULT_PLANTILLAS[PL_TIPO],updated:now()}; save(); openPlantillaEditor(PL_TIPO); toast("Modelo restaurado"); }
 function previewPlantilla(){
-  const ed=document.getElementById("pl_editor"); if(!ed)return;
+  const ed=plEd(); if(!ed)return;
   const c=(typeof CURRENT!=="undefined"&&CURRENT)||casosActivos()[0]||(DB.casos||[])[0];
   const small=PL_TIPO==="carta_poder";
   const body=c?(docHead(small)+renderPlantilla(ed.innerHTML,c)):(docHead(small)+ed.innerHTML);

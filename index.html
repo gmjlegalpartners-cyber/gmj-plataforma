@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.06.12 · B13 formulario: 1 solo uso + Facebook + sin handle";
+const BUILD = "2026.06.12 · B14 sync en vivo casos + no pisar modelos/config";
 let sb = null;
 if (CLOUD && window.supabase) { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 let RT_BOUND = false;
@@ -510,13 +510,20 @@ async function cloudLoad(){
   DB.casos.sort((a,b)=>(b.id||"").localeCompare(a.id||""));
   DB.casos.forEach(c=>{ if(c.finanzas) recalcEstadoPago(c); });
   _tareasSig=tareasSignature(DB.tareas);
+  _cfgSig=cfgSignature();
 }
 let _saveTimer=null;
+// Firma de la configuración compartida (estudio, abogados, modelos, etc.).
+// Sólo escribimos la fila "settings" cuando la config realmente cambió en ESTA sesión.
+// Así, guardar un caso no pisa los modelos/config que editó otro usuario.
+let _cfgSig="";
+function cfgPayload(){ return { estudio:DB.config.estudio, asistenteMail:DB.config.asistenteMail, mediador:DB.config.mediador, requeridos:DB.config.requeridos, objeto:DB.config.objeto, plantillas:DB.config.plantillas||{}, abogados:DB.abogados, counter:DB.counter }; }
+function cfgSignature(){ try{ return JSON.stringify(cfgPayload()); }catch(e){ return "x"+Date.now(); } }
 function cloudSave(){ if(!sb) return; if(_saveTimer) clearTimeout(_saveTimer); _saveTimer=setTimeout(doCloudSave,350); }
 async function doCloudSave(){
   try{
-    const cfg={ estudio:DB.config.estudio, asistenteMail:DB.config.asistenteMail, mediador:DB.config.mediador, requeridos:DB.config.requeridos, objeto:DB.config.objeto, plantillas:DB.config.plantillas||{}, abogados:DB.abogados, counter:DB.counter };
-    await sb.from("settings").upsert({id:1, data:cfg, updated_at:new Date().toISOString()});
+    const cfg=cfgPayload(); const sig=JSON.stringify(cfg);
+    if(sig!==_cfgSig){ await sb.from("settings").upsert({id:1, data:cfg, updated_at:new Date().toISOString()}); _cfgSig=sig; }
     const c = CURRENT;
     if(c){
       const noFin = JSON.parse(JSON.stringify(c)); delete noFin.finanzas; delete noFin.pagos;
@@ -538,8 +545,7 @@ async function cloudInsertCase(c){
   const noFin = JSON.parse(JSON.stringify(c)); delete noFin.finanzas; delete noFin.pagos;
   await sb.from("casos").insert({ id:c.id, data:noFin, cliente_nombre:clienteFull(c), estado:c.estado, form_token:c.formToken||null, updated_by:SESSION.id });
   await sb.from("case_finance").upsert({ caso_id:c.id, finanzas:c.finanzas||{}, pagos:c.pagos||[] });
-  const cfg={ estudio:DB.config.estudio, asistenteMail:DB.config.asistenteMail, mediador:DB.config.mediador, requeridos:DB.config.requeridos, objeto:DB.config.objeto, plantillas:DB.config.plantillas||{}, abogados:DB.abogados, counter:DB.counter };
-  await sb.from("settings").upsert({id:1, data:cfg});
+  const cfg=cfgPayload(); await sb.from("settings").upsert({id:1, data:cfg}); _cfgSig=JSON.stringify(cfg);
 }
 function bindRealtime(){
   if(!sb || RT_BOUND) return; RT_BOUND=true;

@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.06.12 · B15 imagenes (firmas) en Word generado";
+const BUILD = "2026.06.12 · B16 contrato compacto 2 pag + firmas mas grandes";
 let sb = null;
 if (CLOUD && window.supabase) { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 let RT_BOUND = false;
@@ -1781,9 +1781,10 @@ function docExportCSS(tipo){
       p{text-align:justify;margin:0 0 4.5pt}h1{text-align:center;font-size:12.5pt;margin:0 0 7pt}
       .sig{margin-top:14pt;display:flex;justify-content:center;text-align:center;font-size:9pt}`;
   }
-  return `@page{size:A4;margin:2.2cm}body{font-family:"Times New Roman",serif;font-size:12pt;line-height:1.5;color:#000}
-    p{text-align:justify;margin:0 0 11px}h1,h2{text-align:center;font-size:14pt;margin:0 0 4pt}
-    .sig{margin-top:50pt;display:flex;justify-content:space-around;text-align:center;font-size:11pt}`;
+  return `@page{size:A4;margin:1.4cm 1.6cm}body{font-family:"Times New Roman",serif;font-size:10pt;line-height:1.3;color:#000}
+    p{text-align:justify;margin:0 0 5pt}h1,h2{text-align:center;font-size:12.5pt;margin:0 0 4pt}
+    .sig{margin-top:22pt;display:flex;justify-content:space-around;text-align:center;font-size:10pt;page-break-inside:avoid}
+    .sig img{height:62px;width:auto;vertical-align:bottom;margin:0 8px}`;
 }
 // Genera un .doc en formato MHTML (multipart) para que Word muestre las imágenes
 // incrustadas (base64). Reemplaza cada data-URI por un adjunto referenciado por nombre.

@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.06.12 · B18 enviar PDF (WhatsApp/mail) con adjunto";
+const BUILD = "2026.06.12 · B19 mail automatico con PDF adjunto (Gmail)";
 let sb = null;
 if (CLOUD && window.supabase) { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 let RT_BOUND = false;
@@ -1422,11 +1422,11 @@ function sendDocModal(id){
   const base=DOC_MSG[d.tipo]?DOC_MSG[d.tipo](c):("Hola, te compartimos el documento: "+docTitle(d.tipo)+".");
   const full=base+"\n\nTe adjunto el "+docTitle(d.tipo).toLowerCase()+" en PDF.";
   modal({title:"Enviar — "+docTitle(d.tipo), size:"", body:`
-    <div class="alert alert-info"><span>📎</span><div>Al enviar, se <b>descarga el PDF</b> y se abre WhatsApp/mail con el mensaje listo. Solo tenés que <b>adjuntar el PDF descargado</b>.</div></div>
-    <div class="field"><label>Destinatario (teléfono para WhatsApp / correo para mail)</label><input id="sd_to" value="${esc(c.cliente.tel||c.cliente.email||"")}"></div>
+    <div class="alert alert-info"><span>📎</span><div><b>Mail:</b> se envía solo, con el PDF adjunto, al correo del cliente. &nbsp; <b>WhatsApp:</b> descarga el PDF y abre el chat para que lo adjuntes.</div></div>
+    <div class="field"><label>Destinatario (correo para mail / teléfono para WhatsApp)</label><input id="sd_to" value="${esc(c.cliente.email||c.cliente.tel||"")}"></div>
     <div class="field"><label>Mensaje (editable antes de enviar)</label><textarea id="sd_msg" rows="6">${esc(full)}</textarea></div>`,
     footer:`<button class="btn btn-ghost" onclick="copyMsg()">Copiar mensaje</button><div style="flex:1"></div>
-      <button class="btn btn-ghost" onclick="sendDocVia('${id}','mail')">✉️ Mail + PDF</button>
+      <button class="btn btn-primary" onclick="sendDocVia('${id}','mail')">✉️ Enviar mail con PDF</button>
       <button class="btn btn-gold" onclick="sendDocVia('${id}','wa')">📱 WhatsApp + PDF</button>`});
 }
 function copyMsg(){ const t=document.getElementById("sd_msg").value; if(navigator.clipboard)navigator.clipboard.writeText(t); toast("Mensaje copiado"); }
@@ -1439,22 +1439,47 @@ function ensureHtml2Pdf(){
     document.head.appendChild(s);
   });
 }
-async function docToPdfFile(d, filename){
-  await ensureHtml2Pdf();
+function _pdfWrap(d){
   const small=d.tipo==="carta_poder";
   const scoped='<style>.pdfbody{font-family:"Times New Roman",Georgia,serif;font-size:'+(small?'12px':'13px')+';line-height:1.35;color:#000}.pdfbody p{text-align:justify;margin:0 0 7px}.pdfbody h1,.pdfbody h2{text-align:center;font-size:16px;margin:0 0 6px}.pdfbody img{max-width:100%}.pdfbody table{page-break-inside:avoid}</style>';
   const wrap=document.createElement("div"); wrap.className="pdfbody";
   wrap.style.cssText="position:fixed;left:-10000px;top:0;width:794px;background:#fff;padding:0";
   wrap.innerHTML=scoped+d.html;
   document.body.appendChild(wrap);
-  try{
-    await window.html2pdf().set({ margin:[12,14,14,14], filename:filename+".pdf", image:{type:"jpeg",quality:0.98}, html2canvas:{scale:2,backgroundColor:"#ffffff",useCORS:true}, jsPDF:{unit:"mm",format:"a4",orientation:"portrait"}, pagebreak:{mode:["css","legacy"]} }).from(wrap).save();
-  } finally { wrap.remove(); }
+  return wrap;
+}
+function _pdfOpt(filename){ return { margin:[12,14,14,14], filename:(filename||"documento")+".pdf", image:{type:"jpeg",quality:0.98}, html2canvas:{scale:2,backgroundColor:"#ffffff",useCORS:true}, jsPDF:{unit:"mm",format:"a4",orientation:"portrait"}, pagebreak:{mode:["css","legacy"]} }; }
+async function docToPdfFile(d, filename){
+  await ensureHtml2Pdf(); const wrap=_pdfWrap(d);
+  try{ await window.html2pdf().set(_pdfOpt(filename)).from(wrap).save(); } finally { wrap.remove(); }
+}
+async function docToPdfBase64(d){
+  await ensureHtml2Pdf(); const wrap=_pdfWrap(d);
+  try{ const uri=await window.html2pdf().set(_pdfOpt("doc")).from(wrap).outputPdf("datauristring"); return (String(uri).split(",")[1]||""); } finally { wrap.remove(); }
 }
 async function sendDocVia(id,via){
   const c=CURRENT, d=c.docs.find(x=>x.id===id);
   const msg=val("sd_msg"); const to=val("sd_to").trim();
   const filename=docTitle(d.tipo).replace(/ /g,"_")+"_"+clienteFull(c).replace(/[ ,]+/g,"_");
+
+  // MAIL automático con PDF adjunto (modo nube)
+  if(via==="mail" && CLOUD){
+    if(!/.+@.+\..+/.test(to)){ toast("Poné un correo válido para el envío automático","err"); return; }
+    closeModal(); toast("Generando y enviando el mail…");
+    try{
+      const b64=await docToPdfBase64(d);
+      const {data:{session}}=await sb.auth.getSession();
+      const r=await fetch(FUNCTIONS_URL+"/send-mail",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({ to, subject:docTitle(d.tipo)+" - GMJ Legal Partners", body:msg, filename, pdfBase64:b64 })});
+      const j=await r.json();
+      if(j.error){ toast("No se pudo enviar: "+(j.detail||j.error),"err"); return; }
+      if(d.estado==="borrador") d.estado="enviado";
+      logAction(c, docTitle(d.tipo)+" enviado por mail al cliente (PDF adjunto)");
+      save(); toast("✅ Mail enviado al cliente con el PDF adjunto"); renderCaso();
+    }catch(e){ console.error(e); toast("Error al enviar el mail","err"); }
+    return;
+  }
+
+  // WhatsApp (o mail sin nube): descarga el PDF y abre el canal listo para adjuntar
   closeModal(); toast("Generando PDF…");
   let pdfOk=true;
   try{ await docToPdfFile(d, filename); }catch(e){ console.error(e); pdfOk=false; toast("No se pudo generar el PDF — usá el botón PDF y adjuntalo a mano","err"); }

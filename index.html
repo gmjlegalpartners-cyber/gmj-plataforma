@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.06.12 · B14 sync en vivo casos + no pisar modelos/config";
+const BUILD = "2026.06.12 · B15 imagenes (firmas) en Word generado";
 let sb = null;
 if (CLOUD && window.supabase) { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 let RT_BOUND = false;
@@ -1785,12 +1785,42 @@ function docExportCSS(tipo){
     p{text-align:justify;margin:0 0 11px}h1,h2{text-align:center;font-size:14pt;margin:0 0 4pt}
     .sig{margin-top:50pt;display:flex;justify-content:space-around;text-align:center;font-size:11pt}`;
 }
+// Genera un .doc en formato MHTML (multipart) para que Word muestre las imágenes
+// incrustadas (base64). Reemplaza cada data-URI por un adjunto referenciado por nombre.
+function buildDocMhtml(html, css){
+  const boundary="----=_NextPart_GMJ_"+Math.random().toString(36).slice(2);
+  const parts=[]; let idx=0;
+  const extDe=(mime)=>({ "image/png":"png","image/jpeg":"jpg","image/jpg":"jpg","image/gif":"gif","image/webp":"png","image/bmp":"bmp" }[mime.toLowerCase()]||"png");
+  const htmlOut = html.replace(/<img\b[^>]*>/gi, (tag)=>{
+    return tag.replace(/src\s*=\s*["']data:(image\/[a-z0-9.+-]+);base64,([^"']+)["']/i, (m,mime,b64)=>{
+      idx++; const name="image"+idx+"."+extDe(mime);
+      parts.push({name, mime, b64:b64.replace(/\s+/g,"")});
+      return 'src="'+name+'"';
+    });
+  });
+  const full='<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><style>'+css+'</style></head><body>'+htmlOut+'</body></html>';
+  let mht="MIME-Version: 1.0\r\nContent-Type: multipart/related; boundary=\""+boundary+"\"\r\n\r\n";
+  mht+="--"+boundary+"\r\nContent-Type: text/html; charset=\"utf-8\"\r\nContent-Transfer-Encoding: 8bit\r\nContent-Location: file:///C:/gmj/doc.htm\r\n\r\n"+full+"\r\n\r\n";
+  for(const p of parts){
+    const b64lines=p.b64.replace(/.{76}/g,"$&\r\n");
+    mht+="--"+boundary+"\r\nContent-Type: "+p.mime+"\r\nContent-Transfer-Encoding: base64\r\nContent-Location: file:///C:/gmj/"+p.name+"\r\n\r\n"+b64lines+"\r\n\r\n";
+  }
+  mht+="--"+boundary+"--\r\n";
+  return mht;
+}
 function downloadDoc(id, fmt){
   const c=CURRENT; const d=c.docs.find(x=>x.id===id);
   const filename = docTitle(d.tipo).replace(/ /g,"_")+"_"+clienteFull(c).replace(/[ ,]+/g,"_")+"_v"+d.version;
   const css=docExportCSS(d.tipo);
   if(fmt==="word"){
-    const blob=new Blob(['﻿<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><style>'+css+'</style></head><body>'+d.html+'</body></html>'],{type:"application/msword"});
+    let blob;
+    if(/src\s*=\s*["']data:image\//i.test(d.html)){
+      // El documento tiene imágenes (ej. firmas). Word NO renderiza base64 en HTML,
+      // así que generamos un .doc en formato MHTML con las imágenes como adjuntos.
+      blob=new Blob([buildDocMhtml(d.html,css)],{type:"application/msword"});
+    } else {
+      blob=new Blob(['﻿<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><style>'+css+'</style></head><body>'+d.html+'</body></html>'],{type:"application/msword"});
+    }
     const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=filename+".doc"; a.click();
     toast("Documento Word descargado");
   } else {

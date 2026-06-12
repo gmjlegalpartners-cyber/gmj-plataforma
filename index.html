@@ -6,6 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+<meta name="googlebot" content="noindex, nofollow">
 <title>GMJ Legal Partners — Plataforma de Gestión</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -307,7 +309,15 @@ const SUPABASE_URL = "https://ybczeovebtsqdkgckcul.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_2cMt9Q29MthejwnnDeWvzQ_Ibn_NLmt";
 const CLOUD = !!(SUPABASE_URL && SUPABASE_ANON_KEY);
 const FUNCTIONS_URL = SUPABASE_URL ? SUPABASE_URL.replace(".supabase.co", ".functions.supabase.co") : "";
-const BUILD = "2026.06.11 · B12 editar imagenes (mover/tamaño/capas)";
+// Dominio público desde el que el cliente completa su formulario.
+// Si queda vacío, se usa el link con #form= sobre el dominio actual (modo demo/local).
+const CLIENT_FORM_BASE = "https://clientes.gmj-abogados.com.ar";
+// Devuelve el link que se le comparte al cliente: clientes.gmj-abogados.com.ar/TOKEN
+function clientFormLink(token){
+  if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
+  return location.href.split("#")[0] + "#form=" + token;
+}
+const BUILD = "2026.06.12 · B13 formulario: 1 solo uso + Facebook + sin handle";
 let sb = null;
 if (CLOUD && window.supabase) { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 let RT_BOUND = false;
@@ -1261,7 +1271,7 @@ function saveRelato(){
 const ADJ_TIPOS=["DNI frente","DNI dorso","Comprobante de pago","Captura aviso de suspensión","Captura correos de Meta","Captura de apelaciones","Captura de respuestas","Captura de la cuenta","Conversaciones / pruebas","Comprobante de pauta","Comprobante saldo retenido","Otra documentación"];
 function tabDoc(c){
   if(!c.formToken) { /* lazy */ }
-  const link = c.formToken ? (location.href.split("#")[0]+"#form="+c.formToken) : null;
+  const link = c.formToken ? clientFormLink(c.formToken) : null;
   const adj=(c.adjuntos||[]).map((a,i)=>`<div class="driveitem"><span class="fi">${fileIcon(a.nombre)}</span><div style="flex:1"><div style="font-weight:600">${esc(a.tipo)}</div><small style="color:var(--muted)">${esc(a.nombre)} · ${fdate(a.fecha)}</small></div><button class="btn btn-ghost btn-sm" onclick="delAdj(${i})">✕</button></div>`).join("") || `<div class="empty" style="padding:24px">Sin documentación cargada aún</div>`;
   const checklist=ADJ_TIPOS.slice(0,9).map(t=>{ const has=(c.adjuntos||[]).some(a=>a.tipo===t); return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px"><span style="color:${has?'var(--green)':'var(--line2)'};font-weight:700">${has?'✓':'○'}</span><span style="color:${has?'var(--text)':'var(--muted)'}">${esc(t)}</span></div>`; }).join("");
   return `<div class="grid g2">
@@ -1280,7 +1290,7 @@ function tabDoc(c){
     <div class="card" style="grid-column:1/-1"><div class="card-h"><h3>Documentación cargada</h3><button class="btn btn-ghost btn-sm" onclick="addAdjModal()">＋ Agregar archivo</button></div><div class="card-b">${adj}</div></div>
   </div>`;
 }
-function genFormLink(){ CURRENT.formToken=uid("frm"); CURRENT.estado="Formulario enviado al cliente"; logAction(CURRENT,"Link de formulario generado"); save(); toast("Link generado"); renderCaso(); }
+function genFormLink(){ CURRENT.formToken=uid("frm"); CURRENT.formCompletado=false; CURRENT.formCompletadoFecha=null; CURRENT.estado="Formulario enviado al cliente"; logAction(CURRENT,"Link de formulario generado"); save(); toast("Link generado"); renderCaso(); }
 function copyLink(){ const i=document.getElementById("formlink"); i.select(); navigator.clipboard?navigator.clipboard.writeText(i.value):document.execCommand("copy"); toast("Link copiado"); }
 function addAdjModal(){
   modal({title:"Agregar documentación", size:"sm", body:`
@@ -2201,7 +2211,7 @@ ${c.cuenta.cuentasVinc?`Otras cuentas vinculadas: ${esc(c.cuenta.cuentasVinc)}`:
 function sendByMail(what){
   const c=CURRENT; const to=c.cliente.email||"";
   let subject, body;
-  if(what==="form"){ const link=location.href.split("#")[0]+"#form="+c.formToken; subject="Formulario de relevamiento - GMJ Legal Partners"; body=`Estimado/a ${c.cliente.nombre},\n\nPor favor complete el siguiente formulario para iniciar la gestión de su caso:\n${link}\n\nSaludos,\nGMJ Legal Partners`; }
+  if(what==="form"){ const link=clientFormLink(c.formToken); subject="Formulario de relevamiento - GMJ Legal Partners"; body=`Estimado/a ${c.cliente.nombre},\n\nPor favor complete el siguiente formulario para iniciar la gestión de su caso:\n${link}\n\nSaludos,\nGMJ Legal Partners`; }
   window.location.href=`mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   logAction(c,"Formulario enviado por mail"); save();
 }
@@ -2218,9 +2228,20 @@ async function renderClientFormCloud(token){
   try{
     const r=await fetch(FUNCTIONS_URL+"/public-form?token="+encodeURIComponent(token),{headers:{"apikey":SUPABASE_ANON_KEY}});
     const j=await r.json();
+    if(j.completed){ root.innerHTML=formClosedScreen(); return; }
     if(!j.ok){ root.innerHTML=`<div style="padding:60px;text-align:center">Formulario no encontrado o vencido.</div>`; return; }
     paintForm(token,{cliente:j.cliente||{},cuenta:j.cuenta||{},relato:j.relato||{},adjuntos:j.adjuntos||[]},"submitClientFormCloud");
   }catch(e){ root.innerHTML=`<div style="padding:60px;text-align:center">No se pudo cargar el formulario.</div>`; }
+}
+function formClosedScreen(){
+  return `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:24px">
+    <div class="card" style="max-width:480px;text-align:center"><div class="card-b" style="padding:46px">
+      <div style="width:80px;height:94px;margin:0 auto 14px">${LOGO_FULL}</div>
+      <div style="font-size:42px">🔒</div>
+      <h2 style="color:var(--navy);margin:12px 0 8px">Este formulario ya fue completado</h2>
+      <p style="color:var(--muted)">Tus datos y documentación ya fueron recibidos por el estudio. Por seguridad, este enlace no puede volver a utilizarse ni editarse.</p>
+      <p style="color:var(--muted);font-size:13px;margin-top:14px">Si necesitás corregir o agregar algo, escribinos y te enviamos un nuevo enlace.</p>
+    </div></div></div>`;
 }
 function paintForm(token,c,submitFn){
   document.getElementById("login").classList.add("hidden");
@@ -2239,8 +2260,10 @@ function paintForm(token,c,submitFn){
       <div class="card"><div class="card-b">
         <div class="section-title">A. Datos de la cuenta afectada</div>
         ${inp("cf_url","URL completa de la cuenta",cu.url)}
-        <div class="frow fr2">${inp("cf_handle","Usuario / handle",cu.handle)}${inp("cf_em","Email vinculado a la cuenta",cu.emailVinc)}</div>
-        <div class="frow fr2">${inp("cf_tel","Teléfono vinculado",cu.telVinc)}${sel("cf_tipo","Tipo de cuenta",["",...TIPO_CUENTA],cu.tipo)}</div>
+        <div class="frow fr2">${inp("cf_em","Email vinculado a la cuenta",cu.emailVinc)}${inp("cf_tel","Teléfono vinculado",cu.telVinc)}</div>
+        ${sel("cf_tipo","Tipo de cuenta",["",...TIPO_CUENTA],cu.tipo)}
+        <div class="check" style="margin:8px 0"><input type="checkbox" id="cf_fbsusp" ${cu.fbSusp?'checked':''} onchange="fbToggleReq()"><label for="cf_fbsusp" style="margin:0;font-weight:500">La cuenta de Facebook vinculada también fue suspendida</label></div>
+        <div class="field"><label>URL de la cuenta de Facebook vinculada <span id="cf_fburl_req" class="req" style="display:${cu.fbSusp?'inline':'none'}">*</span></label><input id="cf_fburl" type="text" value="${esc(cu.fbUrl||'')}"><div class="hint">En caso de no tener Facebook, o de que el mismo NO se encuentre inhabilitado, dejá este campo en blanco.</div></div>
         <div class="frow fr2">${chk("cf_pauta","Tenía pauta publicitaria activa",cu.pautaActiva)}${chk("cf_saldo","Había saldo retenido / fondos de anuncios",cu.saldoRetenido)}</div>
         <div class="frow fr2">${chk("cf_bm","Vinculada a Meta Business Manager",cu.businessManager)}${chk("cf_camp","Tenía campañas activas al bloqueo",cu.campanasActivas)}</div>
 
@@ -2277,10 +2300,13 @@ function paintForm(token,c,submitFn){
     </div>
   </div>`;
 }
+function fbToggleReq(){ const s=document.getElementById("cf_fburl_req"); if(s) s.style.display=chkVal("cf_fbsusp")?"inline":"none"; }
 function submitClientForm(token){
   const c=DB.casos.find(x=>x.formToken===token); if(!c) return;
   const cl=c.cliente, cu=c.cuenta, re=c.relato;
-  cu.url=val("cf_url"); cu.handle=val("cf_handle"); cu.emailVinc=val("cf_em"); cu.telVinc=val("cf_tel"); cu.tipo=val("cf_tipo");
+  if(chkVal("cf_fbsusp") && !val("cf_fburl").trim()){ toast("Si la cuenta de Facebook también fue suspendida, completá su URL","err"); return; }
+  cu.url=val("cf_url"); cu.emailVinc=val("cf_em"); cu.telVinc=val("cf_tel"); cu.tipo=val("cf_tipo");
+  cu.fbSusp=chkVal("cf_fbsusp"); cu.fbUrl=val("cf_fburl");
   cu.pautaActiva=chkVal("cf_pauta"); cu.saldoRetenido=chkVal("cf_saldo"); cu.businessManager=chkVal("cf_bm"); cu.campanasActivas=chkVal("cf_camp");
   cl.apellido=val("cf_ap").toUpperCase(); cl.nombre=val("cf_no"); cl.dni=val("cf_dni"); cl.cuit=val("cf_cuit"); cl.nacionalidad=val("cf_nac"); cl.fechaNac=val("cf_fnac");
   cl.estadoCivil=val("cf_ec"); cl.conyuge=val("cf_con"); cl.domicilio=val("cf_dom"); cl.localidad=val("cf_loc"); cl.provincia=val("cf_prov"); cl.cp=val("cf_cp"); cl.tel=val("cf_celular"); cl.email=val("cf_email");
@@ -2312,7 +2338,8 @@ function backToApp(){ location.hash=""; document.getElementById("formRoot").clas
 function formSuccess(){ document.getElementById("formRoot").innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f1f5f9"><div class="card" style="max-width:460px;text-align:center"><div class="card-b" style="padding:46px"><div style="font-size:48px">✅</div><h2 style="color:var(--navy);margin:14px 0 8px">¡Formulario enviado!</h2><p style="color:var(--muted)">Gracias. El estudio ya recibió tus datos y documentación. Nos pondremos en contacto a la brevedad.</p></div></div></div>`; }
 async function submitClientFormCloud(token){
   const cliente={apellido:val("cf_ap").toUpperCase(),nombre:val("cf_no"),dni:val("cf_dni"),cuit:val("cf_cuit"),nacionalidad:val("cf_nac"),fechaNac:val("cf_fnac"),estadoCivil:val("cf_ec"),conyuge:val("cf_con"),domicilio:val("cf_dom"),localidad:val("cf_loc"),provincia:val("cf_prov"),cp:val("cf_cp"),tel:val("cf_celular"),email:val("cf_email")};
-  const cuenta={url:val("cf_url"),handle:val("cf_handle"),emailVinc:val("cf_em"),telVinc:val("cf_tel"),tipo:val("cf_tipo"),pautaActiva:chkVal("cf_pauta"),saldoRetenido:chkVal("cf_saldo"),businessManager:chkVal("cf_bm"),campanasActivas:chkVal("cf_camp")};
+  if(chkVal("cf_fbsusp") && !val("cf_fburl").trim()){ toast("Si la cuenta de Facebook también fue suspendida, completá su URL","err"); return; }
+  const cuenta={url:val("cf_url"),emailVinc:val("cf_em"),telVinc:val("cf_tel"),tipo:val("cf_tipo"),pautaActiva:chkVal("cf_pauta"),saldoRetenido:chkVal("cf_saldo"),businessManager:chkVal("cf_bm"),campanasActivas:chkVal("cf_camp"),fbSusp:chkVal("cf_fbsusp"),fbUrl:val("cf_fburl")};
   const relato={fechaSusp:val("cf_fs"),tipoSusp:val("cf_ts"),mensaje:val("cf_msg"),apelo:chkVal("cf_apelo"),recibioResp:chkVal("cf_resp"),hackeo:chkVal("cf_hack"),volvioSusp:chkVal("cf_volvio"),original:val("cf_orig")};
   const fe=id=>document.getElementById(id); const tiene=el=>el&&el.files&&el.files.length>0;
   const faltan=[]; if(!tiene(fe("cf_f_dnif")))faltan.push("DNI frente"); if(!tiene(fe("cf_f_dnid")))faltan.push("DNI dorso"); if(!tiene(fe("cf_f_pago")))faltan.push("Comprobante de pago");
@@ -3100,12 +3127,22 @@ function handleGoogleHash(){
   if(location.hash.indexOf("google=ok")>=0){ toast("Google Calendar conectado ✓"); history.replaceState(null,"",location.pathname+location.search); }
   else if(location.hash.indexOf("google=error")>=0){ toast("No se pudo conectar Google","err"); history.replaceState(null,"",location.pathname+location.search); }
 }
+// Obtiene el token del formulario, ya sea por el subdominio de clientes
+// (clientes.gmj-abogados.com.ar/TOKEN) o por el link viejo con #form=TOKEN.
+function getFormToken(){
+  if(location.hash.startsWith("#form=")) return location.hash.slice(6);
+  if(location.hostname.split(".")[0]==="clientes"){
+    const p=location.pathname.replace(/^\/+/,"").replace(/\/+$/,"");
+    if(p && p!=="index.html") return decodeURIComponent(p);
+  }
+  return null;
+}
 (async function boot(){
   // Formulario público del cliente (con o sin nube)
-  if(location.hash.startsWith("#form=")){
-    const tk=location.hash.slice(6);
-    if(CLOUD){ renderClientFormCloud(tk); }
-    else { loadLocal(); renderClientForm(tk); }
+  const formTk=getFormToken();
+  if(formTk){
+    if(CLOUD){ renderClientFormCloud(formTk); }
+    else { loadLocal(); renderClientForm(formTk); }
     return;
   }
   if(CLOUD){

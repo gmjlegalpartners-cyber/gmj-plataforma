@@ -317,7 +317,10 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.06.12 · B19 mail automatico con PDF adjunto (Gmail)";
+const BUILD = "2026.06.12 · B20 mail en pausa (envio manual)";
+// Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
+// el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
+const MAIL_AUTO_SEND = false;
 let sb = null;
 if (CLOUD && window.supabase) { sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 let RT_BOUND = false;
@@ -1422,11 +1425,11 @@ function sendDocModal(id){
   const base=DOC_MSG[d.tipo]?DOC_MSG[d.tipo](c):("Hola, te compartimos el documento: "+docTitle(d.tipo)+".");
   const full=base+"\n\nTe adjunto el "+docTitle(d.tipo).toLowerCase()+" en PDF.";
   modal({title:"Enviar — "+docTitle(d.tipo), size:"", body:`
-    <div class="alert alert-info"><span>📎</span><div><b>Mail:</b> se envía solo, con el PDF adjunto, al correo del cliente. &nbsp; <b>WhatsApp:</b> descarga el PDF y abre el chat para que lo adjuntes.</div></div>
+    <div class="alert alert-info"><span>📎</span><div>Al enviar, se <b>descarga el PDF</b> y se abre WhatsApp/mail con el mensaje listo. Solo tenés que <b>adjuntar el PDF descargado</b>.</div></div>
     <div class="field"><label>Destinatario (correo para mail / teléfono para WhatsApp)</label><input id="sd_to" value="${esc(c.cliente.email||c.cliente.tel||"")}"></div>
     <div class="field"><label>Mensaje (editable antes de enviar)</label><textarea id="sd_msg" rows="6">${esc(full)}</textarea></div>`,
     footer:`<button class="btn btn-ghost" onclick="copyMsg()">Copiar mensaje</button><div style="flex:1"></div>
-      <button class="btn btn-primary" onclick="sendDocVia('${id}','mail')">✉️ Enviar mail con PDF</button>
+      <button class="btn btn-ghost" onclick="sendDocVia('${id}','mail')">✉️ Mail + PDF</button>
       <button class="btn btn-gold" onclick="sendDocVia('${id}','wa')">📱 WhatsApp + PDF</button>`});
 }
 function copyMsg(){ const t=document.getElementById("sd_msg").value; if(navigator.clipboard)navigator.clipboard.writeText(t); toast("Mensaje copiado"); }
@@ -1462,8 +1465,8 @@ async function sendDocVia(id,via){
   const msg=val("sd_msg"); const to=val("sd_to").trim();
   const filename=docTitle(d.tipo).replace(/ /g,"_")+"_"+clienteFull(c).replace(/[ ,]+/g,"_");
 
-  // MAIL automático con PDF adjunto (modo nube)
-  if(via==="mail" && CLOUD){
+  // MAIL automático con PDF adjunto (modo nube) — sólo si está habilitado
+  if(via==="mail" && CLOUD && MAIL_AUTO_SEND){
     if(!/.+@.+\..+/.test(to)){ toast("Poné un correo válido para el envío automático","err"); return; }
     closeModal(); toast("Generando y enviando el mail…");
     try{

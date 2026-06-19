@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.06.13 · B22 red de respaldo de adjuntos (Storage)";
+const BUILD = "2026.06.13 · B23 etiquetas multiples + indicadores de mediacion";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -342,6 +342,13 @@ const ESTADO_COLOR = {
   "En seguimiento":"b-blue","Cuenta rehabilitada":"b-green","Resultado negativo":"b-red",
   "Cerrado":"b-grey","Pausado":"b-grey"
 };
+// Etiquetas múltiples del expediente (editables desde Configuración por socios).
+const ETIQUETA_COLORS = ["b-grey","b-blue","b-green","b-amber","b-gold","b-red"];
+const ETIQUETA_COLOR_LABEL = {"b-grey":"Gris","b-blue":"Azul","b-green":"Verde","b-amber":"Naranja","b-gold":"Dorado","b-red":"Rojo"};
+const ETIQUETAS_DEFAULT = ESTADOS.map(e=>({nombre:e, color:ESTADO_COLOR[e]||"b-grey"}));
+function etiquetasPool(){ const e=(DB.config&&DB.config.etiquetas); return (Array.isArray(e)&&e.length)?e:ETIQUETAS_DEFAULT; }
+function etiquetaColor(nombre){ const f=etiquetasPool().find(x=>x.nombre===nombre); return f?f.color:(ESTADO_COLOR[nombre]||"b-grey"); }
+function casoEtiquetas(c){ if(Array.isArray(c.etiquetas)) return c.etiquetas; return c.estado?[c.estado]:[]; }
 const TIPO_CUENTA = ["Personal","Comercial","Profesional","Creador de contenido","Negocio"];
 const DEFAULT_REQUERIDOS = [
   {nombre:"META PLATFORMS INC (Instagram)", cuit:"EIN 20-1665019", domicilio:"7300 Gateway Boulevard, Shipping & Receiving Dock 15, Newark, CA 94560, United States of America."},
@@ -396,7 +403,8 @@ function seed(){
       asistenteMail:"asistente@gmj-abogados.com.ar",
       mediador:"Dr. Felipe THUMIM",
       requeridos:JSON.parse(JSON.stringify(DEFAULT_REQUERIDOS)),
-      objeto:DEFAULT_OBJETO
+      objeto:DEFAULT_OBJETO,
+      etiquetas:JSON.parse(JSON.stringify(ETIQUETAS_DEFAULT))
     },
     abogados:[
       {id:"ab1", nombre:"Ivo Julián", domicilio:"Moliere 130, ZIP 1407, CABA", tomo:"127", folio:"39", matricula:"C.P.A.C.F.", tel:"+54 9 11 7372-1488", mail:"ivo.julian@gmj-abogados.com.ar"},
@@ -442,8 +450,9 @@ function migrate(){
   // actualizar domicilio de Meta a la nueva sede
   (DB.config.requeridos||[]).forEach(q=>{ if(/meta/i.test(q.nombre) && /menlo park|1 meta way/i.test(q.domicilio||"")){ q.domicilio="7300 Gateway Boulevard, Shipping & Receiving Dock 15, Newark, CA 94560, United States of America."; changed=true; } });
   if(DB.config.asistenteMail===undefined){ DB.config.asistenteMail="asistente@gmj-abogados.com.ar"; changed=true; }
+  if(!Array.isArray(DB.config.etiquetas)||!DB.config.etiquetas.length){ DB.config.etiquetas=JSON.parse(JSON.stringify(ETIQUETAS_DEFAULT)); changed=true; }
   // asegurar campos nuevos en casos existentes
-  (DB.casos||[]).forEach(c=>{ if(c.citarFacebook===undefined){ c.citarFacebook=true; changed=true; } if(c.avance===undefined){ c.avance={}; changed=true; } if(c.audiencia===undefined){ c.audiencia=null; changed=true; } if(c.finanzas) recalcEstadoPago(c); });
+  (DB.casos||[]).forEach(c=>{ if(c.citarFacebook===undefined){ c.citarFacebook=true; changed=true; } if(c.avance===undefined){ c.avance={}; changed=true; } if(c.audiencia===undefined){ c.audiencia=null; changed=true; } if(!Array.isArray(c.etiquetas)){ c.etiquetas=c.estado?[c.estado]:[]; changed=true; } if(c.finanzas) recalcEstadoPago(c); });
   if(changed) save();
 }
 function cobradoDe(c){ const f=c.finanzas; return (c.pagos||[]).reduce((s,p)=>s+(p.moneda===f.moneda?Number(p.importe||0):0),0); }
@@ -489,7 +498,7 @@ async function cloudLoad(){
   ]);
   const cfg = (st.data && st.data.data) || {};
   DB = {
-    config:{ estudio:cfg.estudio||{}, asistenteMail:cfg.asistenteMail||"", mediador:cfg.mediador||"", requeridos:cfg.requeridos||[], objeto:cfg.objeto||"", plantillas:cfg.plantillas||{} },
+    config:{ estudio:cfg.estudio||{}, asistenteMail:cfg.asistenteMail||"", mediador:cfg.mediador||"", requeridos:cfg.requeridos||[], objeto:cfg.objeto||"", plantillas:cfg.plantillas||{}, etiquetas:(Array.isArray(cfg.etiquetas)&&cfg.etiquetas.length)?cfg.etiquetas:JSON.parse(JSON.stringify(ETIQUETAS_DEFAULT)) },
     abogados: cfg.abogados||[],
     usuarios: (profs.data||[]).map(p=>({id:p.id,nombre:p.nombre,rol:p.rol})),
     casos: [],
@@ -508,6 +517,7 @@ async function cloudLoad(){
     if(!c.finanzas) c.finanzas={moneda:"USD",montoTotal:"",adelanto:"",saldo:"",devolucion:"",estadoPago:"pendiente",fechaAdelanto:"",fechaSaldo:"",medioPago:"",obs:"",...finEstadosDefault()};
     else { const d=finEstadosDefault(); for(const k in d){ if(c.finanzas[k]===undefined) c.finanzas[k]=d[k]; } }
     if(!c.pagos) c.pagos=[];
+    if(!Array.isArray(c.etiquetas)) c.etiquetas=c.estado?[c.estado]:[];
     return c;
   });
   DB.casos.sort((a,b)=>(b.id||"").localeCompare(a.id||""));
@@ -520,7 +530,7 @@ let _saveTimer=null;
 // Sólo escribimos la fila "settings" cuando la config realmente cambió en ESTA sesión.
 // Así, guardar un caso no pisa los modelos/config que editó otro usuario.
 let _cfgSig="";
-function cfgPayload(){ return { estudio:DB.config.estudio, asistenteMail:DB.config.asistenteMail, mediador:DB.config.mediador, requeridos:DB.config.requeridos, objeto:DB.config.objeto, plantillas:DB.config.plantillas||{}, abogados:DB.abogados, counter:DB.counter }; }
+function cfgPayload(){ return { estudio:DB.config.estudio, asistenteMail:DB.config.asistenteMail, mediador:DB.config.mediador, requeridos:DB.config.requeridos, objeto:DB.config.objeto, plantillas:DB.config.plantillas||{}, etiquetas:DB.config.etiquetas||[], abogados:DB.abogados, counter:DB.counter }; }
 function cfgSignature(){ try{ return JSON.stringify(cfgPayload()); }catch(e){ return "x"+Date.now(); } }
 function cloudSave(){ if(!sb) return; if(_saveTimer) clearTimeout(_saveTimer); _saveTimer=setTimeout(doCloudSave,350); }
 async function doCloudSave(){
@@ -883,22 +893,29 @@ let FILTER={q:"",estado:"",arch:false};
 function renderCasos(){
   setCrumb("Casos");
   topActions(`<button class="btn btn-primary" onclick="openNewCase()">＋ Nuevo caso</button>`);
-  const opts=ESTADOS.map(e=>`<option ${FILTER.estado===e?'selected':''}>${e}</option>`).join("");
+  const opts=etiquetasPool().map(e=>`<option ${FILTER.estado===e.nombre?'selected':''}>${esc(e.nombre)}</option>`).join("");
   const base=DB.casos.filter(c=>FILTER.arch?c.archivado:!c.archivado);
   let list=base.filter(c=>{
     const matchQ=!FILTER.q || (clienteFull(c)+c.id+(c.cuenta.handle||"")).toLowerCase().includes(FILTER.q.toLowerCase());
-    const matchE=!FILTER.estado || c.estado===FILTER.estado;
+    const matchE=!FILTER.estado || casoEtiquetas(c).includes(FILTER.estado);
     return matchQ && matchE;
   });
   const rows=list.map(c=>{
     const prog=caseProgress(c);
     const med=(audsOf(c)||[]).filter(a=>a.fecha).map(a=>a.fecha).sort();
     const tieneMed=med.length>0;
+    const solic=!!c.medSolicitada;
+    const paga=(c.gastos||[]).some(g=>/mediaci|mediador/i.test(g.nombre||"") && g.estado==="abonado");
+    const ets=casoEtiquetas(c);
     return `<tr class="clickable" onclick="go('caso','${c.id}')">
       <td><b style="color:var(--navy)">${esc(clienteFull(c))}</b><br><small style="color:var(--muted)">${esc(c.id)} · ${fdate(c.fechaAlta)}</small></td>
       <td>${esc(c.cuenta.handle||"—")}<br><small style="color:var(--muted)">${esc(c.cuenta.plataforma||"")}</small></td>
-      <td><span class="badge ${ESTADO_COLOR[c.estado]||'b-grey'}"><span class="dot"></span>${esc(c.estado)}</span></td>
-      <td style="text-align:center">${tieneMed?`<span class="badge b-green" title="Mediación: ${fdate(med[0])}">✓</span><br><small style="color:var(--muted)">${fdate(med[0])}</small>`:`<span class="badge b-grey" title="Sin fecha de mediación">— sin fecha</span>`}</td>
+      <td style="max-width:220px">${ets.length?ets.map(n=>`<span class="badge ${etiquetaColor(n)}" style="margin:1px 2px;font-size:11px">${esc(n)}</span>`).join(""):'<span class="badge b-grey">—</span>'}</td>
+      <td style="text-align:center;white-space:nowrap;font-size:11px;line-height:1.7">
+        ${tieneMed?`<span class="badge b-green" title="Audiencia: ${fdate(med[0])}">📅 ${fdate(med[0])}</span>`:`<span class="badge b-grey">sin fecha</span>`}<br>
+        <span class="badge ${solic?'b-gold':'b-grey'}" title="${solic?'Solicitud enviada al mediador':'Aún no se solicitó al mediador'}">📨 ${solic?'sí':'—'}</span>
+        <span class="badge ${paga?'b-green':'b-grey'}" title="${paga?'Mediación / honorarios pagos':'Mediación impaga'}">💲 ${paga?'paga':'—'}</span>
+      </td>
       <td>${esc(abLabel(c.abogadoPatrocinante))}</td>
       <td style="width:130px"><div style="font-size:11px;color:var(--muted)">${prog}% completo</div><div class="progress"><i style="width:${prog}%"></i></div></td>
       <td>${FILTER.arch?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();archivarCaso('${c.id}',false)">↩ Restaurar</button>`:(c.fechaLimite?`<span class="badge ${c.fechaLimite<new Date().toISOString().slice(0,10)?'b-red':'b-grey'}">${fdate(c.fechaLimite)}</span>`:'—')}</td>
@@ -908,12 +925,12 @@ function renderCasos(){
     <div class="pagehead"><div><h2>${FILTER.arch?'Casos archivados':'Casos'}</h2><div class="sub">${list.length} ${FILTER.arch?'archivados':'casos activos'}</div></div></div>
     <div class="filters">
       <div class="search"><span class="si">🔎</span><input id="fq" placeholder="Buscar por cliente, ID o usuario…" value="${esc(FILTER.q)}" oninput="FILTER.q=this.value;renderCasos();document.getElementById('fq').focus()"></div>
-      <select onchange="FILTER.estado=this.value;renderCasos()"><option value="">Todos los estados</option>${opts}</select>
+      <select onchange="FILTER.estado=this.value;renderCasos()"><option value="">Todas las etiquetas</option>${opts}</select>
       <button class="btn btn-ghost btn-sm ${FILTER.arch?'btn-gold':''}" style="${FILTER.arch?'color:#fff':''}" onclick="FILTER.arch=!FILTER.arch;renderCasos()">${FILTER.arch?'← Ver activos':'🗄 Ver archivados'}</button>
       ${FILTER.estado||FILTER.q?`<button class="btn btn-ghost btn-sm" onclick="FILTER.q='';FILTER.estado='';renderCasos()">Limpiar</button>`:''}
     </div>
     <div class="card">
-      <table><thead><tr><th>Cliente</th><th>Cuenta</th><th>Estado</th><th style="text-align:center">Mediación</th><th>Patrocinante</th><th>Avance</th><th>${FILTER.arch?'':'Límite'}</th></tr></thead>
+      <table><thead><tr><th>Cliente</th><th>Cuenta</th><th>Etiquetas</th><th style="text-align:center">Mediación</th><th>Patrocinante</th><th>Avance</th><th>${FILTER.arch?'':'Límite'}</th></tr></thead>
       <tbody>${rows||`<tr><td colspan="7"><div class="empty"><div class="ico">📁</div>${FILTER.arch?'No hay casos archivados':'No hay casos que coincidan'}</div></td></tr>`}</tbody></table>
     </div>`;
   setTimeout(()=>{const fq=document.getElementById('fq');if(fq){fq.focus();fq.setSelectionRange(fq.value.length,fq.value.length);}},0);
@@ -1064,6 +1081,15 @@ function renderTab(){
 function lockedMsg(){ return `<div class="card"><div class="empty"><div class="ico">🔒</div>Módulo financiero restringido a socios.</div></div>`; }
 
 /* ---------- TAB: RESUMEN ---------- */
+function toggleEtiqueta(enc){
+  if(!CURRENT) return;
+  const nombre=decodeURIComponent(enc);
+  CURRENT.etiquetas=Array.isArray(CURRENT.etiquetas)?CURRENT.etiquetas:(CURRENT.estado?[CURRENT.estado]:[]);
+  const i=CURRENT.etiquetas.indexOf(nombre);
+  if(i>=0) CURRENT.etiquetas.splice(i,1); else CURRENT.etiquetas.push(nombre);
+  logAction(CURRENT,"Etiquetas del expediente actualizadas");
+  save(); renderCaso();
+}
 function tabResumen(c){
   const prog=caseProgress(c);
   const finBlock = isSocio() ? `
@@ -1074,11 +1100,16 @@ function tabResumen(c){
         <dt>Saldo</dt><dd>${money(c.finanzas.saldo,c.finanzas.moneda)}</dd>
         <dt>Devolución pactada</dt><dd>${money(c.finanzas.devolucion,c.finanzas.moneda)}</dd>
       </dl></div></div>` : "";
+  const chips=etiquetasPool().map(e=>{ const on=casoEtiquetas(c).includes(e.nombre); return `<button type="button" class="badge ${on?e.color:'b-grey'}" style="cursor:pointer;border:none;font-size:12px;padding:5px 10px;${on?'':'opacity:.45'}" onclick="toggleEtiqueta('${encodeURIComponent(e.nombre)}')">${on?'✓ ':''}${esc(e.nombre)}</button>`; }).join("");
   return `<div class="grid g2">
+    <div class="card" style="grid-column:1/-1"><div class="card-h"><h3>Etiquetas del expediente</h3>${isSocio()?`<button class="btn btn-ghost btn-sm" onclick="go('config')">⚙ Editar etiquetas</button>`:''}</div><div class="card-b">
+      <div class="sub" style="margin-bottom:10px">Tocá para marcar o desmarcar. Podés poner varias a la vez.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${chips}</div>
+    </div></div>
     <div class="card"><div class="card-h"><h3>Datos del caso</h3></div><div class="card-b">
       <dl class="kv">
         <dt>Tipo</dt><dd>${esc(c.tipo)}</dd>
-        <dt>Estado</dt><dd><span class="badge ${ESTADO_COLOR[c.estado]||'b-grey'}">${esc(c.estado)}</span></dd>
+        <dt>Etiquetas</dt><dd>${casoEtiquetas(c).length?casoEtiquetas(c).map(n=>`<span class="badge ${etiquetaColor(n)}" style="margin:1px 2px">${esc(n)}</span>`).join(""):'<span class="badge b-grey">— sin etiquetas</span>'}</dd>
         <dt>Responsable</dt><dd>${esc(userName(c.responsable))}</dd>
         <dt>Patrocinante</dt><dd>${esc(abLabel(c.abogadoPatrocinante))}</dd>
         <dt>Próxima acción</dt><dd>${esc(c.proximaAccion||"—")}</dd>
@@ -1563,6 +1594,10 @@ function tabMediacion(c){
     ${c.citarFacebook===false?`<div class="alert alert-warn"><span>⚠</span><div>Facebook Argentina S.R.L. <b>no se incluirá</b> en la planilla de mediación generada.</div></div>`:''}
     <div class="section-title">Mediador</div>
     <div class="field"><input id="md_med" value="${esc(DB.config.mediador)}"></div>
+    <div class="check" style="background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:6px">
+      <input type="checkbox" id="md_solic" ${c.medSolicitada?'checked':''} onchange="CURRENT.medSolicitada=this.checked; CURRENT.medSolicitadaFecha=this.checked?(new Date().toISOString().slice(0,10)):null; save(); toast(this.checked?'Marcada como solicitada al mediador':'Desmarcada'); renderTab()">
+      <label for="md_solic" style="margin:0;font-weight:600">Solicitud ya enviada al mediador${c.medSolicitada&&c.medSolicitadaFecha?` <span style="font-weight:400;color:var(--muted)">· ${fdate(c.medSolicitadaFecha)}</span>`:''}</label>
+    </div>
     <div style="display:flex;gap:10px;margin-top:8px">
       <button class="btn btn-primary" onclick="saveMediacion()">Guardar</button>
       <button class="btn btn-gold" onclick="ACTIVE_TAB='docs';renderCaso()">→ Ir a generar planilla</button>
@@ -2884,6 +2919,24 @@ function renderConfig(){
         <div class="field"><textarea id="co_obj" rows="6">${esc(DB.config.objeto)}</textarea></div>
         <button class="btn btn-primary" onclick="DB.config.objeto=val('co_obj');save();toast('Objeto guardado')">Guardar objeto</button>
       </div></div>
+      ${isSocio()?`<div class="card" style="grid-column:1/-1"><div class="card-h"><h3>Etiquetas de expedientes</h3></div><div class="card-b">
+        <p class="sub" style="margin:-4px 0 12px">Estas son las etiquetas que se pueden poner a cada caso (varias por caso). Agregá o eliminá las que quieras; los cambios se reflejan en todos los expedientes y en el panel.</p>
+        <div id="etqList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+          ${etiquetasPool().map((e,i)=>`<div style="display:flex;align-items:center;gap:8px">
+            <span class="badge ${e.color}" style="min-width:140px;text-align:center">${esc(e.nombre)}</span>
+            <input id="etq_n${i}" value="${esc(e.nombre)}" style="flex:1;padding:6px 8px;border:1px solid var(--line2);border-radius:6px">
+            <select id="etq_c${i}" style="padding:6px;border:1px solid var(--line2);border-radius:6px">${ETIQUETA_COLORS.map(col=>`<option value="${col}" ${e.color===col?'selected':''}>${ETIQUETA_COLOR_LABEL[col]}</option>`).join("")}</select>
+            <button class="btn btn-ghost btn-sm" onclick="delEtiqueta(${i})" title="Eliminar">🗑</button>
+          </div>`).join("")}
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-top:1px solid var(--line);padding-top:12px">
+          <input id="etq_new" placeholder="Nueva etiqueta…" style="flex:1;min-width:160px;padding:7px 9px;border:1px solid var(--line2);border-radius:6px">
+          <select id="etq_newc" style="padding:7px;border:1px solid var(--line2);border-radius:6px">${ETIQUETA_COLORS.map(col=>`<option value="${col}">${ETIQUETA_COLOR_LABEL[col]}</option>`).join("")}</select>
+          <button class="btn btn-gold btn-sm" onclick="addEtiqueta()">＋ Agregar etiqueta</button>
+          <div style="flex:1"></div>
+          <button class="btn btn-primary btn-sm" onclick="saveEtiquetas()">Guardar etiquetas</button>
+        </div>
+      </div></div>`:''}
       <div class="card" style="grid-column:1/-1"><div class="card-h"><h3>Requeridos precargados</h3></div><div class="card-b">
         ${DB.config.requeridos.map((r,i)=>`<div class="frow fr3" style="margin-bottom:10px">
           <div class="field" style="margin:0"><label>Razón social ${i+1}</label><input id="rq_n${i}" value="${esc(r.nombre)}"></div>
@@ -2903,6 +2956,33 @@ function renderConfig(){
     </div>`;
 }
 function saveConfig(){ const E=DB.config.estudio; E.nombre=val("co_nom"); E.repr=val("co_repr"); E.mail=val("co_mail"); E.domicilio=val("co_dom"); E.jurisdiccion=val("co_jur"); DB.config.mediador=val("co_med"); save(); toast("Configuración guardada"); }
+/* ---- Etiquetas de expedientes (socios) ---- */
+function readEtiquetasFromUI(){
+  const pool=etiquetasPool(); const out=[];
+  for(let i=0;i<pool.length;i++){ const ne=document.getElementById("etq_n"+i); const ce=document.getElementById("etq_c"+i); if(!ne)continue; const nombre=ne.value.trim(); if(!nombre)continue; out.push({nombre, color:(ce&&ce.value)||"b-grey"}); }
+  return out;
+}
+function addEtiqueta(){
+  if(!isSocio()){ toast("Solo los socios pueden editar etiquetas","err"); return; }
+  const nombre=(val("etq_new")||"").trim(); if(!nombre){ toast("Escribí el nombre de la etiqueta","err"); return; }
+  const list=readEtiquetasFromUI();
+  if(list.some(e=>e.nombre.toLowerCase()===nombre.toLowerCase())){ toast("Esa etiqueta ya existe","err"); return; }
+  list.push({nombre, color:val("etq_newc")||"b-blue"});
+  DB.config.etiquetas=list; save(); toast("Etiqueta agregada"); renderConfig();
+}
+function delEtiqueta(i){
+  if(!isSocio()){ toast("Solo los socios pueden editar etiquetas","err"); return; }
+  const list=readEtiquetasFromUI(); const rem=list[i];
+  if(rem && !confirm(`¿Eliminar la etiqueta "${rem.nombre}"? Se quitará de la lista (los casos que ya la tengan la conservan hasta que se la saques).`)) return;
+  list.splice(i,1);
+  DB.config.etiquetas=list; save(); toast("Etiqueta eliminada"); renderConfig();
+}
+function saveEtiquetas(){
+  if(!isSocio()){ toast("Solo los socios pueden editar etiquetas","err"); return; }
+  const list=readEtiquetasFromUI();
+  if(!list.length){ toast("Tiene que quedar al menos una etiqueta","err"); return; }
+  DB.config.etiquetas=list; save(); toast("Etiquetas guardadas ✓"); renderConfig();
+}
 function saveRequeridos(){ DB.config.requeridos.forEach((r,i)=>{ r.nombre=val("rq_n"+i); r.cuit=val("rq_c"+i); r.domicilio=val("rq_d"+i); }); save(); toast("Requeridos guardados"); }
 
 /* ============================================================

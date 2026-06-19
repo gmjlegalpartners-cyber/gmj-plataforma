@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.06.12 · B20 mail en pausa (envio manual)";
+const BUILD = "2026.06.13 · B21 indicador de mediacion en casos";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -892,10 +892,13 @@ function renderCasos(){
   });
   const rows=list.map(c=>{
     const prog=caseProgress(c);
+    const med=(audsOf(c)||[]).filter(a=>a.fecha).map(a=>a.fecha).sort();
+    const tieneMed=med.length>0;
     return `<tr class="clickable" onclick="go('caso','${c.id}')">
       <td><b style="color:var(--navy)">${esc(clienteFull(c))}</b><br><small style="color:var(--muted)">${esc(c.id)} · ${fdate(c.fechaAlta)}</small></td>
       <td>${esc(c.cuenta.handle||"—")}<br><small style="color:var(--muted)">${esc(c.cuenta.plataforma||"")}</small></td>
       <td><span class="badge ${ESTADO_COLOR[c.estado]||'b-grey'}"><span class="dot"></span>${esc(c.estado)}</span></td>
+      <td style="text-align:center">${tieneMed?`<span class="badge b-green" title="Mediación: ${fdate(med[0])}">✓</span><br><small style="color:var(--muted)">${fdate(med[0])}</small>`:`<span class="badge b-grey" title="Sin fecha de mediación">— sin fecha</span>`}</td>
       <td>${esc(abLabel(c.abogadoPatrocinante))}</td>
       <td style="width:130px"><div style="font-size:11px;color:var(--muted)">${prog}% completo</div><div class="progress"><i style="width:${prog}%"></i></div></td>
       <td>${FILTER.arch?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();archivarCaso('${c.id}',false)">↩ Restaurar</button>`:(c.fechaLimite?`<span class="badge ${c.fechaLimite<new Date().toISOString().slice(0,10)?'b-red':'b-grey'}">${fdate(c.fechaLimite)}</span>`:'—')}</td>
@@ -910,8 +913,8 @@ function renderCasos(){
       ${FILTER.estado||FILTER.q?`<button class="btn btn-ghost btn-sm" onclick="FILTER.q='';FILTER.estado='';renderCasos()">Limpiar</button>`:''}
     </div>
     <div class="card">
-      <table><thead><tr><th>Cliente</th><th>Cuenta</th><th>Estado</th><th>Patrocinante</th><th>Avance</th><th>${FILTER.arch?'':'Límite'}</th></tr></thead>
-      <tbody>${rows||`<tr><td colspan="6"><div class="empty"><div class="ico">📁</div>${FILTER.arch?'No hay casos archivados':'No hay casos que coincidan'}</div></td></tr>`}</tbody></table>
+      <table><thead><tr><th>Cliente</th><th>Cuenta</th><th>Estado</th><th style="text-align:center">Mediación</th><th>Patrocinante</th><th>Avance</th><th>${FILTER.arch?'':'Límite'}</th></tr></thead>
+      <tbody>${rows||`<tr><td colspan="7"><div class="empty"><div class="ico">📁</div>${FILTER.arch?'No hay casos archivados':'No hay casos que coincidan'}</div></td></tr>`}</tbody></table>
     </div>`;
   setTimeout(()=>{const fq=document.getElementById('fq');if(fq){fq.focus();fq.setSelectionRange(fq.value.length,fq.value.length);}},0);
 }
@@ -2465,13 +2468,21 @@ async function submitClientFormCloud(token){
     if(!j.ok){ toast("No se pudo enviar el formulario","err"); return; }
     // subir archivos reales a Google Drive (crea la carpeta del cliente si no existe)
     document.getElementById("formRoot").innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f1f5f9"><div style="text-align:center;color:#64748b"><div style="font-size:32px">⏳</div><p style="margin-top:10px">Subiendo tus archivos, no cierres esta ventana…</p></div></div>`;
+    let okCount=0, failCount=0;
     for(const job of jobs){
       try{
         const b64=await fileToB64(job.file);
-        await fetch(FUNCTIONS_URL+"/drive-sync",{method:"POST",headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({formToken:token,action:"upload",tipo:job.tipo,nombre:job.file.name,mime:job.file.type||"application/octet-stream",base64:b64})});
-      }catch(e){ console.error("upload",job.tipo,e); }
+        const rr=await fetch(FUNCTIONS_URL+"/drive-sync",{method:"POST",headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({formToken:token,action:"upload",tipo:job.tipo,nombre:job.file.name,mime:job.file.type||"application/octet-stream",base64:b64})});
+        const jj=await rr.json().catch(()=>({}));
+        if(rr.ok && !jj.error) okCount++; else { failCount++; console.error("drive-sync",jj.error||rr.status); }
+      }catch(e){ failCount++; console.error("upload",job.tipo,e); }
     }
-    formSuccess();
+    if(jobs.length>0 && okCount===0){
+      // No se pudo guardar ningún archivo en Drive (ej. Google del estudio sin conectar).
+      document.getElementById("formRoot").innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:24px"><div class="card" style="max-width:480px;text-align:center"><div class="card-b" style="padding:42px"><div style="font-size:42px">⚠️</div><h2 style="color:var(--navy);margin:12px 0 8px">Recibimos tus datos</h2><p style="color:var(--muted)">Tus datos se cargaron correctamente, pero tuvimos un inconveniente al guardar los archivos adjuntos. El estudio se va a contactar con vos para completarlos. ¡Gracias!</p></div></div></div>`;
+    } else {
+      formSuccess();
+    }
   }catch(e){ console.error(e); toast("Error al enviar","err"); }
 }
 function fileToB64(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(",")[1]); r.onerror=rej; r.readAsDataURL(file); }); }

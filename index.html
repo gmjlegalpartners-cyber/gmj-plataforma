@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.06.13 · B21 indicador de mediacion en casos";
+const BUILD = "2026.06.13 · B22 red de respaldo de adjuntos (Storage)";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -1284,7 +1284,13 @@ const ADJ_TIPOS=["DNI frente","DNI dorso","Comprobante de pago","Captura aviso d
 function tabDoc(c){
   if(!c.formToken) { /* lazy */ }
   const link = c.formToken ? clientFormLink(c.formToken) : null;
-  const adj=(c.adjuntos||[]).map((a,i)=>`<div class="driveitem"><span class="fi">${fileIcon(a.nombre)}</span><div style="flex:1"><div style="font-weight:600">${esc(a.tipo)}</div><small style="color:var(--muted)">${esc(a.nombre)} · ${fdate(a.fecha)}</small></div><button class="btn btn-ghost btn-sm" onclick="delAdj(${i})">✕</button></div>`).join("") || `<div class="empty" style="padding:24px">Sin documentación cargada aún</div>`;
+  const adj=(c.adjuntos||[]).map((a,i)=>{
+    const estado = a.link
+      ? `<a href="${esc(a.link)}" target="_blank" class="badge b-green" style="text-decoration:none" title="En Google Drive">Drive ✓</a>`
+      : (a.respaldo ? `<span class="badge b-amber" title="Guardado en respaldo seguro; falta pasarlo a Drive">Respaldo ✓</span>` : `<span class="badge b-grey" title="Solo figura el registro; el archivo no quedó guardado">solo registro</span>`);
+    return `<div class="driveitem"><span class="fi">${fileIcon(a.nombre)}</span><div style="flex:1"><div style="font-weight:600">${esc(a.tipo)}</div><small style="color:var(--muted)">${esc(a.nombre)} · ${fdate(a.fecha)}</small></div>${estado}<button class="btn btn-ghost btn-sm" onclick="delAdj(${i})">✕</button></div>`;
+  }).join("") || `<div class="empty" style="padding:24px">Sin documentación cargada aún</div>`;
+  const hayRespaldoPendiente=(c.adjuntos||[]).some(a=>a.respaldo && !a.link);
   const checklist=ADJ_TIPOS.slice(0,9).map(t=>{ const has=(c.adjuntos||[]).some(a=>a.tipo===t); return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px"><span style="color:${has?'var(--green)':'var(--line2)'};font-weight:700">${has?'✓':'○'}</span><span style="color:${has?'var(--text)':'var(--muted)'}">${esc(t)}</span></div>`; }).join("");
   return `<div class="grid g2">
     <div class="card"><div class="card-h"><h3>Formulario digital del cliente</h3></div><div class="card-b">
@@ -1299,7 +1305,7 @@ function tabDoc(c){
         <button class="btn btn-primary" onclick="genFormLink()">🔗 Generar link de formulario</button>`}
     </div></div>
     <div class="card"><div class="card-h"><h3>Checklist de documentación</h3></div><div class="card-b">${checklist}</div></div>
-    <div class="card" style="grid-column:1/-1"><div class="card-h"><h3>Documentación cargada</h3><button class="btn btn-ghost btn-sm" onclick="addAdjModal()">＋ Agregar archivo</button></div><div class="card-b">${adj}</div></div>
+    <div class="card" style="grid-column:1/-1"><div class="card-h"><h3>Documentación cargada</h3><div style="display:flex;gap:8px">${hayRespaldoPendiente?`<button class="btn btn-gold btn-sm" onclick="repushDrive()">↻ Reintentar respaldos a Drive</button>`:''}<button class="btn btn-ghost btn-sm" onclick="addAdjModal()">＋ Agregar archivo</button></div></div><div class="card-b">${hayRespaldoPendiente?`<div class="alert alert-warn" style="margin-bottom:12px"><span>🛟</span><div>Hay archivos guardados en el <b>respaldo seguro</b> que todavía no están en Drive. Tocá <b>"Reintentar respaldos a Drive"</b> para pasarlos.</div></div>`:''}${adj}</div></div>
   </div>`;
 }
 function genFormLink(){ CURRENT.formToken=uid("frm"); CURRENT.formCompletado=false; CURRENT.formCompletadoFecha=null; CURRENT.estado="Formulario enviado al cliente"; logAction(CURRENT,"Link de formulario generado"); save(); toast("Link generado"); renderCaso(); }
@@ -1357,6 +1363,22 @@ function countSub(c,s){
   if(s.includes("Documentación generada")||s.includes("Contrato")) return c.docs.length;
   if(s.includes("Comprobantes")) return (c.pagos||[]).length;
   return 0;
+}
+async function repushDrive(){
+  if(!CLOUD){ toast("Disponible solo en la versión nube","err"); return; }
+  toast("Pasando respaldos a Drive…");
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    const r=await fetch(FUNCTIONS_URL+"/drive-sync",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({casoId:CURRENT.id,action:"repush"})});
+    const j=await r.json();
+    if(j.error){ toast("Error: "+(j.detail||j.error),"err"); return; }
+    logAction(CURRENT,`Respaldos pasados a Drive: ${j.pushed||0} ok${j.failed?(", "+j.failed+" con error"):""}`);
+    await cloudLoad(); CURRENT=DB.casos.find(c=>c.id===CURRENT.id)||CURRENT;
+    if((j.pushed||0)>0) toast(`✅ ${j.pushed} archivo(s) subido(s) a Drive`);
+    else if((j.sinRespaldo||0)>0) toast("No hay respaldos para pasar (esos archivos no tienen copia)","err");
+    else toast("No quedaban respaldos pendientes");
+    renderCaso();
+  }catch(e){ console.error(e); toast("Error al reintentar","err"); }
 }
 async function createDrive(){
   if(CLOUD){

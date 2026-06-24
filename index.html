@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.06.24 · B24 caja real + caja operativa + cuentas múltiples + informe Meta + IA";
+const BUILD = "2026.06.24 · B25 finanzas: liquidación socios + caja operativa";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -932,7 +932,7 @@ function renderDashboard(){
       <div class="stat green"><div class="lab">Facturación pactada (ARS)</div><div class="val">${money(totalARS,"ARS")}</div><div class="sub">Cobrado: ${money(cobradoARS,"ARS")}</div></div>`;
     // gastos generales del estudio (suma de todos los casos)
     let gPendARS=0,gAbonARS=0,gPendUSD=0,gAbonUSD=0;
-    const sumarGasto=g=>{ const imp=Number(g.importe||0); if(!imp||g.estado==="no corresponde")return; const usd=g.moneda==="USD"; const ab=g.estado==="abonado"; if(usd){ ab?gAbonUSD+=imp:gPendUSD+=imp; } else { ab?gAbonARS+=imp:gPendARS+=imp; } };
+    const sumarGasto=g=>{ if(g.categoria==="adelanto_socio")return; const imp=Number(g.importe||0); if(!imp||g.estado==="no corresponde")return; const usd=g.moneda==="USD"; const ab=g.estado==="abonado"; if(usd){ ab?gAbonUSD+=imp:gPendUSD+=imp; } else { ab?gAbonARS+=imp:gPendARS+=imp; } };
     cs.forEach(c=>(c.gastos||[]).forEach(sumarGasto));
     (DB.gastosGen||[]).forEach(sumarGasto);
     gastosRow=`<div class="grid g4" style="margin-bottom:18px">
@@ -1569,6 +1569,30 @@ async function descargarBackup(){
     const casos=(DB.casos||[]).length;
     toast("✓ Backup descargado ("+casos+" casos)"+cloudMsg);
   }catch(e){ toast("No se pudo generar el backup: "+(e.message||e),"err"); }
+}
+// Importar un backup JSON en el BORRADOR (solo modo local). Aligera los documentos
+// generados (html con imágenes) para no exceder el límite de almacenamiento.
+function importarBackup(){
+  const inp=document.createElement("input"); inp.type="file"; inp.accept="application/json,.json";
+  inp.onchange=()=>{
+    const f=inp.files&&inp.files[0]; if(!f)return;
+    const r=new FileReader();
+    r.onload=()=>{
+      try{
+        const data=JSON.parse(String(r.result));
+        if(!data||!Array.isArray(data.casos)){ toast("El archivo no parece un backup válido","err"); return; }
+        if(!confirm("Esto reemplaza los datos de ESTE BORRADOR con los del backup ("+data.casos.length+" casos). Tus datos reales en la nube NO se tocan. ¿Continuar?"))return;
+        // aligerar: quitar el html pesado de los documentos generados (no se necesita para probar)
+        (data.casos||[]).forEach(c=>{ (c.docs||[]).forEach(d=>{ if(d&&d.html){ d.html=""; d._aligerado=true; } }); });
+        DB=data; migrate();
+        try{ saveLocal(); }catch(e){ toast("Datos cargados, pero son muy grandes para guardar localmente: "+e.message,"err"); }
+        toast("✓ Backup importado ("+(DB.casos||[]).length+" casos). Recargando…");
+        setTimeout(()=>location.reload(),900);
+      }catch(e){ toast("No se pudo leer el backup: "+(e.message||e),"err"); }
+    };
+    r.readAsText(f);
+  };
+  inp.click();
 }
 function saveRelato(){
   const f=CURRENT.relato;
@@ -3076,13 +3100,13 @@ function netLiquidableCaso(c){
 function allGastos(){
   const out=[];
   casosActivos().forEach(c=>(c.gastos||[]).forEach(g=>{ if(!Number(g.importe||0))return; out.push({fecha:g.fecha,concepto:g.nombre,importe:Number(g.importe||0),moneda:g.moneda,estado:g.estado,medio:g.medio,origen:clienteFull(c),casoId:c.id,gid:g.id,cambioId:g.cambioId,tipo:'caso'}); }));
-  (DB.gastosGen||[]).forEach(g=>{ if(!Number(g.importe||0))return; out.push({fecha:g.fecha,concepto:g.concepto,importe:Number(g.importe||0),moneda:g.moneda,estado:g.estado,medio:g.medio,origen:'General del estudio',ggId:g.id,cambioId:g.cambio_id,tipo:'general'}); });
+  (DB.gastosGen||[]).forEach(g=>{ if(!Number(g.importe||0))return; out.push({fecha:g.fecha,concepto:g.concepto,importe:Number(g.importe||0),moneda:g.moneda,estado:g.estado,medio:g.medio,origen:'General del estudio',ggId:g.id,cambioId:g.cambio_id,categoria:g.categoria,tipo:'general'}); });
   out.sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""));
   return out;
 }
 function calcFinanzasGlobal(){
   const z=()=>({USD:0,ARS:0}); const cur=m=>(m==="ARS"?"ARS":"USD");
-  const a={pendCobro:z(),pendDev:z(),pendGasto:z(),pendLiq:z(),cobrado:z(),cobradoReal:z(),gastosPag:z(),devRealizada:z(),fxOut:z(),fxIn:z(),liquidado:z(),reservaDev:z()};
+  const a={pendCobro:z(),pendDev:z(),pendGasto:z(),pendLiq:z(),cobrado:z(),cobradoReal:z(),gastosPag:z(),devRealizada:z(),fxOut:z(),fxIn:z(),liquidado:z(),adelantosSocios:z(),reservaDev:z()};
   // liquidado por caso (suma de repartos)
   const liqByCaso={};
   (DB.liquidaciones||[]).forEach(l=>{ const m=cur(l.moneda); const dist=(l.reparto||[]).reduce((s,r)=>s+Number(r.monto||0),0); a.liquidado[m]+=dist; liqByCaso[l.caso_id]=(liqByCaso[l.caso_id]||0)+dist; });
@@ -3106,16 +3130,37 @@ function calcFinanzasGlobal(){
     (c.gastos||[]).forEach(g=>{ const gm=cur(g.moneda); const imp=Number(g.importe||0); if(!imp||g.estado==='no corresponde')return; if(g.estado==='abonado') a.gastosPag[gm]+=imp; else a.pendGasto[gm]+=imp; });
   });
   // gastos generales del estudio (no atados a un caso)
-  (DB.gastosGen||[]).forEach(g=>{ const gm=cur(g.moneda); const imp=Number(g.importe||0); if(!imp)return; if(g.estado==='pendiente') a.pendGasto[gm]+=imp; else a.gastosPag[gm]+=imp; });
+  // Los "adelantos entre socios" NO son gasto operativo: cuentan como liquidación a socios.
+  (DB.gastosGen||[]).forEach(g=>{ const gm=cur(g.moneda); const imp=Number(g.importe||0); if(!imp)return;
+    if(g.categoria==='adelanto_socio'){ if(g.estado!=='pendiente') a.adelantosSocios[gm]+=imp; return; }
+    if(g.estado==='pendiente') a.pendGasto[gm]+=imp; else a.gastosPag[gm]+=imp;
+  });
   (DB.cambios||[]).forEach(x=>{ const mo=cur(x.moneda_origen), md=cur(x.moneda_destino); a.fxOut[mo]+=Number(x.monto_origen||0); a.fxIn[md]+=Number(x.monto_destino||0); });
   // caja bruta (toda la plata REAL que entró menos lo que salió, por moneda efectiva)
   a.cajaBruta={
-    USD: a.cobradoReal.USD - a.gastosPag.USD - a.devRealizada.USD - a.fxOut.USD + a.fxIn.USD - a.liquidado.USD,
-    ARS: a.cobradoReal.ARS - a.gastosPag.ARS - a.devRealizada.ARS - a.fxOut.ARS + a.fxIn.ARS - a.liquidado.ARS
+    USD: a.cobradoReal.USD - a.gastosPag.USD - a.adelantosSocios.USD - a.devRealizada.USD - a.fxOut.USD + a.fxIn.USD - a.liquidado.USD,
+    ARS: a.cobradoReal.ARS - a.gastosPag.ARS - a.adelantosSocios.ARS - a.devRealizada.ARS - a.fxOut.ARS + a.fxIn.ARS - a.liquidado.ARS
   };
   // caja DISPONIBLE real del estudio = bruta menos lo reservado por posibles devoluciones (stand by)
   a.caja={ USD: a.cajaBruta.USD - a.reservaDev.USD, ARS: a.cajaBruta.ARS - a.reservaDev.ARS };
   return a;
+}
+// Liquidación entre socios: lo retirado por cada socio (adelantos) y lo que le queda pendiente.
+// Repartible = caja disponible + adelantos ya retirados − gastos pendientes (programados). Se divide entre la cantidad de socios.
+function liquidacionesSocios(a){
+  const byName={};
+  socios().forEach(u=>{ const n=u.nombre||"Socio"; if(!byName[n]) byName[n]={nombre:n, ids:[], USD:0, ARS:0}; byName[n].ids.push(u.id); });
+  (DB.gastosGen||[]).forEach(g=>{ if(g.categoria!=='adelanto_socio'||g.estado==='pendiente')return; const imp=Number(g.importe||0); if(!imp)return; const m=g.moneda==='USD'?'USD':'ARS';
+    let entry=Object.values(byName).find(s=>s.ids.includes(g.socio));
+    if(!entry){ byName['(sin asignar)']=byName['(sin asignar)']||{nombre:'(sin asignar)',ids:[],USD:0,ARS:0}; entry=byName['(sin asignar)']; }
+    entry[m]+=imp;
+  });
+  const list=Object.values(byName);
+  const nSoc=Math.max(list.filter(s=>s.nombre!=='(sin asignar)').length,1);
+  const distrib={ USD:a.caja.USD + a.adelantosSocios.USD - a.pendGasto.USD, ARS:a.caja.ARS + a.adelantosSocios.ARS - a.pendGasto.ARS };
+  const share={ USD:distrib.USD/nSoc, ARS:distrib.ARS/nSoc };
+  list.forEach(s=>{ const real=s.nombre!=='(sin asignar)'; s.pendiente={ USD: real?(share.USD - s.USD):0, ARS: real?(share.ARS - s.ARS):0 }; });
+  return {list, distrib, share, nSoc};
 }
 /* ---------- LIQUIDACIÓN ENTRE SOCIOS (solo socios) ---------- */
 function socios(){ return DB.usuarios.filter(u=>u.rol==='socio'); }
@@ -3270,6 +3315,12 @@ function resumenPorSocio(){
 function renderFinanzasGlobal(){
   setCrumb("Finanzas global"); topActions("");
   const a=calcFinanzasGlobal();
+  const liqSoc=liquidacionesSocios(a);
+  const socioLiqCards = liqSoc.list.map(s=>`<div class="stat" style="border-left:4px solid #7c5cbf">
+      <div class="lab">⚖️ ${esc(s.nombre)}</div>
+      <div class="val" style="font-size:15px">${money(s.USD,"USD")} · ${money(s.ARS,"ARS")}</div>
+      <div class="sub">total retirado (adelantos)</div>
+    </div>`).join("") || '<div class="empty">Aún no hay adelantos a socios cargados (Caja operativa → categoría “Adelanto entre socios”).</div>';
   const todos=casosActivos();
   const activos=todos.filter(c=>!casoEsHistorial(c));
   const histo=todos.filter(c=>casoEsHistorial(c));
@@ -3286,7 +3337,7 @@ function renderFinanzasGlobal(){
     return `<tr class="clickable" onclick="go('caso','${c.id}')">
       <td><b>${esc(clienteFull(c))}</b><br><small style="color:var(--muted)">${esc(c.id)}</small></td>
       <td>${esc(f.moneda||'—')}</td><td>${money(f.montoTotal,f.moneda)}</td><td>${money(cob,f.moneda)}</td>
-      ${hist?'':`<td>${money(pend,f.moneda)}</td><td><b style="color:#1c7a40">${money(netLiquidableCaso(c),f.moneda)}</b></td>`}
+      ${hist?'':`<td>${money(pend,f.moneda)}</td>`}
       <td><span class="badge ${FIN_COLOR[f.estadoCobro]||'b-grey'}">${finLabel(f.estadoCobro)}</span></td>
       <td><span class="badge ${FIN_COLOR[f.estadoResultado]||'b-grey'}">${finLabel(f.estadoResultado)}</span></td>
       <td><span class="badge ${FIN_COLOR[f.estadoDevolucion]||'b-grey'}">${finLabel(f.estadoDevolucion)}</span></td>
@@ -3300,8 +3351,8 @@ function renderFinanzasGlobal(){
   const cxRows=cambios.length?cambios.map(x=>{ const caso=x.caso_id?DB.casos.find(c=>c.id===x.caso_id):null;
     return `<tr class="clickable" onclick="cambioModal('${x.id}')"><td>${fdate(x.fecha)}</td><td>${money(x.monto_origen,x.moneda_origen)} → ${money(x.monto_destino,x.moneda_destino)}</td><td>TC ${esc(String(x.tipo_cambio||'—'))}</td><td>${esc(x.motivo||'—')}</td><td>${caso?esc(clienteFull(caso)):'—'}</td><td>${esc(userName(x.usuario))}</td></tr>`;
   }).join(""):`<tr><td colspan="6" class="empty">Sin cambios de divisa registrados</td></tr>`;
-  // gastos unificados (de casos + generales)
-  const gastos=allGastos();
+  // gastos unificados (de casos + generales). Los adelantos a socios NO son gasto (van a liquidaciones).
+  const gastos=allGastos().filter(g=>g.categoria!=='adelanto_socio');
   const gAb={USD:0,ARS:0}, gPe={USD:0,ARS:0};
   gastos.forEach(g=>{ const m=g.moneda==='ARS'?'ARS':'USD'; if(g.estado==='no corresponde')return; if(g.estado==='abonado')gAb[m]+=g.importe; else gPe[m]+=g.importe; });
   const gxRows=gastos.length?gastos.map(g=>{ const cx=g.cambioId?(DB.cambios||[]).find(c=>c.id===g.cambioId):null;
@@ -3319,7 +3370,8 @@ function renderFinanzasGlobal(){
   const movBadge=t=>t==='Cobro'?'b-green':t==='Gasto'?'b-red':t==='Liquidación'?'b-gold':'b-blue';
   const movRows=movs.length?movs.slice(0,80).map(m=>`<tr><td>${fdate(m.fecha)}</td><td><span class="badge ${movBadge(m.tipo)}">${m.tipo}</span></td><td>${esc(m.detalle)}</td><td style="text-align:right;font-weight:600;color:${m.signo>0?'#1c7a40':m.signo<0?'#c0392b':'var(--muted)'}">${m.fx?'—':(m.signo>0?'+ ':'− ')+money(m.monto,m.moneda)}</td></tr>`).join(""):`<tr><td colspan="4" class="empty">Sin movimientos</td></tr>`;
   // ---- pestañas ----
-  const TABS=[["resumen","Resumen"],["casos","Casos"],["gastos","Gastos"],["liquidaciones","Liquidaciones"],["cambios","Cambios de divisa"],["movimientos","Movimientos"]];
+  const TABS=[["resumen","Resumen"],["casos","Casos"],["gastos","Gastos"],["cambios","Cambios de divisa"],["movimientos","Movimientos"]];
+  if(FINTAB==="liquidaciones") FINTAB="resumen";
   const tabBar=`<div class="tabs" style="margin-bottom:18px">${TABS.map(([k,t])=>`<button class="${FINTAB===k?'active':''}" onclick="setFinTab('${k}')">${t}</button>`).join("")}</div>`;
   // ---- liquidaciones: listos para liquidar + historial + por socio ----
   const listos=activos.filter(c=>netLiquidableCaso(c)>0);
@@ -3349,6 +3401,9 @@ function renderFinanzasGlobal(){
       <div class="stat"><div class="lab">Facturación cobrada (en moneda pactada)</div><div class="val" style="font-size:17px">${dosMon(a.cobrado)}</div><div class="sub">para medir avance del precio</div></div>
       <div class="stat"><div class="lab">Caja bruta (antes de stand by)</div><div class="val" style="font-size:17px">${dosMon(a.cajaBruta)}</div></div>
     </div>
+    <div class="sec-title" style="font-weight:700;color:var(--navy);margin:14px 0 8px">⚖️ Liquidación entre socios</div>
+    <div class="grid g2" style="margin-bottom:8px">${socioLiqCards}</div>
+    <div class="hint" style="margin-bottom:10px">Total <b>retirado</b> por cada socio (adelantos cargados en Caja operativa → categoría “Adelanto entre socios”).</div>
     <div class="alert alert-info"><span>💱</span><div>Si un caso se pactó en USD pero se cobró en pesos, esos pesos suman a la <b>caja en ARS</b> (efectivo real), no a la de dólares. Para pasar pesos a dólares usá <b>Cambios de divisa</b> con su tipo de cambio.</div></div>
     <div class="alert alert-warn"><span>⏸️</span><div>El monto <b>en stand by</b> es la <b>devolución pactada</b> de casos sin resolver: no es plata del estudio todavía. Si el caso termina favorable pasa a la caja; si termina negativo se devuelve. Por eso no se reparte ni se gasta hasta cerrar el caso.</div></div>
     <div class="card" style="margin-top:8px"><div class="card-h"><h3>¿Cómo se compone la caja disponible?</h3></div>
@@ -3357,7 +3412,7 @@ function renderFinanzasGlobal(){
         <tr><td>Dólares comprados / vendidos (cambios)</td><td style="text-align:right">${a.fxIn.ARS-a.fxOut.ARS>=0?'+ ':'− '}${money(Math.abs(a.fxIn.ARS-a.fxOut.ARS),"ARS")}</td><td style="text-align:right">${a.fxIn.USD-a.fxOut.USD>=0?'+ ':'− '}${money(Math.abs(a.fxIn.USD-a.fxOut.USD),"USD")}</td></tr>
         <tr><td>Gastos abonados (casos + operativos)</td><td style="text-align:right;color:#c0392b">− ${money(a.gastosPag.ARS,"ARS")}</td><td style="text-align:right;color:#c0392b">− ${money(a.gastosPag.USD,"USD")}</td></tr>
         <tr><td>Devoluciones realizadas</td><td style="text-align:right;color:#c0392b">− ${money(a.devRealizada.ARS,"ARS")}</td><td style="text-align:right;color:#c0392b">− ${money(a.devRealizada.USD,"USD")}</td></tr>
-        <tr><td>Liquidado a socios</td><td style="text-align:right;color:#c0392b">− ${money(a.liquidado.ARS,"ARS")}</td><td style="text-align:right;color:#c0392b">− ${money(a.liquidado.USD,"USD")}</td></tr>
+        <tr><td>Liquidado / adelantos a socios</td><td style="text-align:right;color:#c0392b">− ${money(a.liquidado.ARS+a.adelantosSocios.ARS,"ARS")}</td><td style="text-align:right;color:#c0392b">− ${money(a.liquidado.USD+a.adelantosSocios.USD,"USD")}</td></tr>
         <tr><td>Reservado en stand by (posible devolución)</td><td style="text-align:right;color:#b07d1a">− ${money(a.reservaDev.ARS,"ARS")}</td><td style="text-align:right;color:#b07d1a">− ${money(a.reservaDev.USD,"USD")}</td></tr>
         <tr style="border-top:2px solid var(--line2);font-weight:700"><td>= Caja disponible</td><td style="text-align:right">${money(a.caja.ARS,"ARS")}</td><td style="text-align:right">${money(a.caja.USD,"USD")}</td></tr>
       </tbody></table>
@@ -3372,7 +3427,7 @@ function renderFinanzasGlobal(){
       <select onchange="FINFILTER.liq=this.value;renderFinanzasGlobal()"><option value="">Liquidación</option>${opt(FIN_LIQUIDACION,F.liq)}</select>
     </div>
     <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 8px">Casos que requieren acción</div>
-    <div class="card" style="margin-bottom:24px;overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Mon.</th><th>Total</th><th>Cobrado</th><th>Pend.</th><th>Para liquidar</th><th>Cobro</th><th>Resultado</th><th>Devolución</th><th>Liquidación</th></tr></thead><tbody>${actRows}</tbody></table></div>
+    <div class="card" style="margin-bottom:24px;overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Mon.</th><th>Total</th><th>Cobrado</th><th>Pend.</th><th>Cobro</th><th>Resultado</th><th>Devolución</th><th>Liquidación</th></tr></thead><tbody>${actRows}</tbody></table></div>
     <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 8px">Historial (cerrados y liquidados)</div>
     <div class="card" style="overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Mon.</th><th>Total</th><th>Cobrado</th><th>Cobro</th><th>Resultado</th><th>Devolución</th><th>Liquidación</th></tr></thead><tbody>${histRows}</tbody></table></div>`;
   } else if(FINTAB==="gastos"){ cont=`
@@ -3383,13 +3438,6 @@ function renderFinanzasGlobal(){
       <div class="stat"><div class="lab">Total de gastos</div><div class="val" style="font-size:16px">${gastos.length}</div><div class="sub">incluye gastos de cada caso</div></div>
     </div>
     <div class="card" style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Concepto</th><th>Origen</th><th>Importe</th><th>Estado</th><th>Medio</th></tr></thead><tbody>${gxRows}</tbody></table></div>`;
-  } else if(FINTAB==="liquidaciones"){ cont=`
-    <div class="sec-title" style="font-weight:700;color:var(--navy);margin:0 0 8px">⬇ Listos para liquidar</div>
-    <div class="grid g3" style="margin-bottom:22px">${listosCards}</div>
-    <div style="display:flex;align-items:center;justify-content:space-between;margin:4px 0 8px"><div class="sec-title" style="font-weight:700;color:var(--navy)">Historial de liquidaciones</div>${socioFiltro}</div>
-    <div class="card" style="margin-bottom:22px;overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Socio</th><th style="text-align:right">Monto</th><th>Estado</th></tr></thead><tbody>${liqHistRows}</tbody></table></div>
-    <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 8px">Resumen por socio (histórico)</div>
-    <div class="grid g4">${socioCards}</div>`;
   } else if(FINTAB==="cambios"){ cont=`
     <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 10px"><div class="sec-title" style="font-weight:700;color:var(--navy)">Cambios de divisa</div><button class="btn btn-primary btn-sm" onclick="cambioModal()">＋ Registrar cambio</button></div>
     <div class="grid g2" style="margin-bottom:10px">
@@ -3538,8 +3586,8 @@ function renderConfig(){
       </div></div>`:''}
       ${isSocio()?`<div class="card" style="grid-column:1/-1"><div class="card-h"><h3>💾 Copia de seguridad (backup)</h3></div><div class="card-b">
         <div class="alert alert-info"><span>💡</span><div>Descargá un respaldo <b>completo</b> de todos los datos del estudio (casos, finanzas, gastos, cuentas, relatos y configuración) en un archivo. Recomendado: <b>una vez por día</b> y antes de cambios importantes.${CLOUD?' Además se guarda una copia en Supabase automáticamente.':''}</div></div>
-        <button class="btn btn-primary" onclick="descargarBackup()">⬇️ Descargar backup completo</button>
-        <div class="hint" style="margin-top:8px">El archivo queda en tu carpeta de Descargas. Guardalo en un lugar seguro (Drive, disco, etc.).</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" onclick="descargarBackup()">⬇️ Descargar backup completo</button>${!CLOUD?`<button class="btn btn-ghost" onclick="importarBackup()">⬆️ Importar backup (cargar datos)</button>`:''}</div>
+        <div class="hint" style="margin-top:8px">El archivo queda en tu carpeta de Descargas. Guardalo en un lugar seguro (Drive, disco, etc.).${!CLOUD?' <b>Importar</b> reemplaza los datos de esta prueba con los del archivo (modo borrador).':''}</div>
       </div></div>`:''}
       ${isSocio()?`<div class="card" style="grid-column:1/-1"><div class="card-h"><h3>Etiquetas de expedientes</h3></div><div class="card-b">
         <p class="sub" style="margin:-4px 0 12px">Estas son las etiquetas que se pueden poner a cada caso (varias por caso). Agregá o eliminá las que quieras; los cambios se reflejan en todos los expedientes y en el panel.</p>

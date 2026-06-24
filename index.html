@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.06.13 · B23 etiquetas multiples + indicadores de mediacion";
+const BUILD = "2026.06.24 · B24 caja real + caja operativa + cuentas múltiples + informe Meta + IA";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -355,7 +355,62 @@ const DEFAULT_REQUERIDOS = [
   {nombre:"FACEBOOK ARGENTINA S.R.L.", cuit:"30-71213255-4", domicilio:"Cecilia Grierson 255, Piso 6, Ciudad Autónoma de Buenos Aires, CP 1107."}
 ];
 const DEFAULT_OBJETO = "Daños y perjuicios derivados de la inhabilitación, suspensión o bloqueo de cuenta de Instagram / Facebook, incluyendo, en caso de corresponder, la afectación de actividad comercial, pérdida de acceso a la cuenta, imposibilidad de comunicación con seguidores/clientes, afectación reputacional y/o retención de fondos de anuncios publicitarios.";
-const GASTOS_DEFAULT = ["Mediación","Honorarios del mediador"];
+const GASTOS_DEFAULT = ["Notificación","Honorarios del mediador"];
+// Categorías de la Caja operativa (gastos mensuales del estudio)
+const GG_CATS=[["operativo","Gastos operativos"],["empleados","Empleados / sueldos"],["licencias","Licencias / software"],["adelanto_socio","Adelanto entre socios"],["otros","Otros"]];
+function ggCatLabel(k){ const f=GG_CATS.find(x=>x[0]===k); return f?f[1]:(k||"Otros"); }
+let FINMONTH=new Date().toISOString().slice(0,7); // mes seleccionado en Caja operativa (YYYY-MM)
+// Prompt de referencia para generar la "Síntesis del Caso" del informe a Meta (lo usa la IA en la versión real)
+const PROMPT_SINTESIS_DEFAULT=`ACTÚA COMO UN ABOGADO ESPECIALISTA EN DERECHO DIGITAL Y RECUPERACIÓN DE CUENTAS DE INSTAGRAM.
+Tu tarea consiste en transformar el relato de hechos proporcionado por el cliente en una "Síntesis del Caso" destinada a ser incorporada en un informe jurídico que será remitido a META durante un procedimiento extrajudicial de revisión de cuenta suspendida.
+
+OBJETIVOS DEL TEXTO:
+- Redactar el relato íntegramente en tercera persona.
+- Tono profesional, respetuoso, colaborativo y facilitador; generar empatía hacia el titular y favorecer una revisión humana.
+- Destacar siempre la buena fe del usuario y la importancia personal, profesional, económica o artística de la cuenta.
+- Solicitar expresamente una nueva revisión humana e integral del caso.
+- Evitar toda expresión confrontativa, agresiva o acusatoria hacia Meta.
+- Nunca admitir infracciones ni responsabilidad; si surgen circunstancias desfavorables (automatizaciones, compra de seguidores, publicaciones eliminadas, múltiples cuentas, sanciones previas, etc.), omitirlas o reformularlas de manera neutral, sin faltar a la verdad.
+- Resaltar la documentación presentada para acreditar identidad o titularidad y, si corresponde, seguidores, antigüedad, uso comercial o generación de ingresos.
+- Finalizar con un párrafo institucional solicitando respetuosamente la reconsideración y manifestando disposición a aportar información adicional.
+
+ESTRUCTURA OBLIGATORIA: presentación inicial; descripción cronológica de los hechos; gestiones realizadas por el usuario en la plataforma; afectación generada por la suspensión; referencia a la documentación acompañada; solicitud de revisión humana; manifestación de buena fe y predisposición.
+
+IMPORTANTE: no inventes hechos; no uses listas ni viñetas; redacta en estilo narrativo continuo; lenguaje jurídico moderado y persuasivo; extensión ideal 4 a 8 párrafos. El resultado debe parecer redactado por un abogado dirigido al equipo de revisión de Meta.
+
+A continuación, el relato original del cliente:
+[PEGAR AQUÍ EL RELATO DEL CLIENTE]`;
+// Modelo guía del INFORME a Meta (estructura y estilo de referencia). Editable desde Configuración.
+const INFORME_MODELO_DEFAULT=`SOLICITUD DE REVISIÓN Y REHABILITACIÓN DE CUENTAS — META PLATFORMS, INC.
+Presentada por: GMJ LEGAL PARTNERS · Abogado interviniente: [ABOGADO]
+Procedimiento: Solicitud de revisión humana de cuenta suspendida.
+
+I. OBJETO
+Solicitar la revisión manual y rehabilitación de las cuentas detalladas, pertenecientes al titular identificado, en virtud de la medida de suspensión/inhabilitación aplicada por META PLATFORMS, INC. Se acompaña documentación respaldatoria y se exponen los antecedentes relevantes.
+
+II. CUENTA PRINCIPAL AFECTADA
+URL de la cuenta; nombre de usuario (@); correo electrónico asociado; fecha aproximada de suspensión; motivo informado por la plataforma (si lo hubo).
+
+III. CUENTAS ADICIONALES AFECTADAS (en orden de prioridad de recuperación)
+Listar cada cuenta con plataforma, URL y correo vinculado. Si no hay, indicarlo.
+
+IV. DATOS DEL TITULAR
+Nombre y apellido; DNI; correo electrónico principal; domicilio.
+
+V. SÍNTESIS DEL CASO
+Relato en tercera persona, tono profesional y colaborativo, destacando la buena fe y la importancia de la cuenta. (Se toma del campo Síntesis del caso.)
+
+VI. APELACIONES Y GESTIONES PREVIAS
+Indicar si se presentó apelación por las herramientas de Meta y si hubo respuesta.
+
+VII. DOCUMENTACIÓN Y ANTECEDENTES ACOMPAÑADOS
+Listar la documentación adjunta con su descripción (capturas de la suspensión, correos de Meta, constancias de apelación, etc.).
+
+VIII. ACREDITACIÓN DE IDENTIDAD
+Documento Nacional de Identidad del titular.
+
+IX. SOLICITUD
+Solicitar respetuosamente una revisión humana e integral, la verificación de titularidad y, de corresponder, la rehabilitación y restitución del acceso. Dejar constancia de que la información fue aportada por el titular y manifestar disposición a aportar información adicional. Cierre con firma del abogado interviniente.`;
 const PRIORIDADES=["baja","media","alta","urgente"];
 const PRIO_COLOR={baja:"b-grey",media:"b-blue",alta:"b-amber",urgente:"b-red"};
 const ESTADOS_TAREA=["pendiente","en curso","realizada","vencida","cancelada"];
@@ -404,6 +459,8 @@ function seed(){
       mediador:"Dr. Felipe THUMIM",
       requeridos:JSON.parse(JSON.stringify(DEFAULT_REQUERIDOS)),
       objeto:DEFAULT_OBJETO,
+      promptSintesis:PROMPT_SINTESIS_DEFAULT,
+      informeModeloGuia:INFORME_MODELO_DEFAULT,
       etiquetas:JSON.parse(JSON.stringify(ETIQUETAS_DEFAULT))
     },
     abogados:[
@@ -416,6 +473,15 @@ function seed(){
       {id:"u3", nombre:"Asistente Estudio", rol:"empleado"}
     ],
     casos:[ demoCase() ],
+    gastosGen:[
+      {id:"gg1", fecha:"2026-06-02", categoria:"operativo", concepto:"Alquiler oficina Moliere 130", moneda:"ARS", importe:850000, estado:"abonado", medio:"Transferencia", usuario:"u1"},
+      {id:"gg2", fecha:"2026-06-05", categoria:"empleados", concepto:"Sueldo Asistente Estudio", moneda:"ARS", importe:600000, estado:"abonado", medio:"Transferencia", usuario:"u1"},
+      {id:"gg3", fecha:"2026-06-10", categoria:"licencias", concepto:"Microsoft 365 + Google Workspace", moneda:"USD", importe:45, estado:"abonado", medio:"Tarjeta", usuario:"u1"},
+      {id:"gg4", fecha:"2026-06-15", categoria:"adelanto_socio", concepto:"Adelanto a cuenta de honorarios", socio:"u2", moneda:"ARS", importe:300000, estado:"abonado", medio:"Efectivo", usuario:"u2"},
+      {id:"gg5", fecha:"2026-06-20", categoria:"operativo", concepto:"Librería e insumos", moneda:"ARS", importe:75000, estado:"pendiente", medio:"", usuario:"u1"},
+      {id:"gg6", fecha:"2026-05-04", categoria:"operativo", concepto:"Alquiler oficina Moliere 130", moneda:"ARS", importe:850000, estado:"abonado", medio:"Transferencia", usuario:"u1"},
+      {id:"gg7", fecha:"2026-05-06", categoria:"empleados", concepto:"Sueldo Asistente Estudio", moneda:"ARS", importe:580000, estado:"abonado", medio:"Transferencia", usuario:"u1"}
+    ],
     counter:2
   };
 }
@@ -426,15 +492,25 @@ function demoCase(){
     proximaAccion:"Solicitar DNI dorso al cliente", fechaLimite:"2026-06-12",
     cliente:{apellido:"LAWSON", nombre:"Alejandro", dni:"17.572.801", cuit:"20-17572801-3", nacionalidad:"Argentina", fechaNac:"", estadoCivil:"", conyuge:"", domicilio:"Arce 367", localidad:"CABA", provincia:"CABA", cp:"", tel:"1167436697", email:"info@gong.com.ar"},
     cuenta:{plataforma:"Instagram", url:"https://www.instagram.com/gong.om_argentina", handle:"@gong.om_argentina", emailVinc:"info@gong.com.ar", telVinc:"", tipo:"Negocio", pautaActiva:true, saldoRetenido:false, cuentasVinc:"", businessManager:true, metodoPago:true, campanasActivas:false, hackeo:false},
+    cuentasAfectadas:[
+      {plataforma:"Instagram", url:"https://www.instagram.com/gong.om_personal", emailVinc:"info@gong.com.ar"},
+      {plataforma:"Facebook", url:"https://www.facebook.com/gong.om", emailVinc:"info@gong.com.ar"}
+    ],
     relato:{fechaSusp:"2026-05-10", mensaje:"Se ha suspendido tu cuenta porque no cumple las Normas comunitarias.", tipoSusp:"Definitiva", apelo:true, recibioResp:true, hackeo:false, recupParcial:false, volvioSusp:false, perdida:"Seguidores, mensajes y campañas", original:"El cliente relata que su cuenta comercial fue inhabilitada permanentemente tras promocionar contenido.", sintesis:""},
     finanzas:{moneda:"USD", montoTotal:600, adelanto:300, saldo:300, fechaAdelanto:"2026-05-28", fechaSaldo:"", devolucion:200, estadoPago:"parcial", medioPago:"Transferencia", obs:""},
     pagos:[{id:"p1", fecha:"2026-05-28", importe:300, moneda:"USD", medio:"Transferencia", obs:"Adelanto inicial", esAdelanto:true}],
     gastos:[
-      {id:"g1", nombre:"Mediación", estado:"pendiente", importe:0, moneda:"ARS", fecha:"", medio:"", obs:"", adjunto:""},
+      {id:"g1", nombre:"Notificación", estado:"pendiente", importe:0, moneda:"ARS", fecha:"", medio:"", obs:"", adjunto:""},
       {id:"g2", nombre:"Honorarios del mediador", estado:"pendiente", importe:0, moneda:"ARS", fecha:"", medio:"", obs:"", adjunto:""}
     ],
     docs:[], tareas:[{id:"t1", texto:"Revisar documentación recibida", hecha:false, vence:"2026-06-10"}],
-    adjuntos:[{tipo:"DNI frente", nombre:"dni_frente.jpg", fecha:"2026-05-29"}],
+    adjuntos:[
+      {tipo:"DNI frente", nombre:"dni_frente.jpg", desc:"DNI frente", fecha:"2026-05-29"},
+      {tipo:"DNI dorso", nombre:"dni_dorso.jpg", desc:"DNI dorso", fecha:"2026-05-29"},
+      {tipo:"Otra documentación", nombre:"captura_suspension.png", desc:"Captura de la pantalla de suspensión de la cuenta", fecha:"2026-05-29"},
+      {tipo:"Otra documentación", nombre:"mail_meta.pdf", desc:"Correo recibido de Meta notificando la inhabilitación", fecha:"2026-05-29"},
+      {tipo:"Otra documentación", nombre:"constancia_apelacion.png", desc:"Constancia de la apelación presentada el 10/05/2026", fecha:"2026-05-29"}
+    ],
     drive:{link:"", creada:false},
     objeto:DEFAULT_OBJETO, citarFacebook:true, audiencia:null, avance:{},
     historial:[{accion:"Caso creado", usuario:"u1", fecha:"2026-05-28 10:12"}],
@@ -450,27 +526,50 @@ function migrate(){
   // actualizar domicilio de Meta a la nueva sede
   (DB.config.requeridos||[]).forEach(q=>{ if(/meta/i.test(q.nombre) && /menlo park|1 meta way/i.test(q.domicilio||"")){ q.domicilio="7300 Gateway Boulevard, Shipping & Receiving Dock 15, Newark, CA 94560, United States of America."; changed=true; } });
   if(DB.config.asistenteMail===undefined){ DB.config.asistenteMail="asistente@gmj-abogados.com.ar"; changed=true; }
+  if(!DB.config.promptSintesis){ DB.config.promptSintesis=PROMPT_SINTESIS_DEFAULT; changed=true; }
+  if(!DB.config.informeModeloGuia){ DB.config.informeModeloGuia=INFORME_MODELO_DEFAULT; changed=true; }
   if(!Array.isArray(DB.config.etiquetas)||!DB.config.etiquetas.length){ DB.config.etiquetas=JSON.parse(JSON.stringify(ETIQUETAS_DEFAULT)); changed=true; }
   // asegurar campos nuevos en casos existentes
-  (DB.casos||[]).forEach(c=>{ if(c.citarFacebook===undefined){ c.citarFacebook=true; changed=true; } if(c.avance===undefined){ c.avance={}; changed=true; } if(c.audiencia===undefined){ c.audiencia=null; changed=true; } if(!Array.isArray(c.etiquetas)){ c.etiquetas=c.estado?[c.estado]:[]; changed=true; } if(c.finanzas) recalcEstadoPago(c); });
+  (DB.casos||[]).forEach(c=>{ if(c.citarFacebook===undefined){ c.citarFacebook=true; changed=true; } if(c.avance===undefined){ c.avance={}; changed=true; } if(c.audiencia===undefined){ c.audiencia=null; changed=true; } if(!Array.isArray(c.etiquetas)){ c.etiquetas=c.estado?[c.estado]:[]; changed=true; } if(!Array.isArray(c.cuentasAfectadas)){ c.cuentasAfectadas=[]; changed=true; } if(c.finanzas) recalcEstadoPago(c); });
   if(changed) save();
 }
-function cobradoDe(c){ const f=c.finanzas; return (c.pagos||[]).reduce((s,p)=>s+(p.moneda===f.moneda?Number(p.importe||0):0),0); }
+/* Convierte un pago a la moneda del caso.
+   Convención de tipo de cambio: p.tc = pesos (ARS) por 1 USD. */
+function pagoEnMonedaCaso(p, casoMoneda){
+  const imp=Number(p.importe||0); if(!imp) return 0;
+  if((p.moneda||casoMoneda)===casoMoneda) return imp;            // misma moneda
+  const tc=Number(p.tc||0); if(tc>0){
+    if(casoMoneda==="USD" && p.moneda==="ARS") return imp/tc;    // pago en pesos sobre precio en USD
+    if(casoMoneda==="ARS" && p.moneda==="USD") return imp*tc;    // pago en USD sobre precio en ARS
+  }
+  return 0; // moneda distinta sin TC: no se puede imputar
+}
+function cobradoDe(c){ const f=c.finanzas; return (c.pagos||[]).reduce((s,p)=>s+pagoEnMonedaCaso(p,f.moneda),0); }
 function syncAdelanto(c){
   const f=c.finanzas; const ade=Number(f.adelanto||0); c.pagos=c.pagos||[];
+  // Si el adelanto se cobró en otra moneda, lo guardamos con su TC.
+  const enOtra = f.monedaAdelanto && f.monedaAdelanto!==f.moneda && Number(f.tcAdelanto)>0;
+  const aMon = enOtra ? f.monedaAdelanto : f.moneda;
+  const aImp = enOtra ? (f.moneda==="USD" ? ade*Number(f.tcAdelanto) : ade/Number(f.tcAdelanto)) : ade;
+  const aTc  = enOtra ? Number(f.tcAdelanto) : undefined;
   let p=c.pagos.find(x=>x.esAdelanto);
   if(ade>0){
-    if(p){ p.importe=ade; p.moneda=f.moneda; p.fecha=f.fechaAdelanto||p.fecha||new Date().toISOString().slice(0,10); p.medio=f.medioPago||p.medio; }
-    else { c.pagos.push({id:uid("p"),importe:ade,moneda:f.moneda,fecha:f.fechaAdelanto||new Date().toISOString().slice(0,10),medio:f.medioPago,obs:"Adelanto inicial",esAdelanto:true}); }
+    if(p){ p.importe=aImp; p.moneda=aMon; p.tc=aTc; p.fecha=f.fechaAdelanto||p.fecha||new Date().toISOString().slice(0,10); p.medio=f.medioPago||p.medio; }
+    else { c.pagos.push({id:uid("p"),importe:aImp,moneda:aMon,tc:aTc,fecha:f.fechaAdelanto||new Date().toISOString().slice(0,10),medio:f.medioPago,obs:"Adelanto inicial",esAdelanto:true}); }
   } else if(p){ c.pagos=c.pagos.filter(x=>!x.esAdelanto); }
 }
 function saldoDe(c){ const f=c.finanzas; return Math.max(Number(f.montoTotal||0)-Number(f.adelanto||0),0); }
 function syncSaldo(c){
   const f=c.finanzas; c.pagos=c.pagos||[]; const saldo=saldoDe(c);
+  // Si el saldo se cobró en otra moneda, lo guardamos con su TC; si no, en la moneda del caso.
+  const enOtra = f.monedaSaldo && f.monedaSaldo!==f.moneda && Number(f.tcSaldo)>0;
+  const sMon = enOtra ? f.monedaSaldo : f.moneda;
+  const sImp = enOtra ? (f.moneda==="USD" ? saldo*Number(f.tcSaldo) : saldo/Number(f.tcSaldo)) : saldo;
+  const sTc  = enOtra ? Number(f.tcSaldo) : undefined;
   let p=c.pagos.find(x=>x.esSaldo);
   if(f.saldoPagado && saldo>0){
-    if(p){ p.importe=saldo; p.moneda=f.moneda; p.fecha=f.fechaSaldoPago||p.fecha||new Date().toISOString().slice(0,10); p.medio=f.medioSaldo||f.medioPago||p.medio; }
-    else { c.pagos.push({id:uid("p"),importe:saldo,moneda:f.moneda,fecha:f.fechaSaldoPago||new Date().toISOString().slice(0,10),medio:f.medioSaldo||f.medioPago,obs:"Saldo / diferencia",esSaldo:true}); }
+    if(p){ p.importe=sImp; p.moneda=sMon; p.tc=sTc; p.fecha=f.fechaSaldoPago||p.fecha||new Date().toISOString().slice(0,10); p.medio=f.medioSaldo||f.medioPago||p.medio; }
+    else { c.pagos.push({id:uid("p"),importe:sImp,moneda:sMon,tc:sTc,fecha:f.fechaSaldoPago||new Date().toISOString().slice(0,10),medio:f.medioSaldo||f.medioPago,obs:"Saldo / diferencia",esSaldo:true}); }
   } else if(p){ c.pagos=c.pagos.filter(x=>!x.esSaldo); }
 }
 function recalcEstadoPago(c){ const f=c.finanzas; const cob=cobradoDe(c); const tot=Number(f.montoTotal||0);
@@ -786,6 +885,7 @@ function buildNav(){
     {k:"tareas", i:"✅", t:"Tareas"},
   ];
   if(isSocio()) items.push({k:"finanzas", i:"💰", t:"Finanzas global"});
+  if(isSocio()) items.push({k:"operativa", i:"📅", t:"Caja operativa"});
   items.push({k:"config", i:"⚙️", t:"Configuración"});
   if(isSocio()) items.push({k:"usuarios", i:"👥", t:"Usuarios y abogados"});
   let h=`<div class="sec">General</div>`;
@@ -803,6 +903,7 @@ function go(route, arg){
   else if(route==="tareas"){ setActiveNav("tareas"); renderTareas(); }
   else if(route==="caso"){ setActiveNav("casos"); CURRENT=DB.casos.find(c=>c.id===arg); ACTIVE_TAB="resumen"; EDIT_AUD=null; renderCaso(); }
   else if(route==="finanzas"){ setActiveNav("finanzas"); renderFinanzasGlobal(); }
+  else if(route==="operativa"){ setActiveNav("operativa"); renderCajaOperativa(); }
   else if(route==="config"){ setActiveNav("config"); renderConfig(); }
   else if(route==="usuarios"){ setActiveNav("usuarios"); renderUsuarios(); }
   else if(route==="form"){ renderClientForm(arg); }
@@ -824,7 +925,7 @@ function renderDashboard(){
   let finCards="", gastosRow="";
   if(isSocio()){
     let totalUSD=0, cobradoUSD=0, totalARS=0, cobradoARS=0;
-    cs.forEach(c=>{ const f=c.finanzas; const pagado=(c.pagos||[]).reduce((s,p)=>s+(p.moneda===f.moneda?Number(p.importe||0):0),0);
+    cs.forEach(c=>{ const f=c.finanzas; const pagado=cobradoDe(c); // cobrado en la moneda pactada (convierte pagos en pesos)
       if(f.moneda==="USD"){ totalUSD+=Number(f.montoTotal||0); cobradoUSD+=pagado; } else { totalARS+=Number(f.montoTotal||0); cobradoARS+=pagado; } });
     finCards=`
       <div class="stat gold"><div class="lab">Facturación pactada (USD)</div><div class="val">${money(totalUSD,"USD")}</div><div class="sub">Cobrado: ${money(cobradoUSD,"USD")} · Pendiente: ${money(totalUSD-cobradoUSD,"USD")}</div></div>
@@ -839,6 +940,12 @@ function renderDashboard(){
       <div class="stat green"><div class="lab">Gastos abonados (ARS)</div><div class="val">${money(gAbonARS,"ARS")}</div></div>
       <div class="stat amber"><div class="lab">Gastos pendientes (USD)</div><div class="val">${money(gPendUSD,"USD")}</div><div class="sub">sin abonar</div></div>
       <div class="stat green"><div class="lab">Gastos abonados (USD)</div><div class="val">${money(gAbonUSD,"USD")}</div></div>
+    </div>`;
+    // CAJA REAL disponible (efectivo realmente en mano, por moneda)
+    const aD=calcFinanzasGlobal();
+    gastosRow += `<div class="grid g2" style="margin-bottom:18px">
+      <div class="stat green" style="border-left:4px solid #1c7a40;cursor:pointer" onclick="go('finanzas')"><div class="lab">💵 Caja disponible — PESOS</div><div class="val">${money(aD.caja.ARS,"ARS")}</div><div class="sub">efectivo real en pesos (cobros + cambios − gastos)</div></div>
+      <div class="stat green" style="border-left:4px solid #1c7a40;cursor:pointer" onclick="go('finanzas')"><div class="lab">💵 Caja disponible — DÓLARES</div><div class="val">${money(aD.caja.USD,"USD")}</div><div class="sub">efectivo real en dólares</div></div>
     </div>`;
   }
   let estadoBreak={};
@@ -905,7 +1012,7 @@ function renderCasos(){
     const med=(audsOf(c)||[]).filter(a=>a.fecha).map(a=>a.fecha).sort();
     const tieneMed=med.length>0;
     const solic=!!c.medSolicitada;
-    const paga=(c.gastos||[]).some(g=>/mediaci|mediador/i.test(g.nombre||"") && g.estado==="abonado");
+    const paga=(c.gastos||[]).some(g=>/mediaci|mediador|notific/i.test(g.nombre||"") && g.estado==="abonado");
     const ets=casoEtiquetas(c);
     return `<tr class="clickable" onclick="go('caso','${c.id}')">
       <td><b style="color:var(--navy)">${esc(clienteFull(c))}</b><br><small style="color:var(--muted)">${esc(c.id)} · ${fdate(c.fechaAlta)}</small></td>
@@ -1240,7 +1347,8 @@ function saveCliente(){
 /* ---------- TAB: CUENTA ---------- */
 function tabCuenta(c){
   const f=c.cuenta;
-  return `<div class="card"><div class="card-h"><h3>Datos de la cuenta afectada</h3></div><div class="card-b">
+  FORM_CUENTAS=Array.isArray(c.cuentasAfectadas)?JSON.parse(JSON.stringify(c.cuentasAfectadas)):[];
+  return `<div class="card"><div class="card-h"><h3>Cuenta principal afectada (prioridad 1)</h3></div><div class="card-b">
     <div class="frow fr2">
       ${sel("cu_plat","Plataforma",["Instagram","Facebook","Otra"],f.plataforma)}
       ${inp("cu_handle","Usuario / handle",f.handle)}
@@ -1258,6 +1366,11 @@ function tabCuenta(c){
       ${chk("cu_hack","Hubo hackeo / acceso desconocido",f.hackeo)}
     </div>
     <div style="margin-top:16px"><button class="btn btn-primary" onclick="saveCuenta()">Guardar cambios</button></div>
+  </div></div>
+  <div class="card" style="margin-top:18px"><div class="card-h"><h3>Otras cuentas inhabilitadas (orden de prioridad)</h3><button class="btn btn-ghost btn-sm" onclick="formAddCuenta()">＋ Agregar cuenta</button></div><div class="card-b">
+    <div class="hint" style="margin-bottom:10px">Enumerá todas las cuentas IG/FB afectadas, de mayor a menor prioridad. Se usan en el Informe para Meta.</div>
+    <div id="cf_cuentas_list">${cuentasListHtml()}</div>
+    <div style="margin-top:14px"><button class="btn btn-primary" onclick="saveCuentasAfectadas()">Guardar cuentas adicionales</button></div>
   </div></div>`;
 }
 function saveCuenta(){
@@ -1267,6 +1380,10 @@ function saveCuenta(){
   f.pautaActiva=chkVal("cu_pauta"); f.saldoRetenido=chkVal("cu_saldo"); f.businessManager=chkVal("cu_bm");
   f.metodoPago=chkVal("cu_mp"); f.campanasActivas=chkVal("cu_camp"); f.hackeo=chkVal("cu_hack");
   logAction(CURRENT,"Datos de la cuenta actualizados"); save(); toast("Cuenta guardada"); renderCaso();
+}
+function saveCuentasAfectadas(){
+  CURRENT.cuentasAfectadas=formCuentasLimpias();
+  logAction(CURRENT,"Cuentas afectadas actualizadas ("+CURRENT.cuentasAfectadas.length+")"); save(); toast("Cuentas adicionales guardadas"); renderCaso();
 }
 
 /* ---------- TAB: RELATO ---------- */
@@ -1286,20 +1403,172 @@ function tabRelato(c){
     <div class="section-title">Relato original del cliente</div>
     <div class="field"><textarea id="re_orig" rows="5" placeholder="Texto tal como lo escribió el cliente">${esc(f.original)}</textarea><div class="hint">Esta versión se conserva intacta como respaldo.</div></div>
     <div class="section-title">Síntesis jurídica del estudio</div>
-    <div class="field"><textarea id="re_sint" rows="5" placeholder="Versión prolija y jurídica para los documentos">${esc(f.sintesis)}</textarea>
-      <div class="hint">Se usa en la planilla de mediación. <a onclick="generarSintesis()">✨ Generar borrador a partir del relato original</a></div></div>
+    <div class="field"><textarea id="re_sint" rows="6" placeholder="Versión prolija y jurídica para los documentos">${esc(f.sintesis)}</textarea>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button class="btn btn-gold btn-sm" onclick="copySintesisPrompt()">📋 Copiar prompt para ChatGPT/Claude</button>
+        <button class="btn btn-primary btn-sm" onclick="aiGenerarSintesis()">🤖 Generar con IA (API)</button>
+        <button class="btn btn-ghost btn-sm" onclick="generarSintesis()">✨ Borrador sin IA</button>
+        <button class="btn btn-ghost btn-sm" onclick="verPromptSintesis()">📄 Ver / editar prompt</button>
+      </div>
+      <div class="hint" style="margin-top:6px"><b>Sin costo extra:</b> tocá <b>“📋 Copiar prompt”</b>, pegalo en ChatGPT o Claude (tu suscripción), y traé la respuesta a este campo. La opción <b>🤖 con API</b> es automática pero se factura por uso.</div></div>
     <button class="btn btn-primary" onclick="saveRelato()">Guardar relato</button>
   </div></div>`;
 }
 function generarSintesis(){
   const orig=val("re_orig").trim();
   if(!orig){ toast("Cargá primero el relato original","err"); return; }
-  const c=CURRENT;
-  const cuenta=c.cuenta.handle||"la cuenta";
-  const fecha=c.relato.fechaSusp?("con fecha "+fdate(c.relato.fechaSusp)):"";
-  const draft=`Que el/la requirente es titular de la cuenta ${cuenta} en la plataforma ${c.cuenta.plataforma||"Meta"}, la cual fue objeto de suspensión/inhabilitación ${fecha} por parte de la requerida. La requerida comunicó la medida invocando supuestas infracciones a sus normas comunitarias, sin brindar precisiones ni vía de revisión efectiva. La medida ocasionó al requirente la pérdida de acceso a la cuenta, a sus contactos y a su actividad ${c.cuenta.tipo==="Negocio"||c.cuenta.tipo==="Comercial"?"comercial":""}, con el consiguiente perjuicio económico y reputacional. En síntesis: ${orig}`;
-  document.getElementById("re_sint").value=draft;
-  toast("Borrador generado — revisalo y editalo");
+  const c=CURRENT, cl=c.cliente||{}, cu=c.cuenta||{}, re=c.relato||{};
+  const titular = (cl.nombre||cl.apellido)?`${cl.nombre||""} ${cl.apellido||""}`.trim():"el titular";
+  const plat = cu.plataforma||"Meta";
+  const cuenta = cu.handle||cu.url||"su cuenta";
+  const fecha = re.fechaSusp?fdate(re.fechaSusp):null;
+  const comercial = (cu.tipo==="Negocio"||cu.tipo==="Comercial"||cu.pautaActiva||cu.businessManager);
+  const nAdic=(Array.isArray(c.cuentasAfectadas)?c.cuentasAfectadas.filter(q=>q.url||q.emailVinc).length:0);
+  // Borrador siguiendo el prompt: 3ra persona, narrativo, buena fe, sin viñetas.
+  const p1=`El presente caso involucra a ${titular}, titular legítimo de la cuenta ${cuenta} en la plataforma ${plat}${comercial?", utilizada como herramienta de trabajo y desarrollo de su actividad profesional y económica":""}. ${titular} se ha desempeñado de buena fe dentro de la plataforma, dando un uso personal y/o profesional legítimo a su cuenta.`;
+  const p2=`${fecha?`Con fecha ${fecha}, `:""}la cuenta fue objeto de una medida de suspensión/inhabilitación por parte de la plataforma, la cual fue comunicada con invocación genérica de presuntas infracciones a las Normas Comunitarias, sin brindarse precisiones concretas ni una vía de revisión efectiva que permitiera al titular ejercer adecuadamente su derecho de defensa.${re.mensaje?` La comunicación recibida refirió: “${re.mensaje}”.`:""}`;
+  const p3=`Ante dicha medida, ${titular} actuó diligentemente${re.apelo?", presentando la correspondiente apelación a través de los canales oficiales habilitados por la plataforma y aportando la documentación requerida para acreditar su identidad y titularidad":", procurando obtener una revisión de la medida por los canales disponibles"}.${re.recibioResp?" El titular recibió comunicaciones de la plataforma en el marco de dichas gestiones.":""}`;
+  const p4=`La medida adoptada ocasionó al titular un perjuicio relevante, privándolo del acceso a su cuenta, a sus contactos, a su contenido y a su actividad${comercial?" comercial, con la consiguiente afectación económica, profesional y reputacional":" personal"}.${nAdic>0?` Cabe destacar que la situación alcanza, además, a otras ${nAdic} cuenta(s) vinculada(s) del mismo titular, individualizadas en el presente informe en orden de prioridad de recuperación.`:""}`;
+  const p5=`A partir de los elementos reseñados surge la buena fe del titular y la legitimidad de su reclamo, encontrándose acreditada documentalmente su identidad y titularidad sobre la cuenta. En tal sentido, se solicita respetuosamente que se disponga una nueva revisión humana e integral del caso, contemplando las circunstancias particulares expuestas.`;
+  const p6=`El titular manifiesta su plena buena fe, su voluntad de cumplir con las políticas de la plataforma y su total predisposición para aportar cualquier información adicional que resulte necesaria para una adecuada evaluación del caso.`;
+  document.getElementById("re_sint").value=[p1,p2,p3,p4,p5,p6].join("\n\n");
+  toast("Borrador de síntesis generado — revisalo y editalo");
+}
+function verPromptSintesis(){
+  modal({title:"Prompt para generar la Síntesis (IA)", size:"lg", body:`
+    <div class="alert alert-info"><span>🤖</span><div>Este es el prompt que usa la IA para redactar la síntesis. Podés editarlo y guardarlo; se aplicará en las próximas generaciones.</div></div>
+    <textarea id="pr_sint" rows="18" style="width:100%;font-family:monospace;font-size:12px">${esc(DB.config.promptSintesis||PROMPT_SINTESIS_DEFAULT)}</textarea>`,
+    footer:`<button class="btn btn-ghost" onclick="closeModal()">Cerrar</button><button class="btn btn-primary" onclick="DB.config.promptSintesis=val('pr_sint');save();closeModal();toast('Prompt guardado')">Guardar prompt</button>`});
+}
+/* ============================================================
+   IA — Asistente de redacción (Claude / Anthropic, directo desde el navegador)
+   ============================================================ */
+function aiGetKey(){ try{ return localStorage.getItem("gmj_ai_key")||""; }catch(e){ return ""; } }
+function aiSaveConfig(){ const k=val("ai_key").trim(); try{ localStorage.setItem("gmj_ai_key",k); }catch(e){} DB.config.aiModel=val("ai_model"); save(); toast(k?"Configuración de IA guardada ✓":"Guardado (sin clave cargada)"); }
+async function callClaude(system, user, opts){
+  opts=opts||{}; const key=opts.key||aiGetKey(); const model=opts.model||DB.config.aiModel||"claude-sonnet-4-6";
+  if(!key) throw new Error("No hay API key cargada");
+  const r=await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",
+    headers:{ "x-api-key":key, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true", "content-type":"application/json" },
+    body:JSON.stringify({ model, max_tokens:opts.maxTokens||1800, system, messages:[{role:"user",content:user}] })
+  });
+  let j=null; try{ j=await r.json(); }catch(e){ throw new Error("Respuesta no válida de la API"); }
+  if(!r.ok){ throw new Error((j&&j.error&&j.error.message)||("HTTP "+r.status)); }
+  return (j.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n").trim();
+}
+async function aiProbar(){
+  const key=val("ai_key").trim()||aiGetKey(); if(!key){ toast("Pegá tu API key primero","err"); return; }
+  toast("Probando conexión con Claude…");
+  try{ const t=await callClaude("Respondé únicamente la palabra: OK","Confirmá la conexión.",{key,model:val("ai_model")||undefined,maxTokens:20}); toast("Conexión OK ✓ "+(t?("· "+t):"")); }
+  catch(e){ toast("Falló la conexión: "+e.message,"err"); }
+}
+function aiContextoCaso(c){
+  const cl=c.cliente||{}, cu=c.cuenta||{}, re=c.relato||{};
+  const adic=(Array.isArray(c.cuentasAfectadas)?c.cuentasAfectadas:[]).filter(q=>q.url||q.emailVinc);
+  const L=[];
+  L.push("DATOS DEL CASO (contexto; no inventes nada que no surja de acá ni del relato):");
+  L.push("- Titular: "+[cl.nombre,cl.apellido].filter(Boolean).join(" ")+(cl.dni?` (DNI ${cl.dni})`:""));
+  L.push("- Cuenta principal: "+(cu.handle||cu.url||"—")+" · plataforma "+(cu.plataforma||"—")+(cu.tipo?` · tipo de cuenta ${cu.tipo}`:""));
+  if(adic.length) L.push("- Otras cuentas afectadas (orden de prioridad): "+adic.map(q=>`${q.plataforma||"Instagram"} ${q.url||""}`.trim()).join("; "));
+  if(re.fechaSusp) L.push("- Fecha de suspensión: "+fdate(re.fechaSusp));
+  if(re.tipoSusp) L.push("- Tipo de suspensión: "+re.tipoSusp);
+  if(re.mensaje) L.push("- Mensaje informado por la plataforma: "+re.mensaje);
+  L.push("- ¿Presentó apelación?: "+(re.apelo?"sí":"no")+" · ¿Recibió respuesta de la plataforma?: "+(re.recibioResp?"sí":"no"));
+  if(re.perdida) L.push("- Qué perdió con la suspensión: "+re.perdida);
+  if(cu.pautaActiva||cu.businessManager||cu.tipo==="Negocio"||cu.tipo==="Comercial") L.push("- Uso comercial / profesional de la cuenta: sí");
+  L.push("");
+  L.push("RELATO ORIGINAL DEL CLIENTE:");
+  L.push((re.original||"").trim());
+  return L.join("\n");
+}
+async function aiGenerarSintesis(){
+  const key=aiGetKey(); if(!key){ toast("Configurá tu API key de Claude en Configuración → Asistente de IA","err"); go("config"); return; }
+  const orig=val("re_orig").trim(); if(!orig){ toast("Cargá primero el relato original","err"); return; }
+  const c=CURRENT; const ta=document.getElementById("re_sint"); const prev=ta?ta.value:"";
+  const system=DB.config.promptSintesis||PROMPT_SINTESIS_DEFAULT;
+  const user=aiContextoCaso(c);
+  toast("Generando síntesis con Claude… (puede tardar unos segundos)");
+  if(ta){ ta.value="⏳ Generando con IA…"; ta.disabled=true; }
+  try{
+    const txt=await callClaude(system,user,{key});
+    if(ta){ ta.value=txt; }
+    toast("Síntesis generada con IA ✓ — revisala y tocá Guardar relato");
+  }catch(e){ if(ta){ ta.value=prev; } toast("Error de IA: "+e.message,"err"); }
+  finally{ if(ta){ ta.disabled=false; } }
+}
+function aiContextoInforme(c){
+  const cl=c.cliente||{}, cu=c.cuenta||{}, re=c.relato||{};
+  const ab=(DB.abogados||[]).find(a=>a.id===c.abogadoPatrocinante)||(DB.abogados||[])[0]||{};
+  const adic=(Array.isArray(c.cuentasAfectadas)?c.cuentasAfectadas:[]).filter(q=>q.url||q.emailVinc);
+  const adjs=(c.adjuntos||[]);
+  const L=[];
+  L.push("Abogado interviniente: "+(ab.nombre||"—")+(ab.matricula?` (${ab.matricula}${ab.tomo?` T° ${ab.tomo} F° ${ab.folio||""}`:""})`:""));
+  L.push("Titular: "+[cl.nombre,cl.apellido].filter(Boolean).join(" ")+(cl.dni?` · DNI ${cl.dni}`:"")+(cl.email?` · ${cl.email}`:"")+(cl.domicilio?` · ${cl.domicilio}${cl.localidad?", "+cl.localidad:""}${cl.provincia?", "+cl.provincia:""}`:""));
+  L.push("Cuenta principal: plataforma "+(cu.plataforma||"—")+" · URL "+(cu.url||"—")+" · usuario "+(cu.handle||"—")+" · correo asociado "+(cu.emailVinc||"—"));
+  L.push("Fecha de suspensión: "+(re.fechaSusp?fdate(re.fechaSusp):"—")+" · Tipo: "+(re.tipoSusp||"—")+" · Motivo informado: "+(re.mensaje||"no informado"));
+  L.push("Cuentas adicionales afectadas (orden de prioridad): "+(adic.length?adic.map((q,i)=>`(${i+2}) ${q.plataforma||"Instagram"} ${q.url||""} ${q.emailVinc?"· "+q.emailVinc:""}`.trim()).join(" | "):"ninguna"));
+  L.push("¿Apeló por las herramientas de Meta?: "+(re.apelo?"sí":"no")+" · ¿Recibió respuesta?: "+(re.recibioResp?"sí":"no"));
+  L.push("Documentación acompañada: "+(adjs.length?adjs.map((a,i)=>`(${i+1}) ${a.desc||a.tipo}${a.nombre?` [${a.nombre}]`:""}`).join(" | "):"a aportar"));
+  L.push("");
+  L.push("SÍNTESIS DEL CASO (usar tal cual en la sección V; si está vacía, redactarla a partir del relato):");
+  L.push((re.sintesis||re.original||"").trim());
+  return L.join("\n");
+}
+async function aiGenerarInforme(){
+  const key=aiGetKey(); if(!key){ toast("Configurá tu API key de Claude en Configuración → Asistente de IA","err"); go("config"); return; }
+  const c=CURRENT; const v=validateDoc(c,"informe"); if(!v.ok){ toast("Faltan datos para el informe: "+v.missing.join(", "),"err"); return; }
+  const modelo=DB.config.informeModeloGuia||INFORME_MODELO_DEFAULT;
+  const system="Sos un abogado de GMJ Legal Partners. Redactás un INFORME formal de solicitud de revisión y rehabilitación de cuentas dirigido a META PLATFORMS, INC., siguiendo EXACTAMENTE la estructura, secciones, numeración romana y estilo del MODELO GUÍA que se te entrega. Reglas: no inventes datos, usá únicamente los DATOS DEL CASO; tono profesional, respetuoso y persuasivo; no uses viñetas en la síntesis; respetá los títulos de cada sección. Devolvé SOLO HTML simple usando <h1> para el título principal, <h2> para cada sección y <p> para los párrafos (sin estilos en línea, sin markdown, sin ```).\n\nMODELO GUÍA:\n"+modelo;
+  const user="DATOS DEL CASO:\n"+aiContextoInforme(c);
+  toast("Redactando el informe con Claude… (puede tardar)");
+  try{
+    let html=await callClaude(system,user,{maxTokens:3000});
+    html=html.replace(/```html?/gi,"").replace(/```/g,"").trim();
+    openDocPreview("informe", docHead()+html);
+  }catch(e){ toast("Error de IA: "+e.message,"err"); }
+}
+/* ---- Opción SIN costo de API: copiar el prompt para pegar en ChatGPT/Claude web ---- */
+function copyText(t,msg){
+  try{ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t); } else { const ta=document.createElement("textarea"); ta.value=t; ta.style.position="fixed"; ta.style.left="-9999px"; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); } toast(msg||"Copiado ✓"); }
+  catch(e){ toast("No se pudo copiar automáticamente","err"); }
+}
+function copySintesisPrompt(){
+  const c=CURRENT; const orig=val("re_orig").trim(); if(!orig){ toast("Cargá primero el relato original","err"); return; }
+  const ctx=aiContextoCaso(c).replace(/RELATO ORIGINAL DEL CLIENTE:[\s\S]*$/, "RELATO ORIGINAL DEL CLIENTE:\n"+orig);
+  const txt=(DB.config.promptSintesis||PROMPT_SINTESIS_DEFAULT)+"\n\n=== DATOS DEL CASO ===\n"+ctx;
+  copyText(txt,"Prompt copiado ✓ — pegalo en ChatGPT o Claude (web) y traé la respuesta al campo Síntesis");
+}
+function copyInformePrompt(){
+  const c=CURRENT; const v=validateDoc(c,"informe"); if(!v.ok){ toast("Faltan datos para el informe: "+v.missing.join(", "),"err"); return; }
+  const modelo=DB.config.informeModeloGuia||INFORME_MODELO_DEFAULT;
+  const txt="Redactá un INFORME formal para META PLATFORMS, INC. siguiendo EXACTAMENTE la estructura, secciones (numeración romana) y estilo del MODELO GUÍA. No inventes datos: usá únicamente los DATOS DEL CASO. Tono profesional y persuasivo; sin viñetas en la síntesis.\n\n=== MODELO GUÍA ===\n"+modelo+"\n\n=== DATOS DEL CASO ===\n"+aiContextoInforme(c);
+  copyText(txt,"Prompt del informe copiado ✓ — pegalo en ChatGPT o Claude (web) y traé la respuesta");
+}
+/* ============================================================
+   BACKUP — copia de seguridad completa (descarga local + copia en Supabase)
+   ============================================================ */
+async function descargarBackup(){
+  try{
+    toast("Generando copia de seguridad…");
+    const snap=JSON.parse(JSON.stringify(DB||{}));
+    snap._backup={ generado:new Date().toISOString(), por:(SESSION&&SESSION.nombre)||"", build:BUILD, modo:CLOUD?"nube":"local" };
+    const txt=JSON.stringify(snap,null,2);
+    const stamp=new Date().toISOString().slice(0,16).replace(/[:T]/g,"-");
+    const nombre="gmj-backup-"+stamp+".json";
+    const blob=new Blob([txt],{type:"application/json"});
+    // 1) descarga local
+    const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=nombre; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    // 2) copia en la nube (best-effort: requiere bucket 'backups')
+    let cloudMsg="";
+    if(CLOUD && typeof sb!=="undefined" && sb){
+      try{ const { error }=await sb.storage.from("backups").upload(nombre, blob, {contentType:"application/json", upsert:true});
+        cloudMsg = error ? " · (copia en nube pendiente: falta crear el bucket 'backups')" : " · copia guardada en Supabase ✓"; }
+      catch(e){ cloudMsg=" · (copia en nube no disponible)"; }
+    }
+    const casos=(DB.casos||[]).length;
+    toast("✓ Backup descargado ("+casos+" casos)"+cloudMsg);
+  }catch(e){ toast("No se pudo generar el backup: "+(e.message||e),"err"); }
 }
 function saveRelato(){
   const f=CURRENT.relato;
@@ -1437,7 +1706,8 @@ function tabDocs(c){
   const cards=[
     {tipo:"contrato", t:"Contrato de prestación de servicios", d:"Honorarios y condiciones del caso", ic:"📑"},
     {tipo:"carta_poder", t:"Carta poder bilingüe", d:"Representación legal (ES/EN)", ic:"⚖️"},
-    {tipo:"mediacion", t:"Solicitud de mediación", d:"Planilla para el mediador", ic:"📋"}
+    {tipo:"mediacion", t:"Solicitud de mediación", d:"Planilla para el mediador", ic:"📋"},
+    {tipo:"informe", t:"Informe de revisión para Meta", d:"Solicitud post-audiencia (cuentas + síntesis)", ic:"📄"}
   ].map(x=>{
     const v=validateDoc(c,x.tipo);
     const last=c.docs.filter(d=>d.tipo===x.tipo).sort((a,b)=>b.version-a.version)[0];
@@ -1452,10 +1722,11 @@ function tabDocs(c){
             :`<div class="alert alert-warn" style="margin-top:14px"><span>⚠</span><div>Faltan datos:<ul>${v.missing.map(m=>`<li>${esc(m)}</li>`).join("")}</ul></div></div>`}
       <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
         <button class="btn btn-primary btn-sm" ${v.ok?'':'disabled'} onclick="previewDoc('${x.tipo}')">Generar / previsualizar</button>
+        ${x.tipo==='informe'?`<button class="btn btn-gold btn-sm" ${v.ok?'':'disabled'} onclick="copyInformePrompt()" title="Copia el prompt para pegar en ChatGPT/Claude (sin costo de API)">📋 Copiar prompt</button><button class="btn btn-ghost btn-sm" ${v.ok?'':'disabled'} onclick="aiGenerarInforme()" title="Redacta el informe con la API (se factura por uso)">🤖 con API</button>`:''}
       </div>
     </div></div>`;
   }).join("");
-  const hist=c.docs.length?c.docs.slice().reverse().map(d=>`<div class="doc-row"><div class="ic">${d.tipo==='contrato'?'📑':d.tipo==='carta_poder'?'⚖️':'📋'}</div>
+  const hist=c.docs.length?c.docs.slice().reverse().map(d=>`<div class="doc-row"><div class="ic">${d.tipo==='contrato'?'📑':d.tipo==='carta_poder'?'⚖️':d.tipo==='informe'?'📄':'📋'}</div>
     <div class="meta" style="flex:1"><b>${esc(docTitle(d.tipo))}</b> <span class="badge b-grey">v${d.version}</span><br><small>${esc(d.fecha)} · ${esc(userName(d.generadoPor))} · ${esc(d.estado)}</small></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
       <button class="btn btn-ghost btn-sm" onclick="downloadDoc('${d.id}','word')">Word</button>
@@ -1466,14 +1737,15 @@ function tabDocs(c){
   return `<div class="grid g3" style="margin-bottom:18px">${cards}</div>
     <div class="card"><div class="card-h"><h3>Historial de documentos generados</h3></div><div class="card-b">${hist}</div></div>`;
 }
-function docTitle(t){ return {contrato:"Contrato de servicios",carta_poder:"Carta poder bilingüe",mediacion:"Solicitud de mediación"}[t]||t; }
+function docTitle(t){ return {contrato:"Contrato de servicios",carta_poder:"Carta poder bilingüe",mediacion:"Solicitud de mediación",informe:"Informe de revisión para Meta"}[t]||t; }
 function setDocEstado(id,e){ if(!e)return; const d=CURRENT.docs.find(x=>x.id===id); d.estado=e; logAction(CURRENT,docTitle(d.tipo)+" → "+e); save(); toast("Estado actualizado"); renderCaso(); }
 
 /* ---------- ENVÍO DE DOCUMENTOS (WhatsApp / mail) ---------- */
 const DOC_MSG={
   contrato:c=>`Hola ${c.cliente.nombre||"[Nombre]"}, te compartimos el contrato de prestación de servicios profesionales correspondiente a la gestión de rehabilitación de tu cuenta. Por favor, revisalo y, si está todo correcto, envianos la versión firmada por este mismo medio. Quedamos atentos a cualquier consulta.`,
   carta_poder:c=>`Hola ${c.cliente.nombre||"[Nombre]"}, te compartimos la carta poder necesaria para que podamos representarte en las gestiones vinculadas a la rehabilitación de tu cuenta. Por favor, revisala, firmala y envianos la versión firmada junto con la documentación correspondiente.`,
-  mediacion:c=>`Hola, adjuntamos la solicitud de mediación correspondiente al caso ${clienteFull(c)} c/ Meta Platforms Inc. y Facebook Argentina S.R.L., junto con la documentación respaldatoria correspondiente. Quedamos atentos a cualquier observación.`
+  mediacion:c=>`Hola, adjuntamos la solicitud de mediación correspondiente al caso ${clienteFull(c)} c/ Meta Platforms Inc. y Facebook Argentina S.R.L., junto con la documentación respaldatoria correspondiente. Quedamos atentos a cualquier observación.`,
+  informe:c=>`A quien corresponda de META PLATFORMS, INC.: adjuntamos el informe de solicitud de revisión y rehabilitación de las cuentas del titular ${clienteFull(c)}, junto con la documentación respaldatoria. Solicitamos una revisión humana e integral del caso. Quedamos a disposición para aportar información adicional.`
 };
 function docLink(c){ return c.drive.link || ""; }
 function sendDocModal(id){
@@ -1571,6 +1843,14 @@ function validateDoc(c,tipo){
     need((c.adjuntos||[]).some(a=>a.tipo==="DNI frente"),"DNI frente adjunto");
     need((c.adjuntos||[]).some(a=>a.tipo==="DNI dorso"),"DNI dorso adjunto");
     need(c.abogadoPatrocinante,"Abogado patrocinante");
+  } else if(tipo==="informe"){
+    need(cl.nombre&&cl.apellido,"Nombre y apellido del titular");
+    need(cl.dni,"DNI / documento");
+    need(cu.url||cu.handle,"URL de la cuenta principal");
+    need(cu.emailVinc,"Email vinculado a la cuenta principal");
+    need(c.relato.sintesis||c.relato.original,"Síntesis del caso (o relato original)");
+    need(c.relato.fechaSusp,"Fecha aproximada de suspensión");
+    need(c.abogadoPatrocinante,"Abogado interviniente");
   }
   return {ok:missing.length===0, missing};
 }
@@ -1740,19 +2020,38 @@ function delGasto(id){ CURRENT.gastos=CURRENT.gastos.filter(x=>x.id!==id); save(
 /* ---------- TAB: FINANZAS (socios) ---------- */
 function tabFinanzas(c){
   const f=c.finanzas;
-  const cobrado=(c.pagos||[]).reduce((s,p)=>s+(p.moneda===f.moneda?Number(p.importe||0):0),0);
+  const cobrado=cobradoDe(c);
   const pend=Number(f.montoTotal||0)-cobrado;
-  const pagos=(c.pagos||[]).map(p=>`<tr><td>${fdate(p.fecha)}</td><td>${money(p.importe,p.moneda)}</td><td>${esc(p.medio||"—")}</td><td>${esc(p.obs||"")}</td><td><button class="btn btn-ghost btn-sm" onclick="delPago('${p.id}')">✕</button></td></tr>`).join("")||`<tr><td colspan="5" class="empty">Sin pagos registrados</td></tr>`;
+  // --- adelanto en otra moneda (carga inicial) ---
+  const aMon=f.monedaAdelanto||f.moneda, aTc=f.tcAdelanto||"";
+  const aDistinta=aMon!==f.moneda;
+  const aEquivIni=(aDistinta && Number(aTc)>0 && Number(f.adelanto)>0)
+    ? (f.moneda==="USD"?money(Number(f.adelanto)*Number(aTc),"ARS"):money(Number(f.adelanto)/Number(aTc),"USD"))
+    : "—";
+  // total efectivamente recibido en pesos (pagos cargados en ARS), para mostrar en paralelo
+  const otra = f.moneda==="USD" ? "ARS" : "USD";
+  const recibidoOtra=(c.pagos||[]).filter(p=>p.moneda===otra).reduce((s,p)=>s+Number(p.importe||0),0);
+  const cobradoSub = recibidoOtra>0 ? `<div class="sub">Incluye ${money(recibidoOtra,otra)} recibidos en ${otra}</div>` : '';
+  const pagos=(c.pagos||[]).map(p=>{
+    const distinta = (p.moneda||f.moneda)!==f.moneda;
+    const equiv = pagoEnMonedaCaso(p,f.moneda);
+    const equivCell = distinta
+      ? (Number(p.tc||0)>0 ? `${money(equiv,f.moneda)}<br><small style="color:var(--muted)">TC ${Number(p.tc).toLocaleString("es-AR")}</small>` : `<small style="color:var(--red)">falta TC</small>`)
+      : `<small style="color:var(--muted)">—</small>`;
+    const tipo = p.esAdelanto?'<span class="badge b-blue" style="font-size:10px">Adelanto</span> ':p.esSaldo?'<span class="badge b-gold" style="font-size:10px">Saldo</span> ':'';
+    return `<tr><td>${fdate(p.fecha)}</td><td>${money(p.importe,p.moneda)}</td><td>${equivCell}</td><td>${esc(p.medio||"—")}</td><td>${tipo}${esc(p.obs||"")}</td><td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" onclick="editPago('${p.id}')" title="Editar pago">✎</button><button class="btn btn-ghost btn-sm" onclick="delPago('${p.id}')" title="Eliminar">✕</button></td></tr>`;
+  }).join("")||`<tr><td colspan="6" class="empty">Sin pagos registrados</td></tr>`;
   return `<div class="grid g4" style="margin-bottom:18px">
     <div class="stat gold"><div class="lab">Monto total</div><div class="val">${money(f.montoTotal,f.moneda)}</div></div>
-    <div class="stat green"><div class="lab">Cobrado</div><div class="val">${money(cobrado,f.moneda)}</div></div>
+    <div class="stat green"><div class="lab">Cobrado</div><div class="val">${money(cobrado,f.moneda)}</div>${cobradoSub}</div>
     <div class="stat amber"><div class="lab">Pendiente</div><div class="val">${money(pend,f.moneda)}</div></div>
     <div class="stat accent"><div class="lab">Devolución pactada</div><div class="val">${money(f.devolucion,f.moneda)}</div><div class="sub">${Number(f.devolucion||0)>0?(f.estadoResultado==='favorable'?'no se devuelve (favorable)':['realizada_dev','cancelada_dev'].includes(f.estadoDevolucion)?finLabel(f.estadoDevolucion):'⏸️ en stand by hasta resolver'):'—'}</div></div>
   </div>
   <div class="grid g2">
     <div class="card"><div class="card-h"><h3>Condiciones económicas</h3></div><div class="card-b">
-      <div class="frow fr2">${sel("fi_mon","Moneda",["USD","ARS"],f.moneda)}<div class="field"><label>Estado de cobro (automático)</label><div style="padding:9px 12px;border:1px solid var(--line2);border-radius:8px;background:#f8fafc"><span class="badge ${FIN_COLOR[f.estadoCobro]||'b-grey'}">${finLabel(f.estadoCobro)}</span></div><div class="hint">Se calcula con los pagos del Plan de pagos</div></div></div>
-      <div class="frow fr2">${inp("fi_total","Monto total pactado",f.montoTotal,"number")}${inp("fi_adel","Adelanto abonado",f.adelanto,"number")}</div>
+      <div class="frow fr2"><div class="field"><label>Moneda del precio</label><select id="fi_mon" onchange="finAdelRecalc()"><option ${f.moneda==="USD"?"selected":""}>USD</option><option ${f.moneda==="ARS"?"selected":""}>ARS</option></select><div class="hint">Moneda en la que se cerró el precio</div></div><div class="field"><label>Estado de cobro (automático)</label><div style="padding:9px 12px;border:1px solid var(--line2);border-radius:8px;background:#f8fafc"><span class="badge ${FIN_COLOR[f.estadoCobro]||'b-grey'}">${finLabel(f.estadoCobro)}</span></div><div class="hint">Se calcula con los pagos del Plan de pagos</div></div></div>
+      <div class="frow fr2">${inp("fi_total","Monto total pactado",f.montoTotal,"number")}<div class="field"><label>Adelanto abonado</label><input id="fi_adel" type="number" value="${esc(f.adelanto)}" oninput="finAdelRecalc()"><div class="hint">En la moneda del precio. Si se cobró en pesos, indicá la moneda y el TC abajo.</div></div></div>
+      <div class="frow fr2"><div class="field"><label>Moneda en que se cobró el adelanto</label><select id="fi_adelMon" onchange="finAdelRecalc()"><option ${aMon==="USD"?"selected":""}>USD</option><option ${aMon==="ARS"?"selected":""}>ARS</option></select></div><div class="field" id="fi_adelTcBox" style="${aDistinta?'':'display:none'}"><label>Tipo de cambio (ARS por 1 USD)</label><input id="fi_adelTc" type="number" value="${esc(aTc)}" oninput="finAdelRecalc()"><div class="hint">Se cobró ≈ <b id="fi_adelEquiv">${aEquivIni}</b></div></div></div>
       <div class="frow fr2"><div class="field"><label>Saldo pendiente (automático)</label><input id="fi_saldo" value="${esc(f.saldo)}" disabled style="background:#f1f5f9;color:var(--muted)"><div class="hint">Monto total − adelanto. Para marcarlo pagado usá el <b>Plan de pagos</b> abajo.</div></div>${inp("fi_dev","Devolución (resultado negativo)",f.devolucion,"number")}</div>
       <div class="frow fr2">${inp("fi_fadel","Fecha pago adelanto",f.fechaAdelanto,"date")}${inp("fi_fsaldo","Fecha prevista saldo",f.fechaSaldo,"date")}</div>
       ${inp("fi_medio","Medio de pago",f.medioPago)}
@@ -1761,7 +2060,7 @@ function tabFinanzas(c){
       <button class="btn btn-primary" onclick="saveFinanzas()">Guardar finanzas</button>
     </div></div>
     <div class="card"><div class="card-h"><h3>Historial de pagos</h3><button class="btn btn-ghost btn-sm" onclick="addPago()">＋ Registrar otro pago</button></div>
-      <table><thead><tr><th>Fecha</th><th>Importe</th><th>Medio</th><th>Obs.</th><th></th></tr></thead><tbody>${pagos}</tbody></table></div>
+      <table><thead><tr><th>Fecha</th><th>Importe</th><th>Equivale (${f.moneda})</th><th>Medio</th><th>Obs.</th><th></th></tr></thead><tbody>${pagos}</tbody></table></div>
   </div>
   ${finPlanPagos(c)}
   ${finEstadoBlock(c)}
@@ -1796,18 +2095,33 @@ function finPlanPagos(c){
     ${saldo>0?fila('2','Saldo / diferencia',saldo,saldoPagado,f.fechaSaldoPago,f.medioSaldo, saldoPagado?`<button class="btn btn-ghost btn-sm" onclick="desmarcarSaldo()">Deshacer</button>`:`<button class="btn btn-primary btn-sm" onclick="marcarSaldoPagado()">✓ Registrar pago del saldo</button>`):'<div class="empty" style="padding:10px">Sin saldo: el adelanto cubre el total.</div>'}
   </div></div>`;
 }
-function marcarSaldoPagado(){ const c=CURRENT,f=c.finanzas; const saldo=saldoDe(c);
+function marcarSaldoPagado(){ const c=CURRENT,f=c.finanzas; const saldo=saldoDe(c); const otra=f.moneda==="USD"?"ARS":"USD";
   modal({title:"Registrar pago del saldo", size:"sm", body:`
-    <div class="alert alert-info"><span>💵</span><div>Vas a registrar el pago del <b>saldo / diferencia</b>: <b>${money(saldo,f.moneda)}</b></div></div>
+    <div class="alert alert-info"><span>💵</span><div>Saldo / diferencia pactado: <b>${money(saldo,f.moneda)}</b></div></div>
+    ${sel("sp_mon","Moneda en que se cobró",[f.moneda,otra],f.moneda)}
+    <div id="sp_tcbox" style="display:none">
+      <div class="frow fr2">${inp("sp_tc",`Tipo de cambio (ARS por 1 USD)`,"","number")}<div class="field"><label>Equivale a recibir</label><div id="sp_equiv" style="padding:9px 12px;border:1px solid var(--line2);border-radius:8px;background:#f8fafc;font-weight:600">—</div></div></div>
+    </div>
     <div class="frow fr2">${inp("sp_fec","Fecha del pago",new Date().toISOString().slice(0,10),"date")}${inp("sp_med","Medio de pago",f.medioPago||"")}</div>
     ${inp("sp_obs","Observaciones (opcional)","")}`,
     footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="confirmSaldoPagado()">Confirmar pago del saldo</button>`});
+  const rec=()=>{ const mon=val("sp_mon"), box=document.getElementById("sp_tcbox");
+    if(mon!==f.moneda){ box.style.display="block"; const tc=Number(val("sp_tc")||0);
+      // saldo está en la moneda del caso; si se cobró en la otra, importe = saldo * (o /) TC
+      let recibe="—"; if(tc>0){ recibe = f.moneda==="USD" ? money(saldo*tc,"ARS") : money(saldo/tc,"USD"); }
+      document.getElementById("sp_equiv").textContent=recibe;
+    } else box.style.display="none"; };
+  ["sp_mon","sp_tc"].forEach(id=>{ const el=document.getElementById(id); if(el){ el.addEventListener("input",rec); el.addEventListener("change",rec);} });
+  rec();
 }
-function confirmSaldoPagado(){ const c=CURRENT,f=c.finanzas; const saldo=saldoDe(c);
+function confirmSaldoPagado(){ const c=CURRENT,f=c.finanzas; const saldo=saldoDe(c); const mon=val("sp_mon");
+  if(mon!==f.moneda){ const tc=Number(val("sp_tc")||0); if(!(tc>0)){ toast("Cargá el tipo de cambio para registrar el saldo en "+mon,"err"); return; } f.monedaSaldo=mon; f.tcSaldo=tc; }
+  else { f.monedaSaldo=""; f.tcSaldo=""; }
   f.saldoPagado=true; f.fechaSaldoPago=val("sp_fec"); f.medioSaldo=val("sp_med");
   syncSaldo(c); recalcEstadoPago(c);
   const tot=Number(f.montoTotal||0); if(f.estadoCobro!=='vencido') f.estadoCobro = (tot>0 && cobradoDe(c)>=tot)?'cobrado_completo':'cobro_parcial';
-  finLog(c,"Pago del saldo registrado", money(saldo,f.moneda)+(f.medioSaldo?' · '+f.medioSaldo:'')+(val("sp_obs")?' · '+val("sp_obs"):''));
+  const det = f.monedaSaldo ? `${money(f.moneda==="USD"?saldo*f.tcSaldo:saldo/f.tcSaldo, f.monedaSaldo)} · TC ${Number(f.tcSaldo).toLocaleString("es-AR")} · ≈ ${money(saldo,f.moneda)}` : money(saldo,f.moneda);
+  finLog(c,"Pago del saldo registrado", det+(f.medioSaldo?' · '+f.medioSaldo:'')+(val("sp_obs")?' · '+val("sp_obs"):''));
   save(); closeModal(); toast("Saldo registrado como pagado ✓"); renderCaso();
 }
 function desmarcarSaldo(){ if(!confirm("¿Deshacer el pago del saldo?"))return; const c=CURRENT,f=c.finanzas; f.saldoPagado=false; syncSaldo(c); recalcEstadoPago(c); if(f.estadoCobro==='cobrado_completo')f.estadoCobro='cobro_parcial'; finLog(c,"Pago del saldo deshecho",""); save(); renderCaso(); }
@@ -1817,22 +2131,89 @@ function saveFinEstados(){ const c=CURRENT, f=c.finanzas; const soc=isSocio();
   if(soc){ f.estadoResultado=val("fe_res"); f.estadoDevolucion=val("fe_dev"); f.estadoLiquidacion=val("fe_liq"); }
   finLog(c,"Estado financiero actualizado",`cobro: ${finLabel(f.estadoCobro)}${soc?` · resultado: ${finLabel(f.estadoResultado)} · devolución: ${finLabel(f.estadoDevolucion)} · liquidación: ${finLabel(f.estadoLiquidacion)}`:''}`);
   save(); toast("Estado financiero guardado"); renderCaso(); }
+// Recalcula en vivo la moneda/TC del adelanto durante la carga inicial
+function finAdelRecalc(){
+  const caseMon=val("fi_mon"), box=document.getElementById("fi_adelTcBox");
+  if(!box) return;
+  const aMon=val("fi_adelMon");
+  if(aMon!==caseMon){ box.style.display="";
+    const tc=Number(val("fi_adelTc")||0), ade=Number(val("fi_adel")||0);
+    let rec="—"; if(tc>0 && ade>0){ rec = caseMon==="USD" ? money(ade*tc,"ARS") : money(ade/tc,"USD"); }
+    const el=document.getElementById("fi_adelEquiv"); if(el) el.textContent=rec;
+  } else { box.style.display="none"; }
+}
 function saveFinanzas(){ const c=CURRENT, f=c.finanzas;
   f.moneda=val("fi_mon"); f.montoTotal=val("fi_total"); f.adelanto=val("fi_adel"); f.devolucion=val("fi_dev"); f.fechaAdelanto=val("fi_fadel"); f.fechaSaldo=val("fi_fsaldo"); f.medioPago=val("fi_medio"); f.obs=val("fi_obs");
+  // moneda + TC del adelanto (carga inicial)
+  const aMon=val("fi_adelMon");
+  if(aMon && aMon!==f.moneda){ const aTc=Number(val("fi_adelTc")||0); if(Number(f.adelanto)>0 && !(aTc>0)){ toast("Cargá el tipo de cambio del adelanto cobrado en "+aMon,"err"); return; } f.monedaAdelanto=aMon; f.tcAdelanto=val("fi_adelTc"); }
+  else { f.monedaAdelanto=""; f.tcAdelanto=""; }
   const tot=Number(f.montoTotal||0), ade=Number(f.adelanto||0);
   f.saldo = f.montoTotal===""?"":Math.max(tot-ade,0);
   syncAdelanto(c); syncSaldo(c); recalcEstadoPago(c);
   finLog(c,"Condiciones económicas actualizadas",`total: ${money(f.montoTotal,f.moneda)} · adelanto: ${money(f.adelanto,f.moneda)} · saldo: ${money(f.saldo,f.moneda)}`);
   logAction(c,"Finanzas actualizadas"); save(); toast("Finanzas guardadas"); renderCaso(); }
 function addPago(){
+  const fm=CURRENT.finanzas.moneda;
   modal({title:"Registrar pago", size:"sm", body:`
-    <div class="frow fr2">${inp("pa_imp","Importe",CURRENT.finanzas.adelanto||"","number")}${sel("pa_mon","Moneda",["USD","ARS"],CURRENT.finanzas.moneda)}</div>
+    <div class="frow fr2">${inp("pa_imp","Importe",CURRENT.finanzas.adelanto||"","number")}${sel("pa_mon","Moneda del pago",["USD","ARS"],fm)}</div>
+    <div id="pa_tcbox" style="display:none">
+      <div class="frow fr2">${inp("pa_tc","Tipo de cambio (ARS por 1 USD)","","number")}<div class="field"><label>Equivale a</label><div id="pa_equiv" style="padding:9px 12px;border:1px solid var(--line2);border-radius:8px;background:#f8fafc;font-weight:600">—</div></div></div>
+      <div class="hint" style="margin:-4px 0 8px">El precio del caso está en <b>${fm}</b>. Cargá el TC del día y el sistema imputa el equivalente al total pactado.</div>
+    </div>
     <div class="frow fr2">${inp("pa_fec","Fecha",new Date().toISOString().slice(0,10),"date")}${inp("pa_med","Medio de pago",CURRENT.finanzas.medioPago)}</div>
     ${inp("pa_obs","Observaciones","")}`,
     footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePago()">Registrar</button>`});
+  const recompute=()=>{
+    const fmon=CURRENT.finanzas.moneda, mon=val("pa_mon"), box=document.getElementById("pa_tcbox");
+    if(mon!==fmon){ box.style.display="block";
+      const eq=pagoEnMonedaCaso({importe:val("pa_imp"),moneda:mon,tc:val("pa_tc")},fmon);
+      document.getElementById("pa_equiv").textContent = (Number(val("pa_tc"))>0 && Number(val("pa_imp"))>0)?money(eq,fmon):"—";
+    } else { box.style.display="none"; }
+  };
+  ["pa_mon","pa_imp","pa_tc"].forEach(id=>{ const el=document.getElementById(id); if(el){ el.addEventListener("input",recompute); el.addEventListener("change",recompute);} });
+  recompute();
 }
-function savePago(){ const imp=val("pa_imp"),mon=val("pa_mon"); CURRENT.pagos.push({id:uid("p"),importe:imp,moneda:mon,fecha:val("pa_fec"),medio:val("pa_med"),obs:val("pa_obs")}); recalcEstadoPago(CURRENT); finLog(CURRENT,"Pago recibido",money(imp,mon)+(val("pa_med")?` · ${val("pa_med")}`:'')); logAction(CURRENT,"Pago registrado: "+money(imp,mon)); save(); closeModal(); toast("Pago registrado"); renderCaso(); }
+function savePago(){ const imp=val("pa_imp"),mon=val("pa_mon"),fmon=CURRENT.finanzas.moneda;
+  const p={id:uid("p"),importe:imp,moneda:mon,fecha:val("pa_fec"),medio:val("pa_med"),obs:val("pa_obs")};
+  if(mon!==fmon){ const tc=val("pa_tc"); if(!(Number(tc)>0)){ toast("Cargá el tipo de cambio para imputar el pago en "+mon,"err"); return; } p.tc=tc; }
+  CURRENT.pagos.push(p); recalcEstadoPago(CURRENT);
+  const detalle=money(imp,mon)+(mon!==fmon?` · TC ${Number(p.tc).toLocaleString("es-AR")} · ≈ ${money(pagoEnMonedaCaso(p,fmon),fmon)}`:'')+(val("pa_med")?` · ${val("pa_med")}`:'');
+  finLog(CURRENT,"Pago recibido",detalle); logAction(CURRENT,"Pago registrado: "+money(imp,mon)); save(); closeModal(); toast("Pago registrado"); renderCaso(); }
 function delPago(id){ const p=(CURRENT.pagos||[]).find(x=>x.id===id); CURRENT.pagos=CURRENT.pagos.filter(x=>x.id!==id); if(p){ if(p.esSaldo)CURRENT.finanzas.saldoPagado=false; if(p.esAdelanto)CURRENT.finanzas.adelanto=""; finLog(CURRENT,"Pago eliminado",money(p.importe,p.moneda)); } recalcEstadoPago(CURRENT); save(); renderCaso(); }
+function editPago(id){
+  const p=(CURRENT.pagos||[]).find(x=>x.id===id); if(!p){ toast("Pago no encontrado","err"); return; }
+  const fm=CURRENT.finanzas.moneda; const tipo=p.esAdelanto?'Adelanto':p.esSaldo?'Saldo':'Pago';
+  modal({title:`Editar ${tipo.toLowerCase()}`, size:"sm", body:`
+    <div class="frow fr2">${inp("pe_imp","Importe",p.importe,"number")}${sel("pe_mon","Moneda del pago",["USD","ARS"],p.moneda||fm)}</div>
+    <div id="pe_tcbox" style="${(p.moneda||fm)!==fm?'':'display:none'}">
+      <div class="frow fr2">${inp("pe_tc","Tipo de cambio (ARS por 1 USD)",p.tc||"","number")}<div class="field"><label>Equivale a</label><div id="pe_equiv" style="padding:9px 12px;border:1px solid var(--line2);border-radius:8px;background:#f8fafc;font-weight:600">—</div></div></div>
+      <div class="hint" style="margin:-4px 0 8px">El precio del caso está en <b>${fm}</b>.</div>
+    </div>
+    <div class="frow fr2">${inp("pe_fec","Fecha",p.fecha,"date")}${inp("pe_med","Medio de pago",p.medio||"")}</div>
+    ${inp("pe_obs","Observaciones",p.obs||"")}
+    ${(p.esAdelanto||p.esSaldo)?`<div class="alert alert-info"><span>ℹ️</span><div>Es el <b>${tipo.toLowerCase()}</b>. Al guardar se ajustan automáticamente las condiciones del caso para que el saldo cuadre.</div></div>`:''}`,
+    footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePagoEdit('${id}')">Guardar cambios</button>`});
+  const rec=()=>{ const mon=val("pe_mon"), box=document.getElementById("pe_tcbox");
+    if(mon!==fm){ box.style.display="";
+      const eq=pagoEnMonedaCaso({importe:val("pe_imp"),moneda:mon,tc:val("pe_tc")},fm);
+      document.getElementById("pe_equiv").textContent=(Number(val("pe_tc"))>0&&Number(val("pe_imp"))>0)?money(eq,fm):"—";
+    } else box.style.display="none"; };
+  ["pe_mon","pe_imp","pe_tc"].forEach(id2=>{ const el=document.getElementById(id2); if(el){ el.addEventListener("input",rec); el.addEventListener("change",rec);} });
+  rec();
+}
+function savePagoEdit(id){
+  const c=CURRENT, f=c.finanzas, p=(c.pagos||[]).find(x=>x.id===id); if(!p) return;
+  const imp=val("pe_imp"), mon=val("pe_mon"), fm=f.moneda;
+  if(mon!==fm){ const tc=val("pe_tc"); if(!(Number(tc)>0)){ toast("Cargá el tipo de cambio para imputar el pago en "+mon,"err"); return; } p.tc=tc; } else { delete p.tc; }
+  p.importe=imp; p.moneda=mon; p.fecha=val("pe_fec"); p.medio=val("pe_med"); p.obs=val("pe_obs");
+  // mantener coherente el caso si es adelanto o saldo
+  if(p.esAdelanto){ const equiv=pagoEnMonedaCaso(p,fm); f.adelanto=equiv; f.fechaAdelanto=p.fecha; f.medioPago=p.medio||f.medioPago; f.monedaAdelanto=(mon!==fm?mon:""); f.tcAdelanto=(mon!==fm?p.tc:""); const tot=Number(f.montoTotal||0); f.saldo=f.montoTotal===""?"":Math.max(tot-Number(f.adelanto||0),0); }
+  if(p.esSaldo){ f.saldoPagado=true; f.fechaSaldoPago=p.fecha; f.medioSaldo=p.medio; f.monedaSaldo=(mon!==fm?mon:""); f.tcSaldo=(mon!==fm?p.tc:""); }
+  recalcEstadoPago(c);
+  finLog(c,"Pago editado",money(imp,mon)+(mon!==fm?` · TC ${Number(p.tc).toLocaleString("es-AR")} · ≈ ${money(pagoEnMonedaCaso(p,fm),fm)}`:''));
+  save(); closeModal(); toast("Pago actualizado"); renderCaso();
+}
 
 /* ---------- TAB: TAREAS ---------- */
 function tabTareas(c){
@@ -1871,7 +2252,9 @@ function tabObs(c){
 function previewDoc(tipo){
   const c=CURRENT; const v=validateDoc(c,tipo);
   if(!v.ok){ toast("Faltan datos obligatorios","err"); return; }
-  const html=buildDocHtml(c,tipo);
+  openDocPreview(tipo, buildDocHtml(c,tipo));
+}
+function openDocPreview(tipo, html){
   const tb=`<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;border-bottom:1px solid var(--line);padding-bottom:8px">
     <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plCmd('bold')"><b>N</b></button>
     <button type="button" class="btn btn-ghost btn-sm" onmousedown="event.preventDefault()" onclick="plCmd('italic')"><i>C</i></button>
@@ -2077,6 +2460,7 @@ function buildDocHtml(c,tipo){
   if(tipo==="contrato") return tplContrato(c);
   if(tipo==="carta_poder") return tplCartaPoder(c);
   if(tipo==="mediacion") return tplMediacion(c);
+  if(tipo==="informe") return tplInforme(c);
   return "";
 }
 /* ---- Editor de modelos (documentos madre) ---- */
@@ -2378,6 +2762,65 @@ ${c.cuenta.telVinc?`Teléfono vinculado: ${esc(c.cuenta.telVinc)}<br>`:""}
 ${c.cuenta.cuentasVinc?`Otras cuentas vinculadas: ${esc(c.cuenta.cuentasVinc)}`:""}</p>
 <p><b>SÍNTESIS DEL HECHO</b><br>${esc(sint).replace(/\n/g,"<br>")}</p>`;
 }
+/* ---------- INFORME DE REVISIÓN PARA META (post-audiencia) ---------- */
+function tplInforme(c){
+  const cl=c.cliente||{}, cu=c.cuenta||{}, re=c.relato||{}; const E=DB.config.estudio||{};
+  const ab=(DB.abogados||[]).find(a=>a.id===c.abogadoPatrocinante)||(DB.abogados||[])[0]||{};
+  const sint=(re.sintesis||re.original||"").trim();
+  const handle=cu.handle||(cu.url? cu.url.replace(/\/+$/,"").split("/").pop() : "—");
+  const motivo=re.mensaje?`“${esc(re.mensaje)}”`:"No fue informado de manera precisa por la plataforma.";
+  const adic=(Array.isArray(c.cuentasAfectadas)?c.cuentasAfectadas:[]).filter(q=>q.url||q.emailVinc);
+  const adicHtml = adic.length
+    ? adic.map((q,i)=>`<p style="margin:0 0 4pt"><b>Prioridad ${i+2} — ${esc(q.plataforma||'Instagram')}:</b><br>URL: ${esc(q.url||'—')}<br>Correo vinculado: ${esc(q.emailVinc||'—')}</p>`).join("")
+    : `<p>No se denuncian cuentas adicionales además de la principal.</p>`;
+  // documentación acompañada (lista automática de los adjuntos cargados, con su descripción)
+  const adjs=(c.adjuntos||[]);
+  const docsHtml = adjs.length
+    ? `<p>Se acompaña la siguiente documentación para su evaluación:</p>`+adjs.map((a,i)=>`<p style="margin:0 0 2pt">${i+1}. ${esc(a.desc||a.tipo||"Documento")}${a.nombre?` <span style="color:#555">— ${esc(a.nombre)}</span>`:""}</p>`).join("")
+    : `<p>Se acompañará la documentación respaldatoria disponible (capturas de la suspensión, correos de Meta, constancias de apelación y documentación de identidad).</p>`;
+  const apelo = re.apelo ? "SÍ — el titular presentó apelación mediante las herramientas oficiales de la plataforma." : "No consta presentación de apelación previa por las vías de la plataforma.";
+  const resp = re.recibioResp ? " El titular recibió comunicaciones de la plataforma en el marco de dicha gestión." : "";
+  return docHead()+`
+<h1>SOLICITUD DE REVISIÓN Y REHABILITACIÓN DE CUENTAS</h1>
+<h2>META PLATFORMS, INC.</h2>
+<p style="text-align:center"><b>Presentada por:</b> ${esc(E.nombre||"GMJ LEGAL PARTNERS")} &nbsp;·&nbsp; <b>Abogado interviniente:</b> ${esc(ab.nombre||"—")}<br><b>Procedimiento:</b> Solicitud de revisión humana de cuenta suspendida</p>
+
+<h2>I. OBJETO</h2>
+<p>Por medio del presente se solicita la revisión manual y rehabilitación de las cuentas detalladas a continuación, pertenecientes al titular identificado en este informe, en virtud de la medida de suspensión, inhabilitación, restricción o desactivación aplicada por META PLATFORMS, INC. Asimismo, se acompaña la documentación respaldatoria disponible y se exponen los antecedentes relevantes para permitir una adecuada evaluación del caso por parte de los equipos especializados de META.</p>
+
+<h2>II. CUENTA PRINCIPAL AFECTADA</h2>
+<p>URL de la cuenta de ${esc(cu.plataforma||"Instagram")}: ${esc(cu.url||"—")}<br>
+Nombre de usuario (@): ${esc(handle)}<br>
+Correo electrónico asociado: ${esc(cu.emailVinc||"—")}<br>
+Fecha aproximada de suspensión: ${re.fechaSusp?esc(fdate(re.fechaSusp)):"—"}<br>
+Motivo informado por la plataforma: ${motivo}</p>
+
+<h2>III. CUENTAS ADICIONALES AFECTADAS (en orden de prioridad de recuperación)</h2>
+${adicHtml}
+
+<h2>IV. DATOS DEL TITULAR</h2>
+<p>Nombre y apellido: ${esc(cl.nombre||"")} ${esc(cl.apellido||"")}<br>
+DNI / Documento de identidad: ${esc(cl.dni||"—")}<br>
+Correo electrónico principal: ${esc(cl.email||cu.emailVinc||"—")}<br>
+Domicilio: ${esc(cl.domicilio||"—")}${cl.localidad?` (${esc(cl.localidad)}${cl.provincia?", "+esc(cl.provincia):""}${cl.nacionalidad?", "+esc(cl.nacionalidad):""})`:""}</p>
+
+<h2>V. SÍNTESIS DEL CASO</h2>
+${sint?esc(sint).split(/\n{2,}/).map(p=>`<p>${p.replace(/\n/g,"<br>")}</p>`).join(""):`<p>—</p>`}
+
+<h2>VI. APELACIONES Y GESTIONES PREVIAS</h2>
+<p>${apelo}${resp}</p>
+
+<h2>VII. DOCUMENTACIÓN Y ANTECEDENTES ACOMPAÑADOS</h2>
+${docsHtml}
+
+<h2>VIII. ACREDITACIÓN DE IDENTIDAD</h2>
+<p>Se acompaña el Documento Nacional de Identidad del titular${cl.dni?` (DNI ${esc(cl.dni)})`:""}, a efectos de acreditar la titularidad legítima de las cuentas individualizadas en el presente.</p>
+
+<h2>IX. SOLICITUD</h2>
+<p>En atención a los antecedentes expuestos, se solicita respetuosamente a META PLATFORMS, INC. que proceda a efectuar una revisión humana e integral del caso, verificando la titularidad de las cuentas involucradas y la procedencia de la medida aplicada. Asimismo, se solicita que, de corresponder, se disponga la rehabilitación y restitución del acceso a las cuentas identificadas en el presente informe.</p>
+<p>Se deja constancia de que toda la información aportada ha sido suministrada por el titular de las cuentas y/o surge de la documentación acompañada. El titular manifiesta su plena disposición para aportar cualquier información adicional que resulte necesaria.</p>
+<div class="sig"><div><br><br>_______________________<br><b>${esc(ab.nombre||"—")}</b><br>Abogado/a · ${esc(ab.matricula||"")} ${ab.tomo?`T° ${esc(ab.tomo)} F° ${esc(ab.folio||"")}`:""}<br>${esc(E.nombre||"GMJ LEGAL PARTNERS")}</div></div>`;
+}
 
 /* ---------- SEND BY MAIL (mailto) ---------- */
 function sendByMail(what){
@@ -2430,39 +2873,47 @@ function paintForm(token,c,submitFn){
         <h1 style="color:var(--navy);font-size:22px">Formulario de relevamiento</h1>
         <p style="color:var(--muted);font-size:13px">GMJ Legal Partners · Rehabilitación de cuentas digitales</p></div>
       <div class="card"><div class="card-b">
-        <div class="section-title">A. Datos de la cuenta afectada</div>
-        ${inp("cf_url","URL completa de la cuenta",cu.url)}
-        <div class="frow fr2">${inp("cf_em","Email vinculado a la cuenta",cu.emailVinc)}${inp("cf_tel","Teléfono vinculado",cu.telVinc)}</div>
-        ${sel("cf_tipo","Tipo de cuenta",["",...TIPO_CUENTA],cu.tipo)}
-        <div class="check" style="margin:8px 0"><input type="checkbox" id="cf_fbsusp" ${cu.fbSusp?'checked':''} onchange="fbToggleReq()"><label for="cf_fbsusp" style="margin:0;font-weight:500">La cuenta de Facebook vinculada también fue suspendida</label></div>
-        <div class="field"><label>URL de la cuenta de Facebook vinculada <span id="cf_fburl_req" class="req" style="display:${cu.fbSusp?'inline':'none'}">*</span></label><input id="cf_fburl" type="text" value="${esc(cu.fbUrl||'')}"><div class="hint">En caso de no tener Facebook, o de que el mismo NO se encuentre inhabilitado, dejá este campo en blanco.</div></div>
+        <div class="section-title">A. Cuenta principal afectada (la más importante a recuperar)</div>
+        <div class="frow fr2"><div class="field"><label>URL completa de la cuenta <span class="req">*</span></label><input id="cf_url" type="text" value="${esc(cu.url||'')}" placeholder="https://www.instagram.com/usuario"><div class="hint">Obligatorio. Pegá el link completo del perfil.</div></div>${selR("cf_plat","Plataforma",["Instagram","Facebook","Otra"],cu.plataforma||"Instagram")}</div>
+        <div class="frow fr2"><div class="field"><label>Cuenta (usuario con @) <span class="req">*</span></label><input id="cf_handle" type="text" value="${esc(cu.handle||'')}" placeholder="@usuario"><div class="hint">El nombre de usuario, siempre con arroba. Ej: @gong.om_argentina</div></div>${inpR("cf_em","Email vinculado a la cuenta",cu.emailVinc)}</div>
+        <div class="frow fr2">${inp("cf_tel","Teléfono vinculado",cu.telVinc)}${sel("cf_tipo","Tipo de cuenta",["",...TIPO_CUENTA],cu.tipo)}</div>
         <div class="frow fr2">${chk("cf_pauta","Tenía pauta publicitaria activa",cu.pautaActiva)}${chk("cf_saldo","Había saldo retenido / fondos de anuncios",cu.saldoRetenido)}</div>
         <div class="frow fr2">${chk("cf_bm","Vinculada a Meta Business Manager",cu.businessManager)}${chk("cf_camp","Tenía campañas activas al bloqueo",cu.campanasActivas)}</div>
 
+        <div class="section-title">A.2 Otras cuentas inhabilitadas (en orden de prioridad de recuperación)</div>
+        <div class="alert alert-info"><span>📋</span><div>Enumerá <b>todas</b> las cuentas de Instagram y Facebook que estén inhabilitadas. La de arriba es la <b>prioridad 1</b>. Acá agregá las demás, de mayor a menor importancia, con su URL y el mail vinculado.</div></div>
+        <div id="cf_cuentas_list"></div>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="formAddCuenta()" style="margin-top:6px">＋ Agregar otra cuenta</button>
+
         <div class="section-title">B. Datos del titular</div>
-        <div class="frow fr2">${inp("cf_ap","Apellido",cl.apellido)}${inp("cf_no","Nombre",cl.nombre)}</div>
-        <div class="frow fr2">${inp("cf_dni","DNI",cl.dni)}${inp("cf_cuit","CUIT / CUIL",cl.cuit)}</div>
-        <div class="frow fr2">${inp("cf_nac","Nacionalidad",cl.nacionalidad)}${inp("cf_fnac","Fecha de nacimiento",cl.fechaNac,"date")}</div>
+        <div class="frow fr2">${inpR("cf_ap","Apellido",cl.apellido)}${inpR("cf_no","Nombre",cl.nombre)}</div>
+        <div class="frow fr2">${inpR("cf_dni","DNI",cl.dni)}${inpR("cf_cuit","CUIT / CUIL",cl.cuit)}</div>
+        <div class="frow fr2">${inpR("cf_nac","Nacionalidad",cl.nacionalidad)}${inp("cf_fnac","Fecha de nacimiento",cl.fechaNac,"date")}</div>
         <div class="frow fr2">${sel("cf_ec","Estado civil",["","Soltero/a","Casado/a","Divorciado/a","Viudo/a","Unión convivencial"],cl.estadoCivil)}${inp("cf_con","Cónyuge (si corresponde)",cl.conyuge)}</div>
-        ${inp("cf_dom","Domicilio completo",cl.domicilio)}
-        <div class="frow fr3">${inp("cf_loc","Localidad",cl.localidad)}${inp("cf_prov","Provincia",cl.provincia)}${inp("cf_cp","Código postal",cl.cp)}</div>
-        <div class="frow fr2">${inp("cf_celular","Teléfono celular",cl.tel)}${inp("cf_email","Email de contacto",cl.email)}</div>
+        ${inpR("cf_dom","Domicilio completo",cl.domicilio)}
+        <div class="frow fr3">${inpR("cf_loc","Localidad",cl.localidad)}${inpR("cf_prov","Provincia",cl.provincia)}${inp("cf_cp","Código postal",cl.cp)}</div>
+        <div class="frow fr2">${inpR("cf_celular","Teléfono celular",cl.tel)}${inpR("cf_email","Email de contacto",cl.email)}</div>
 
         <div class="section-title">C. Relato de los hechos</div>
-        <div class="frow fr2">${inp("cf_fs","Fecha aprox. de suspensión",re.fechaSusp,"date")}${sel("cf_ts","Tipo de suspensión",["","Temporal","Definitiva"],re.tipoSusp)}</div>
+        <div class="frow fr2">${inpR("cf_fs","Fecha aprox. de suspensión",re.fechaSusp,"date")}${selR("cf_ts","Tipo de suspensión",["","Temporal","Definitiva"],re.tipoSusp)}</div>
         ${inp("cf_msg","¿Qué mensaje mostró Meta/IG/FB?",re.mensaje)}
         <div class="frow fr2">${chk("cf_apelo","Pude apelar",re.apelo)}${chk("cf_resp","Recibí respuestas de la plataforma",re.recibioResp)}</div>
         <div class="frow fr2">${chk("cf_hack","Hubo hackeo / accesos desconocidos",re.hackeo)}${chk("cf_volvio","La cuenta volvió a ser suspendida",re.volvioSusp)}</div>
-        <div class="field"><label>Relato libre: contanos qué pasó</label><textarea id="cf_orig" rows="5">${esc(re.original)}</textarea></div>
+        <div class="field"><label>Relato libre: contanos qué pasó <span class="req">*</span></label><textarea id="cf_orig" rows="5">${esc(re.original)}</textarea></div>
 
         <div class="section-title">D. Documentación (adjuntar archivos)</div>
-        <div class="alert alert-info"><span>📎</span><div>Los tres primeros son <b>obligatorios</b>. Podés subir fotos o PDF.</div></div>
+        <div class="alert alert-info"><span>📎</span><div>Los tres primeros son <b>obligatorios</b>. Para cada archivo adicional, escribí una <b>descripción</b> (también obligatoria). Podés subir fotos o PDF.</div></div>
         <div class="frow fr3">
           <div class="field"><label>DNI frente <span class="req">*</span></label><input type="file" id="cf_f_dnif" accept="image/*,.pdf"></div>
           <div class="field"><label>DNI dorso <span class="req">*</span></label><input type="file" id="cf_f_dnid" accept="image/*,.pdf"></div>
           <div class="field"><label>Comprobante de pago <span class="req">*</span></label><input type="file" id="cf_f_pago" accept="image/*,.pdf"></div>
         </div>
-        <div class="field"><label>Otros documentos / pruebas adicionales (podés seleccionar varios)</label><input type="file" id="cf_f_otros" accept="image/*,.pdf" multiple><div class="hint">Capturas de la suspensión, correos de Meta, apelaciones, comprobantes de pauta, conversaciones, etc.</div></div>
+        <div class="field"><label>Otros documentos / pruebas adicionales</label>
+          <input type="file" id="cf_f_otros" accept="image/*,.pdf" multiple style="display:none" onchange="formOtrosAdd()">
+          <div><button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('cf_f_otros').click()">＋ Agregar archivo</button></div>
+          <div class="hint">Sumá los archivos <b>de a uno</b> (o varios a la vez). Cada uno necesita una <b>descripción</b>. Podés seguir agregando sin perder los anteriores. Ej: capturas de la suspensión, correos de Meta, apelaciones, comprobantes, conversaciones.</div>
+        </div>
+        <div id="cf_otros_list"></div>
 
         <div style="margin-top:22px;display:flex;justify-content:center">
           <button class="btn btn-primary" style="padding:12px 30px;font-size:15px" onclick="${submitFn}('${token}')">Enviar formulario</button>
@@ -2471,14 +2922,62 @@ function paintForm(token,c,submitFn){
       <p style="text-align:center;color:var(--muted);font-size:12px;margin-top:16px">Los datos se utilizan exclusivamente para la gestión de su caso.</p>
     </div>
   </div>`;
+  formInitCuentas(c);
+  formOtrosReset();
 }
-function fbToggleReq(){ const s=document.getElementById("cf_fburl_req"); if(s) s.style.display=chkVal("cf_fbsusp")?"inline":"none"; }
+/* ---- Lista dinámica de cuentas afectadas (form + caso) ---- */
+let FORM_CUENTAS=[];
+function formInitCuentas(c){ FORM_CUENTAS=(c&&Array.isArray(c.cuentasAfectadas))?JSON.parse(JSON.stringify(c.cuentasAfectadas)):[]; formRenderCuentas(); }
+function cuentasListHtml(){
+  if(!FORM_CUENTAS.length) return `<div class="empty" style="padding:10px">Sin otras cuentas cargadas. Si solo hay una, dejá esto vacío.</div>`;
+  return FORM_CUENTAS.map((q,i)=>`<div class="card" style="margin-bottom:8px"><div class="card-b" style="padding:12px 14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <b style="color:var(--navy)">Prioridad ${i+2}</b>
+      <div style="display:flex;gap:4px">
+        <button type="button" class="btn btn-ghost btn-sm" onclick="formMoveCuenta(${i},-1)" ${i===0?'disabled':''} title="Subir prioridad">▲</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="formMoveCuenta(${i},1)" ${i===FORM_CUENTAS.length-1?'disabled':''} title="Bajar prioridad">▼</button>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="formDelCuenta(${i})" title="Quitar">✕</button>
+      </div>
+    </div>
+    <div class="frow fr3">
+      <div class="field"><label>Plataforma</label><select onchange="FORM_CUENTAS[${i}].plataforma=this.value"><option ${q.plataforma==='Instagram'?'selected':''}>Instagram</option><option ${q.plataforma==='Facebook'?'selected':''}>Facebook</option></select></div>
+      <div class="field"><label>URL de la cuenta</label><input type="text" value="${esc(q.url||'')}" oninput="FORM_CUENTAS[${i}].url=this.value" placeholder="https://..."></div>
+      <div class="field"><label>Mail vinculado</label><input type="text" value="${esc(q.emailVinc||'')}" oninput="FORM_CUENTAS[${i}].emailVinc=this.value"></div>
+    </div>
+  </div></div>`).join("");
+}
+function formRenderCuentas(){
+  const box=document.getElementById("cf_cuentas_list"); if(box) box.innerHTML=cuentasListHtml();
+}
+function formAddCuenta(){ FORM_CUENTAS.push({plataforma:"Instagram",url:"",emailVinc:""}); formRenderCuentas(); }
+function formDelCuenta(i){ FORM_CUENTAS.splice(i,1); formRenderCuentas(); }
+function formMoveCuenta(i,d){ const j=i+d; if(j<0||j>=FORM_CUENTAS.length)return; const t=FORM_CUENTAS[i]; FORM_CUENTAS[i]=FORM_CUENTAS[j]; FORM_CUENTAS[j]=t; formRenderCuentas(); }
+function formCuentasLimpias(){ return FORM_CUENTAS.map(q=>({plataforma:q.plataforma||"Instagram",url:(q.url||"").trim(),emailVinc:(q.emailVinc||"").trim()})).filter(q=>q.url||q.emailVinc); }
+function normHandle(v){ v=(v||"").trim(); if(v && !v.startsWith("@")) v="@"+v; return v; }
+/* ---- Otros archivos: lista acumulativa (se agregan de a uno sin perder los previos) ---- */
+let FORM_OTROS=[];
+function formOtrosReset(){ FORM_OTROS=[]; formOtrosRender(); }
+function formOtrosAdd(){ const el=document.getElementById("cf_f_otros"); if(!el||!el.files) return; for(const f of el.files){ FORM_OTROS.push({file:f,desc:""}); } el.value=""; formOtrosRender(); }
+function formOtrosDel(i){ FORM_OTROS.splice(i,1); formOtrosRender(); }
+function formOtrosRender(){
+  const box=document.getElementById("cf_otros_list"); if(!box) return;
+  if(!FORM_OTROS.length){ box.innerHTML=`<div class="empty" style="padding:8px">Sin archivos adicionales todavía.</div>`; return; }
+  box.innerHTML=FORM_OTROS.map((o,i)=>`<div class="card" style="margin-bottom:6px"><div class="card-b" style="padding:10px 12px;display:flex;gap:10px;align-items:center">
+     <div style="font-size:20px;flex-shrink:0">${/\.pdf$/i.test(o.file.name)?'📄':'🖼'}</div>
+     <div style="flex:1;min-width:0">
+       <div style="font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(o.file.name)}</div>
+       <input type="text" value="${esc(o.desc||'')}" oninput="FORM_OTROS[${i}].desc=this.value" placeholder="Descripción (ej: Captura de la suspensión) *" style="margin-top:4px;width:100%">
+     </div>
+     <button type="button" class="btn btn-ghost btn-sm" onclick="formOtrosDel(${i})" title="Quitar" style="flex-shrink:0">✕</button>
+   </div></div>`).join("");
+}
+function formOtrosSinDesc(){ return FORM_OTROS.filter(o=>!String(o.desc||"").trim()).map(o=>o.file.name); }
 function submitClientForm(token){
   const c=DB.casos.find(x=>x.formToken===token); if(!c) return;
   const cl=c.cliente, cu=c.cuenta, re=c.relato;
-  if(chkVal("cf_fbsusp") && !val("cf_fburl").trim()){ toast("Si la cuenta de Facebook también fue suspendida, completá su URL","err"); return; }
-  cu.url=val("cf_url"); cu.emailVinc=val("cf_em"); cu.telVinc=val("cf_tel"); cu.tipo=val("cf_tipo");
-  cu.fbSusp=chkVal("cf_fbsusp"); cu.fbUrl=val("cf_fburl");
+  const miss=formMissing(FORM_REQ); if(miss.length){ formFocusMissing(miss); return; }
+  cu.url=val("cf_url"); cu.plataforma=val("cf_plat"); cu.handle=normHandle(val("cf_handle")); cu.emailVinc=val("cf_em"); cu.telVinc=val("cf_tel"); cu.tipo=val("cf_tipo");
+  c.cuentasAfectadas=formCuentasLimpias();
   cu.pautaActiva=chkVal("cf_pauta"); cu.saldoRetenido=chkVal("cf_saldo"); cu.businessManager=chkVal("cf_bm"); cu.campanasActivas=chkVal("cf_camp");
   cl.apellido=val("cf_ap").toUpperCase(); cl.nombre=val("cf_no"); cl.dni=val("cf_dni"); cl.cuit=val("cf_cuit"); cl.nacionalidad=val("cf_nac"); cl.fechaNac=val("cf_fnac");
   cl.estadoCivil=val("cf_ec"); cl.conyuge=val("cf_con"); cl.domicilio=val("cf_dom"); cl.localidad=val("cf_loc"); cl.provincia=val("cf_prov"); cl.cp=val("cf_cp"); cl.tel=val("cf_celular"); cl.email=val("cf_email");
@@ -2494,9 +2993,11 @@ function submitClientForm(token){
   if(!tiene(fDniD)&&!yaTengo("DNI dorso")) faltan.push("DNI dorso");
   if(!tiene(fPago)&&!yaTengo("Comprobante de pago")) faltan.push("Comprobante de pago");
   if(faltan.length){ toast("Faltan adjuntos obligatorios: "+faltan.join(", "),"err"); return; }
-  const addFile=(el,tipo)=>{ if(tiene(el)){ c.adjuntos=c.adjuntos.filter(a=>a.tipo!==tipo); c.adjuntos.push({tipo,nombre:el.files[0].name,fecha:hoy}); } };
+  // descripción obligatoria por cada archivo adicional
+  const sinDesc=formOtrosSinDesc(); if(sinDesc.length){ toast("Poné una descripción para cada archivo adicional: "+sinDesc.join(", "),"err"); return; }
+  const addFile=(el,tipo)=>{ if(tiene(el)){ c.adjuntos=c.adjuntos.filter(a=>a.tipo!==tipo); c.adjuntos.push({tipo,nombre:el.files[0].name,desc:tipo,fecha:hoy}); } };
   addFile(fDniF,"DNI frente"); addFile(fDniD,"DNI dorso"); addFile(fPago,"Comprobante de pago");
-  if(tiene(fOtros)){ for(const f of fOtros.files){ c.adjuntos.push({tipo:"Otra documentación",nombre:f.name,fecha:hoy}); } }
+  FORM_OTROS.forEach(o=>{ c.adjuntos.push({tipo:"Otra documentación",nombre:o.file.name,desc:String(o.desc||"").trim(),fecha:hoy}); });
   // auto: crear drive + gastos default si faltan
   if(!c.drive.creada){ c.drive.creada=true; c.drive.link="https://drive.google.com/drive/folders/"+uid("")+uid(""); }
   if(!c.gastos||!c.gastos.length){ c.gastos=GASTOS_DEFAULT.map(n=>({id:uid("g"),nombre:n,estado:"pendiente",importe:"",moneda:"ARS",fecha:"",medio:"",obs:"",adjunto:""})); }
@@ -2509,18 +3010,22 @@ function submitClientForm(token){
 function backToApp(){ location.hash=""; document.getElementById("formRoot").classList.add("hidden"); if(SESSION){document.getElementById("app").classList.remove("hidden"); go("caso", DB.casos.find(c=>c.estado).id||"");} else {document.getElementById("login").classList.remove("hidden");} }
 function formSuccess(){ document.getElementById("formRoot").innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f1f5f9"><div class="card" style="max-width:460px;text-align:center"><div class="card-b" style="padding:46px"><div style="font-size:48px">✅</div><h2 style="color:var(--navy);margin:14px 0 8px">¡Formulario enviado!</h2><p style="color:var(--muted)">Gracias. El estudio ya recibió tus datos y documentación. Nos pondremos en contacto a la brevedad.</p></div></div></div>`; }
 async function submitClientFormCloud(token){
+  const miss=formMissing(FORM_REQ); if(miss.length){ formFocusMissing(miss); return; }
   const cliente={apellido:val("cf_ap").toUpperCase(),nombre:val("cf_no"),dni:val("cf_dni"),cuit:val("cf_cuit"),nacionalidad:val("cf_nac"),fechaNac:val("cf_fnac"),estadoCivil:val("cf_ec"),conyuge:val("cf_con"),domicilio:val("cf_dom"),localidad:val("cf_loc"),provincia:val("cf_prov"),cp:val("cf_cp"),tel:val("cf_celular"),email:val("cf_email")};
-  if(chkVal("cf_fbsusp") && !val("cf_fburl").trim()){ toast("Si la cuenta de Facebook también fue suspendida, completá su URL","err"); return; }
-  const cuenta={url:val("cf_url"),emailVinc:val("cf_em"),telVinc:val("cf_tel"),tipo:val("cf_tipo"),pautaActiva:chkVal("cf_pauta"),saldoRetenido:chkVal("cf_saldo"),businessManager:chkVal("cf_bm"),campanasActivas:chkVal("cf_camp"),fbSusp:chkVal("cf_fbsusp"),fbUrl:val("cf_fburl")};
+  const cuenta={url:val("cf_url"),plataforma:val("cf_plat"),handle:normHandle(val("cf_handle")),emailVinc:val("cf_em"),telVinc:val("cf_tel"),tipo:val("cf_tipo"),pautaActiva:chkVal("cf_pauta"),saldoRetenido:chkVal("cf_saldo"),businessManager:chkVal("cf_bm"),campanasActivas:chkVal("cf_camp")};
+  const cuentasAfectadas=formCuentasLimpias();
   const relato={fechaSusp:val("cf_fs"),tipoSusp:val("cf_ts"),mensaje:val("cf_msg"),apelo:chkVal("cf_apelo"),recibioResp:chkVal("cf_resp"),hackeo:chkVal("cf_hack"),volvioSusp:chkVal("cf_volvio"),original:val("cf_orig")};
   const fe=id=>document.getElementById(id); const tiene=el=>el&&el.files&&el.files.length>0;
   const faltan=[]; if(!tiene(fe("cf_f_dnif")))faltan.push("DNI frente"); if(!tiene(fe("cf_f_dnid")))faltan.push("DNI dorso"); if(!tiene(fe("cf_f_pago")))faltan.push("Comprobante de pago");
   if(faltan.length){ toast("Faltan adjuntos obligatorios: "+faltan.join(", "),"err"); return; }
+  // descripción obligatoria por cada archivo adicional
+  const sinDesc=formOtrosSinDesc(); if(sinDesc.length){ toast("Poné una descripción para cada archivo adicional: "+sinDesc.join(", "),"err"); return; }
   const adjuntos=[]; const jobs=[];
-  const addJob=(el,t)=>{ if(tiene(el)) for(const f of el.files){ adjuntos.push({tipo:t,nombre:f.name}); jobs.push({tipo:t,file:f}); } };
-  addJob(fe("cf_f_dnif"),"DNI frente"); addJob(fe("cf_f_dnid"),"DNI dorso"); addJob(fe("cf_f_pago"),"Comprobante de pago"); addJob(fe("cf_f_otros"),"Otra documentación");
+  const addJob=(el,t)=>{ if(tiene(el)) for(const f of el.files){ adjuntos.push({tipo:t,nombre:f.name,desc:t}); jobs.push({tipo:t,file:f}); } };
+  addJob(fe("cf_f_dnif"),"DNI frente"); addJob(fe("cf_f_dnid"),"DNI dorso"); addJob(fe("cf_f_pago"),"Comprobante de pago");
+  FORM_OTROS.forEach(o=>{ const d=String(o.desc||"").trim(); adjuntos.push({tipo:"Otra documentación",nombre:o.file.name,desc:d}); jobs.push({tipo:"Otra documentación",file:o.file}); });
   try{
-    const r=await fetch(FUNCTIONS_URL+"/public-form",{method:"POST",headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({token,cliente,cuenta,relato,adjuntos})});
+    const r=await fetch(FUNCTIONS_URL+"/public-form",{method:"POST",headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({token,cliente,cuenta,cuentasAfectadas,relato,adjuntos})});
     const j=await r.json();
     if(!j.ok){ toast("No se pudo enviar el formulario","err"); return; }
     // subir archivos reales a Google Drive (crea la carpeta del cliente si no existe)
@@ -2577,13 +3082,15 @@ function allGastos(){
 }
 function calcFinanzasGlobal(){
   const z=()=>({USD:0,ARS:0}); const cur=m=>(m==="ARS"?"ARS":"USD");
-  const a={pendCobro:z(),pendDev:z(),pendGasto:z(),pendLiq:z(),cobrado:z(),gastosPag:z(),devRealizada:z(),fxOut:z(),fxIn:z(),liquidado:z(),reservaDev:z()};
+  const a={pendCobro:z(),pendDev:z(),pendGasto:z(),pendLiq:z(),cobrado:z(),cobradoReal:z(),gastosPag:z(),devRealizada:z(),fxOut:z(),fxIn:z(),liquidado:z(),reservaDev:z()};
   // liquidado por caso (suma de repartos)
   const liqByCaso={};
   (DB.liquidaciones||[]).forEach(l=>{ const m=cur(l.moneda); const dist=(l.reparto||[]).reduce((s,r)=>s+Number(r.monto||0),0); a.liquidado[m]+=dist; liqByCaso[l.caso_id]=(liqByCaso[l.caso_id]||0)+dist; });
   casosActivos().forEach(c=>{
     const f=c.finanzas||{}; const m=cur(f.moneda); const cob=cobradoDe(c); const dev=Number(f.devolucion||0);
-    a.cobrado[m]+=cob;
+    a.cobrado[m]+=cob; // cobrado medido en la moneda PACTADA (para facturación)
+    // caja REAL: el efectivo entra en la moneda en que efectivamente se pagó
+    (c.pagos||[]).forEach(p=>{ a.cobradoReal[cur(p.moneda)] += Number(p.importe||0); });
     // ¿la devolución pactada está "en stand by"? (cobrada pero podríamos tener que devolverla)
     // Se reserva mientras el caso no se resolvió favorable y la devolución no se realizó/canceló.
     const devEnStandBy = dev>0 && f.estadoResultado!=='favorable' && !['realizada_dev','cancelada_dev'].includes(f.estadoDevolucion);
@@ -2601,10 +3108,10 @@ function calcFinanzasGlobal(){
   // gastos generales del estudio (no atados a un caso)
   (DB.gastosGen||[]).forEach(g=>{ const gm=cur(g.moneda); const imp=Number(g.importe||0); if(!imp)return; if(g.estado==='pendiente') a.pendGasto[gm]+=imp; else a.gastosPag[gm]+=imp; });
   (DB.cambios||[]).forEach(x=>{ const mo=cur(x.moneda_origen), md=cur(x.moneda_destino); a.fxOut[mo]+=Number(x.monto_origen||0); a.fxIn[md]+=Number(x.monto_destino||0); });
-  // caja bruta (toda la plata que entró menos lo que salió)
+  // caja bruta (toda la plata REAL que entró menos lo que salió, por moneda efectiva)
   a.cajaBruta={
-    USD: a.cobrado.USD - a.gastosPag.USD - a.devRealizada.USD - a.fxOut.USD + a.fxIn.USD - a.liquidado.USD,
-    ARS: a.cobrado.ARS - a.gastosPag.ARS - a.devRealizada.ARS - a.fxOut.ARS + a.fxIn.ARS - a.liquidado.ARS
+    USD: a.cobradoReal.USD - a.gastosPag.USD - a.devRealizada.USD - a.fxOut.USD + a.fxIn.USD - a.liquidado.USD,
+    ARS: a.cobradoReal.ARS - a.gastosPag.ARS - a.devRealizada.ARS - a.fxOut.ARS + a.fxIn.ARS - a.liquidado.ARS
   };
   // caja DISPONIBLE real del estudio = bruta menos lo reservado por posibles devoluciones (stand by)
   a.caja={ USD: a.cajaBruta.USD - a.reservaDev.USD, ARS: a.cajaBruta.ARS - a.reservaDev.ARS };
@@ -2672,7 +3179,7 @@ function finLiqBlock(c){
 /* ---------- GASTOS GENERALES DEL ESTUDIO (solo socios) ---------- */
 async function gastoGenUpsert(g,isNew){
   if(CLOUD){
-    const row={id:g.id,fecha:g.fecha||null,concepto:g.concepto||null,moneda:g.moneda||"ARS",importe:Number(g.importe||0),estado:g.estado||"abonado",medio:g.medio||null,cambio_id:g.cambio_id||null,obs:g.obs||null,comprobante:g.comprobante||null,usuario:g.usuario};
+    const row={id:g.id,fecha:g.fecha||null,concepto:g.concepto||null,categoria:g.categoria||null,socio:g.socio||null,moneda:g.moneda||"ARS",importe:Number(g.importe||0),estado:g.estado||"abonado",medio:g.medio||null,cambio_id:g.cambio_id||null,obs:g.obs||null,comprobante:g.comprobante||null,usuario:g.usuario};
     const ins=isNew===true || !(DB.gastosGen||[]).some(x=>x.id===g.id);
     let res; if(ins) res=await sb.from("gastos_generales").insert(row).select().maybeSingle(); else res=await sb.from("gastos_generales").update(row).eq("id",g.id).select().maybeSingle();
     if(res.error){ console.error("gastoGenUpsert",res.error); toast("Error al guardar el gasto: "+res.error.message,"err"); return null; } return res.data;
@@ -2683,25 +3190,31 @@ function gastoGenModal(id){
   const editing=!!id; const g=editing?(DB.gastosGen||[]).find(x=>x.id===id):{fecha:new Date().toISOString().slice(0,10),moneda:"ARS",estado:"abonado",usuario:SESSION.id};
   if(!g){ toast("Gasto no encontrado","err"); return; }
   const cambioSel=(DB.cambios&&DB.cambios.length)?`<div class="field"><label>Financiado por un cambio de divisa (opcional)</label><select id="gg_cambio"><option value="">— Ninguno —</option>${DB.cambios.map(x=>`<option value="${x.id}" ${g.cambio_id===x.id?'selected':''}>${fdate(x.fecha)} · ${money(x.monto_origen,x.moneda_origen)}→${money(x.monto_destino,x.moneda_destino)}${x.motivo?' · '+esc(x.motivo):''}</option>`).join("")}</select></div>`:'';
-  modal({title:editing?"Editar gasto general":"Registrar gasto general", size:"", body:`
-    ${inp("gg_concepto","Concepto (ej: alquiler, sueldos, librería)",g.concepto||"")}
+  const catSel=`<div class="field"><label>Categoría</label><select id="gg_cat" onchange="ggCatToggle()">${GG_CATS.map(([k,t])=>`<option value="${k}" ${(g.categoria||'operativo')===k?'selected':''}>${t}</option>`).join("")}</select></div>`;
+  const socioSel=`<div class="field" id="gg_socioBox" style="${(g.categoria==='adelanto_socio')?'':'display:none'}"><label>Socio</label><select id="gg_socio">${socios().map(u=>`<option value="${u.id}" ${g.socio===u.id?'selected':''}>${esc(u.nombre)}</option>`).join("")}</select></div>`;
+  modal({title:editing?"Editar movimiento":"Registrar gasto / movimiento mensual", size:"", body:`
+    <div class="frow fr2">${catSel}${socioSel}</div>
+    ${inp("gg_concepto","Concepto (ej: alquiler, sueldo Juan, licencia Office)",g.concepto||"")}
     <div class="frow fr3">${inp("gg_fecha","Fecha",g.fecha||"","date")}${sel("gg_mon","Moneda",["ARS","USD"],g.moneda||"ARS")}${inp("gg_imp","Importe",g.importe||"","number")}</div>
     <div class="frow fr2">${sel("gg_est","Estado",["abonado","pendiente"],g.estado||"abonado")}${inp("gg_medio","Medio de pago",g.medio||"")}</div>
     ${cambioSel}
     <div class="field"><label>Observaciones</label><textarea id="gg_obs" rows="2">${esc(g.obs||'')}</textarea></div>
-    <div class="alert alert-info"><span>🏢</span><div>Gasto del estudio no asociado a un caso. Si está <b>abonado</b>, se descuenta de la caja general.</div></div>`,
+    <div class="alert alert-info"><span>🏢</span><div>Movimiento del estudio no asociado a un caso. Si está <b>abonado</b>, se descuenta de la caja disponible.</div></div>`,
     footer:`${editing?`<button class="btn btn-danger" onclick="gastoGenDeleteConfirm('${id}')">Eliminar</button>`:''}<div style="flex:1"></div><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveGastoGen('${id||''}')">Guardar</button>`});
 }
+function ggCatToggle(){ const box=document.getElementById("gg_socioBox"); if(box) box.style.display = (val("gg_cat")==="adelanto_socio")?"":"none"; }
 async function saveGastoGen(id){
   const conc=val("gg_concepto").trim(); if(!conc){ toast("Cargá el concepto","err"); return; }
   const isNew=!id;
   const base=id?(DB.gastosGen||[]).find(x=>x.id===id):{id:newTareaId(),usuario:SESSION.id,created_at:new Date().toISOString()};
-  Object.assign(base,{concepto:conc,fecha:val("gg_fecha")||null,moneda:val("gg_mon"),importe:Number(val("gg_imp")||0),estado:val("gg_est"),medio:val("gg_medio"),cambio_id:(document.getElementById("gg_cambio")?val("gg_cambio"):"")||null,obs:val("gg_obs")});
+  const categoria=document.getElementById("gg_cat")?val("gg_cat"):(base.categoria||"operativo");
+  const socio=(categoria==="adelanto_socio"&&document.getElementById("gg_socio"))?val("gg_socio"):"";
+  Object.assign(base,{concepto:conc,categoria,socio,fecha:val("gg_fecha")||null,moneda:val("gg_mon"),importe:Number(val("gg_imp")||0),estado:val("gg_est"),medio:val("gg_medio"),cambio_id:(document.getElementById("gg_cambio")?val("gg_cambio"):"")||null,obs:val("gg_obs")});
   const r=await gastoGenUpsert(base,isNew);
   if(r){ DB.gastosGen=DB.gastosGen||[]; const i=DB.gastosGen.findIndex(x=>x.id===base.id); if(i>=0)DB.gastosGen[i]=CLOUD?r:base; else DB.gastosGen.unshift(CLOUD?r:base); }
-  closeModal(); toast("Gasto general guardado"); if(ROUTE==="finanzas")renderFinanzasGlobal();
+  closeModal(); toast("Movimiento guardado"); if(ROUTE==="operativa")renderCajaOperativa(); else if(ROUTE==="finanzas")renderFinanzasGlobal();
 }
-function gastoGenDeleteConfirm(id){ if(!confirm("¿Eliminar este gasto general?"))return; gastoGenDelete(id).then(ok=>{ if(ok){ closeModal(); toast("Gasto eliminado"); if(ROUTE==="finanzas")renderFinanzasGlobal(); } }); }
+function gastoGenDeleteConfirm(id){ if(!confirm("¿Eliminar este movimiento?"))return; gastoGenDelete(id).then(ok=>{ if(ok){ closeModal(); toast("Movimiento eliminado"); if(ROUTE==="operativa")renderCajaOperativa(); else if(ROUTE==="finanzas")renderFinanzasGlobal(); } }); }
 /* ---------- CAMBIOS DE DIVISA (caja, solo socios) ---------- */
 async function cambioUpsert(x, isNew){
   if(CLOUD){
@@ -2831,11 +3344,24 @@ function renderFinanzasGlobal(){
       <div class="stat"><div class="lab">Devolución a realizar</div><div class="val" style="font-size:17px">${dosMon(a.pendDev)}</div></div>
       <div class="stat"><div class="lab">Pendiente de gastos</div><div class="val" style="font-size:17px">${dosMon(a.pendGasto)}</div></div>
     </div>
-    <div class="grid g2" style="margin-bottom:8px">
-      <div class="stat green"><div class="lab">Cobrado total (histórico)</div><div class="val" style="font-size:17px">${dosMon(a.cobrado)}</div></div>
+    <div class="grid g3" style="margin-bottom:8px">
+      <div class="stat green"><div class="lab">💵 Efectivo recibido (real, por moneda)</div><div class="val" style="font-size:17px">${dosMon(a.cobradoReal)}</div><div class="sub">la plata como entró de verdad</div></div>
+      <div class="stat"><div class="lab">Facturación cobrada (en moneda pactada)</div><div class="val" style="font-size:17px">${dosMon(a.cobrado)}</div><div class="sub">para medir avance del precio</div></div>
       <div class="stat"><div class="lab">Caja bruta (antes de stand by)</div><div class="val" style="font-size:17px">${dosMon(a.cajaBruta)}</div></div>
     </div>
-    <div class="alert alert-warn"><span>⏸️</span><div>El monto <b>en stand by</b> es la <b>devolución pactada</b> de casos sin resolver: no es plata del estudio todavía. Si el caso termina favorable pasa a la caja; si termina negativo se devuelve. Por eso no se reparte ni se gasta hasta cerrar el caso.</div></div>`;
+    <div class="alert alert-info"><span>💱</span><div>Si un caso se pactó en USD pero se cobró en pesos, esos pesos suman a la <b>caja en ARS</b> (efectivo real), no a la de dólares. Para pasar pesos a dólares usá <b>Cambios de divisa</b> con su tipo de cambio.</div></div>
+    <div class="alert alert-warn"><span>⏸️</span><div>El monto <b>en stand by</b> es la <b>devolución pactada</b> de casos sin resolver: no es plata del estudio todavía. Si el caso termina favorable pasa a la caja; si termina negativo se devuelve. Por eso no se reparte ni se gasta hasta cerrar el caso.</div></div>
+    <div class="card" style="margin-top:8px"><div class="card-h"><h3>¿Cómo se compone la caja disponible?</h3></div>
+      <table><thead><tr><th>Concepto</th><th style="text-align:right">PESOS (ARS)</th><th style="text-align:right">DÓLARES (USD)</th></tr></thead><tbody>
+        <tr><td>Efectivo recibido (cobros reales)</td><td style="text-align:right;color:#1c7a40">+ ${money(a.cobradoReal.ARS,"ARS")}</td><td style="text-align:right;color:#1c7a40">+ ${money(a.cobradoReal.USD,"USD")}</td></tr>
+        <tr><td>Dólares comprados / vendidos (cambios)</td><td style="text-align:right">${a.fxIn.ARS-a.fxOut.ARS>=0?'+ ':'− '}${money(Math.abs(a.fxIn.ARS-a.fxOut.ARS),"ARS")}</td><td style="text-align:right">${a.fxIn.USD-a.fxOut.USD>=0?'+ ':'− '}${money(Math.abs(a.fxIn.USD-a.fxOut.USD),"USD")}</td></tr>
+        <tr><td>Gastos abonados (casos + operativos)</td><td style="text-align:right;color:#c0392b">− ${money(a.gastosPag.ARS,"ARS")}</td><td style="text-align:right;color:#c0392b">− ${money(a.gastosPag.USD,"USD")}</td></tr>
+        <tr><td>Devoluciones realizadas</td><td style="text-align:right;color:#c0392b">− ${money(a.devRealizada.ARS,"ARS")}</td><td style="text-align:right;color:#c0392b">− ${money(a.devRealizada.USD,"USD")}</td></tr>
+        <tr><td>Liquidado a socios</td><td style="text-align:right;color:#c0392b">− ${money(a.liquidado.ARS,"ARS")}</td><td style="text-align:right;color:#c0392b">− ${money(a.liquidado.USD,"USD")}</td></tr>
+        <tr><td>Reservado en stand by (posible devolución)</td><td style="text-align:right;color:#b07d1a">− ${money(a.reservaDev.ARS,"ARS")}</td><td style="text-align:right;color:#b07d1a">− ${money(a.reservaDev.USD,"USD")}</td></tr>
+        <tr style="border-top:2px solid var(--line2);font-weight:700"><td>= Caja disponible</td><td style="text-align:right">${money(a.caja.ARS,"ARS")}</td><td style="text-align:right">${money(a.caja.USD,"USD")}</td></tr>
+      </tbody></table>
+      <div class="card-b"><div class="hint">Si vendés en USD pero cobrás en pesos, los dólares aparecen recién cuando registrás un pago en USD o cuando comprás dólares con pesos en <b>Cambios de divisa</b>.</div></div></div>`;
   } else if(FINTAB==="casos"){ cont=`
     <div class="filters" style="margin-bottom:10px">
       <input placeholder="Buscar cliente…" value="${esc(F.q)}" oninput="FINFILTER.q=this.value;renderFinanzasGlobal()" style="min-width:180px">
@@ -2886,6 +3412,74 @@ function renderFinanzasGlobal(){
 }
 
 /* ============================================================
+   CAJA OPERATIVA — gastos mensuales del estudio (solo socios)
+   ============================================================ */
+function finMonthName(ym){ const [y,m]=ym.split("-").map(Number); const d=new Date(y,(m||1)-1,1); const s=d.toLocaleDateString("es-AR",{month:"long",year:"numeric"}); return s.charAt(0).toUpperCase()+s.slice(1); }
+function finMonthShift(delta){ const [y,m]=FINMONTH.split("-").map(Number); const d=new Date(y,(m-1)+delta,1); FINMONTH=d.toISOString().slice(0,7); renderCajaOperativa(); }
+function setFinMonth(v){ if(v){ FINMONTH=v; renderCajaOperativa(); } }
+function renderCajaOperativa(){
+  setCrumb("Caja operativa"); topActions("");
+  const a=calcFinanzasGlobal();
+  const z=()=>({USD:0,ARS:0});
+  const delMes=(DB.gastosGen||[]).filter(g=>(g.fecha||"").slice(0,7)===FINMONTH);
+  // totales del mes
+  const abon=z(), pend=z(); const porCat={};
+  GG_CATS.forEach(([k])=>porCat[k]=z());
+  delMes.forEach(g=>{ const mo=g.moneda==="USD"?"USD":"ARS"; const imp=Number(g.importe||0); if(!imp)return; const cat=g.categoria||"otros"; if(!porCat[cat])porCat[cat]=z();
+    if(g.estado==="pendiente"){ pend[mo]+=imp; } else { abon[mo]+=imp; porCat[cat][mo]+=imp; } });
+  // tabla del mes
+  const catBadge=k=>`<span class="badge ${k==='empleados'?'b-blue':k==='licencias'?'b-gold':k==='adelanto_socio'?'b-red':k==='operativo'?'b-grey':'b-grey'}">${esc(ggCatLabel(k))}</span>`;
+  const rows=delMes.length?delMes.slice().sort((x,y)=>(y.fecha||"").localeCompare(x.fecha||"")).map(g=>`
+    <tr class="clickable" onclick="gastoGenModal('${g.id}')">
+      <td>${fdate(g.fecha)}</td>
+      <td>${catBadge(g.categoria||'otros')}${g.categoria==='adelanto_socio'&&g.socio?`<br><small style="color:var(--muted)">${esc(userName(g.socio))}</small>`:''}</td>
+      <td><b>${esc(g.concepto||'—')}</b></td>
+      <td>${money(g.importe,g.moneda)}</td>
+      <td><span class="badge ${g.estado==='abonado'?'b-green':'b-amber'}">${esc(g.estado||'—')}</span></td>
+      <td>${esc(g.medio||'—')}</td>
+    </tr>`).join(""):`<tr><td colspan="6" class="empty">Sin movimientos en ${finMonthName(FINMONTH)}</td></tr>`;
+  // desglose por categoría (solo abonado)
+  const catRows=GG_CATS.map(([k,t])=>{ const v=porCat[k]||z(); if(!v.USD&&!v.ARS&&k==='otros')return ''; return `<tr><td>${catBadge(k)}</td><td style="text-align:right">${money(v.ARS,"ARS")}</td><td style="text-align:right">${money(v.USD,"USD")}</td></tr>`; }).join("");
+  // historial mes a mes (últimos 6 meses, abonado)
+  const meses=[]; { const [y,m]=FINMONTH.split("-").map(Number); for(let i=0;i<6;i++){ const d=new Date(y,(m-1)-i,1); meses.push(d.toISOString().slice(0,7)); } }
+  const histMes=meses.map(ym=>{ const t=z(); (DB.gastosGen||[]).forEach(g=>{ if((g.fecha||"").slice(0,7)!==ym)return; if(g.estado==="pendiente")return; const mo=g.moneda==="USD"?"USD":"ARS"; t[mo]+=Number(g.importe||0); }); return {ym,t}; });
+  const histRows=histMes.map(({ym,t})=>`<tr class="clickable" onclick="setFinMonth('${ym}')" ${ym===FINMONTH?'style="background:#f1f5f9;font-weight:600"':''}><td>${finMonthName(ym)}</td><td style="text-align:right">${money(t.ARS,"ARS")}</td><td style="text-align:right">${money(t.USD,"USD")}</td></tr>`).join("");
+
+  document.getElementById("view").innerHTML=`
+    <div class="pagehead"><div><h2>Caja operativa</h2><div class="sub">Gastos mensuales del estudio · sueldos, licencias, operativos y adelantos entre socios</div></div>
+      <button class="btn btn-primary" onclick="gastoGenModal()">＋ Nuevo gasto / movimiento</button></div>
+
+    <div class="grid g2" style="margin-bottom:16px">
+      <div class="stat green" style="border-left:4px solid #1c7a40"><div class="lab">✅ Caja disponible (real)</div><div class="val" style="font-size:20px">${dosMon(a.caja)}</div><div class="sub">cada movimiento abonado abajo se descuenta de acá</div></div>
+      <div class="stat amber" style="border-left:4px solid #d99411"><div class="lab">⏸️ En stand by (posible devolución)</div><div class="val" style="font-size:20px">${dosMon(a.reservaDev)}</div></div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px"><div class="card-b" style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="btn btn-ghost btn-sm" onclick="finMonthShift(-1)">‹ Mes anterior</button>
+        <b style="font-size:16px;color:var(--navy);min-width:160px;text-align:center">${finMonthName(FINMONTH)}</b>
+        <button class="btn btn-ghost btn-sm" onclick="finMonthShift(1)">Mes siguiente ›</button>
+        <input type="month" value="${FINMONTH}" onchange="setFinMonth(this.value)" style="padding:6px 8px;border:1px solid var(--line2);border-radius:6px">
+      </div>
+      <div style="display:flex;gap:18px;flex-wrap:wrap">
+        <div><div style="font-size:11px;color:var(--muted)">Abonado del mes</div><div style="font-weight:700;color:#c0392b">${dosMon(abon)}</div></div>
+        <div><div style="font-size:11px;color:var(--muted)">Pendiente del mes</div><div style="font-weight:700;color:#b07d1a">${dosMon(pend)}</div></div>
+      </div>
+    </div></div>
+
+    <div class="grid" style="grid-template-columns:1.7fr 1fr;gap:16px;align-items:start">
+      <div class="card" style="overflow-x:auto"><div class="card-h"><h3>Movimientos de ${finMonthName(FINMONTH)}</h3><span class="badge b-grey">${delMes.length}</span></div>
+        <table><thead><tr><th>Fecha</th><th>Categoría</th><th>Concepto</th><th>Importe</th><th>Estado</th><th>Medio</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div>
+        <div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Por categoría (abonado)</h3></div>
+          <table><thead><tr><th>Categoría</th><th style="text-align:right">ARS</th><th style="text-align:right">USD</th></tr></thead><tbody>${catRows||'<tr><td colspan="3" class="empty">—</td></tr>'}</tbody></table></div>
+        <div class="card"><div class="card-h"><h3>Últimos meses (abonado)</h3></div>
+          <table><thead><tr><th>Mes</th><th style="text-align:right">ARS</th><th style="text-align:right">USD</th></tr></thead><tbody>${histRows}</tbody></table></div>
+      </div>
+    </div>`;
+}
+
+/* ============================================================
    CONFIG
    ============================================================ */
 async function conectarGoogle(){
@@ -2919,6 +3513,34 @@ function renderConfig(){
         <div class="field"><textarea id="co_obj" rows="6">${esc(DB.config.objeto)}</textarea></div>
         <button class="btn btn-primary" onclick="DB.config.objeto=val('co_obj');save();toast('Objeto guardado')">Guardar objeto</button>
       </div></div>
+      ${isSocio()?`<div class="card" style="grid-column:1/-1"><div class="card-h"><h3>🤖 Asistente de IA — redacción de síntesis (Claude)</h3></div><div class="card-b">
+        <div class="alert alert-warn"><span>🔒</span><div>Esta clave se guarda <b>solo en este navegador</b> (cada usuario carga la suya). No la compartas. Generá la API key en <b>console.anthropic.com</b>. <b>Opción sin costo de API:</b> usá el botón “📋 Copiar prompt” y pegá en ChatGPT/Claude web.</div></div>
+        <div class="frow fr2">
+          <div class="field"><label>API key de Anthropic (Claude)</label><input id="ai_key" type="password" value="${esc(aiGetKey())}" placeholder="sk-ant-..." autocomplete="off"></div>
+          <div class="field"><label>Modelo</label><select id="ai_model">
+            <option value="claude-sonnet-4-6" ${(DB.config.aiModel||'claude-sonnet-4-6')==='claude-sonnet-4-6'?'selected':''}>Claude Sonnet 4.6 — recomendado (calidad/costo)</option>
+            <option value="claude-opus-4-8" ${DB.config.aiModel==='claude-opus-4-8'?'selected':''}>Claude Opus 4.8 — máxima calidad</option>
+            <option value="claude-haiku-4-5-20251001" ${DB.config.aiModel==='claude-haiku-4-5-20251001'?'selected':''}>Claude Haiku 4.5 — rápido y económico</option>
+          </select></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" onclick="aiSaveConfig()">Guardar configuración de IA</button><button class="btn btn-ghost" onclick="aiProbar()">⚡ Probar conexión</button></div>
+        <div class="hint" style="margin-top:8px">Una vez cargada la clave, en cada caso → pestaña <b>Relato</b> vas a tener el botón <b>“🤖 Generar con IA (Claude)”</b> para redactar la síntesis con tu prompt.</div>
+
+        <div class="section-title" style="margin-top:18px">Prompt para la síntesis</div>
+        <div class="hint" style="margin-bottom:6px">Instrucciones que usa la IA para redactar la <b>Síntesis del caso</b> (a partir del relato del cliente).</div>
+        <div class="field"><textarea id="cfg_prompt" rows="10" style="font-family:monospace;font-size:12px">${esc(DB.config.promptSintesis||PROMPT_SINTESIS_DEFAULT)}</textarea></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px"><button class="btn btn-primary btn-sm" onclick="DB.config.promptSintesis=val('cfg_prompt');save();toast('Prompt de síntesis guardado ✓')">Guardar prompt</button><button class="btn btn-ghost btn-sm" onclick="if(confirm('¿Restaurar el prompt original?')){DB.config.promptSintesis=PROMPT_SINTESIS_DEFAULT;save();renderConfig();toast('Prompt restaurado')}">Restaurar original</button></div>
+
+        <div class="section-title">Modelo guía del informe a Meta</div>
+        <div class="hint" style="margin-bottom:6px">Estructura, secciones y estilo de referencia del <b>Informe a Meta</b>. La IA lo sigue al redactar el informe (botón “🤖 con IA” en Documentos).</div>
+        <div class="field"><textarea id="cfg_modelo" rows="12" style="font-family:monospace;font-size:12px">${esc(DB.config.informeModeloGuia||INFORME_MODELO_DEFAULT)}</textarea></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" onclick="DB.config.informeModeloGuia=val('cfg_modelo');save();toast('Modelo guía guardado ✓')">Guardar modelo guía</button><button class="btn btn-ghost btn-sm" onclick="if(confirm('¿Restaurar el modelo guía original?')){DB.config.informeModeloGuia=INFORME_MODELO_DEFAULT;save();renderConfig();toast('Modelo restaurado')}">Restaurar original</button></div>
+      </div></div>`:''}
+      ${isSocio()?`<div class="card" style="grid-column:1/-1"><div class="card-h"><h3>💾 Copia de seguridad (backup)</h3></div><div class="card-b">
+        <div class="alert alert-info"><span>💡</span><div>Descargá un respaldo <b>completo</b> de todos los datos del estudio (casos, finanzas, gastos, cuentas, relatos y configuración) en un archivo. Recomendado: <b>una vez por día</b> y antes de cambios importantes.${CLOUD?' Además se guarda una copia en Supabase automáticamente.':''}</div></div>
+        <button class="btn btn-primary" onclick="descargarBackup()">⬇️ Descargar backup completo</button>
+        <div class="hint" style="margin-top:8px">El archivo queda en tu carpeta de Descargas. Guardalo en un lugar seguro (Drive, disco, etc.).</div>
+      </div></div>`:''}
       ${isSocio()?`<div class="card" style="grid-column:1/-1"><div class="card-h"><h3>Etiquetas de expedientes</h3></div><div class="card-b">
         <p class="sub" style="margin:-4px 0 12px">Estas son las etiquetas que se pueden poner a cada caso (varias por caso). Agregá o eliminá las que quieras; los cambios se reflejan en todos los expedientes y en el panel.</p>
         <div id="etqList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
@@ -3332,6 +3954,13 @@ function val(id){ const e=document.getElementById(id); return e?e.value:""; }
 function chkVal(id){ const e=document.getElementById(id); return e?e.checked:false; }
 function inp(id,label,v,type){ return `<div class="field"><label>${esc(label)}</label><input id="${id}" type="${type||'text'}" value="${esc(v)}"></div>`; }
 function sel(id,label,opts,v){ return `<div class="field"><label>${esc(label)}</label><select id="${id}">${opts.map(o=>`<option ${v===o?'selected':''}>${esc(o)}</option>`).join("")}</select></div>`; }
+// Versiones con marca de obligatorio (*)
+function inpR(id,label,v,type){ return `<div class="field"><label>${esc(label)} <span class="req">*</span></label><input id="${id}" type="${type||'text'}" value="${esc(v||'')}"></div>`; }
+function selR(id,label,opts,v){ return `<div class="field"><label>${esc(label)} <span class="req">*</span></label><select id="${id}">${opts.map(o=>`<option ${v===o?'selected':''}>${esc(o)}</option>`).join("")}</select></div>`; }
+// Devuelve los campos obligatorios vacíos [[id,label],...]
+function formMissing(reqs){ const m=[]; for(const [id,lab] of reqs){ const el=document.getElementById(id); if(!el||!String(el.value||"").trim()) m.push([id,lab]); } return m; }
+function formFocusMissing(miss){ toast("Faltan campos obligatorios: "+miss.map(x=>x[1]).join(", "),"err"); const el=document.getElementById(miss[0][0]); if(el){ el.focus(); el.scrollIntoView({behavior:"smooth",block:"center"}); el.style.outline="2px solid var(--red)"; setTimeout(()=>{el.style.outline="";},2500);} }
+const FORM_REQ=[["cf_url","URL de la cuenta"],["cf_handle","Cuenta (usuario con @)"],["cf_em","Email vinculado a la cuenta"],["cf_ap","Apellido"],["cf_no","Nombre"],["cf_dni","DNI"],["cf_cuit","CUIT / CUIL"],["cf_nac","Nacionalidad"],["cf_dom","Domicilio"],["cf_loc","Localidad"],["cf_prov","Provincia"],["cf_celular","Teléfono celular"],["cf_email","Email de contacto"],["cf_fs","Fecha de suspensión"],["cf_ts","Tipo de suspensión"],["cf_orig","Relato de los hechos"]];
 function chk(id,label,v){ return `<div class="check"><input type="checkbox" id="${id}" ${v?'checked':''}><label for="${id}" style="margin:0;font-weight:500">${esc(label)}</label></div>`; }
 function formCard(title, fields, onsave){
   return `<div class="card"><div class="card-h"><h3>${esc(title)}</h3></div><div class="card-b">

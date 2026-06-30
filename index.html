@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.06.24 · B27 paquete IA en PDF (jsPDF) + imágenes";
+const BUILD = "2026.06.24 · B28 paquete IA (jsPDF cargado aparte)";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -1534,7 +1534,7 @@ async function descargarPaqueteIA(){
   const c=CURRENT; const v=validateDoc(c,"informe"); if(!v.ok){ toast("Faltan datos para el informe: "+v.missing.join(", "),"err"); return; }
   toast("Preparando el paquete para IA (cargando adjuntos)…");
   try{
-    await ensureHtml2Pdf();
+    await ensureJsPDF();
     const JsPDF=(window.jspdf&&window.jspdf.jsPDF)||window.jsPDF;
     if(!JsPDF){ toast("No se pudo cargar el generador de PDF","err"); return; }
     DOC_IMGS=await cargarImagenesInforme(c);
@@ -1833,6 +1833,16 @@ function ensureHtml2Pdf(){
     const s=document.createElement("script");
     s.src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
     s.onload=()=>res(); s.onerror=()=>rej(new Error("No se pudo cargar el generador de PDF"));
+    document.head.appendChild(s);
+  });
+}
+// jsPDF por separado (el bundle de html2pdf no expone el global). Lo usa el "Paquete para IA".
+function ensureJsPDF(){
+  return new Promise((res,rej)=>{
+    if(window.jspdf && window.jspdf.jsPDF) return res();
+    const s=document.createElement("script");
+    s.src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+    s.onload=()=>res(); s.onerror=()=>rej(new Error("No se pudo cargar jsPDF"));
     document.head.appendChild(s);
   });
 }

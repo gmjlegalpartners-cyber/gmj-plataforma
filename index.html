@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.06.24 · B28 paquete IA (jsPDF cargado aparte)";
+const BUILD = "2026.06.30 · B29 anti-pisada (protege datos del cliente al guardar)";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -639,15 +639,45 @@ async function doCloudSave(){
     const c = CURRENT;
     if(c){
       const noFin = JSON.parse(JSON.stringify(c)); delete noFin.finanzas; delete noFin.pagos;
+      await _proteger(c, noFin);
       await sb.from("casos").upsert({ id:c.id, data:noFin, cliente_nombre:clienteFull(c), estado:c.estado, form_token:c.formToken||null, updated_at:new Date().toISOString(), updated_by:SESSION.id });
       await sb.from("case_finance").upsert({ caso_id:c.id, finanzas:c.finanzas||{}, pagos:c.pagos||[], updated_at:new Date().toISOString() });
     }
   }catch(e){ console.error("cloudSave",e); toast("Error guardando en la nube","err"); }
 }
+// PROTECCIÓN ANTI-PISADA: nunca dejar en blanco los datos cargados por el cliente.
+// Antes de guardar, compara con lo último de la nube y conserva lo que el cliente ya cargó.
+function protegerDatosCliente(local, db){
+  if(!db || typeof db!=='object' || !local) return;
+  ['cliente','cuenta','relato'].forEach(k=>{
+    const d=db[k];
+    if(d && typeof d==='object'){
+      local[k]=local[k]||{};
+      for(const f in d){ const lv=local[k][f], dv=d[f];
+        if((lv==null||lv==='') && dv!=null && dv!=='') local[k][f]=dv;
+      }
+    }
+  });
+  ['adjuntos','cuentasAfectadas','docs'].forEach(k=>{
+    if(Array.isArray(db[k]) && db[k].length && (!Array.isArray(local[k]) || local[k].length===0)) local[k]=db[k];
+  });
+  if(db.formCompletado && !local.formCompletado){ local.formCompletado=true; if(db.formCompletadoFecha)local.formCompletadoFecha=db.formCompletadoFecha; }
+  if(db.drive && db.drive.link && (!local.drive || !local.drive.link)){ local.drive=Object.assign({},local.drive,{link:db.drive.link, creada:true}); }
+}
+async function _proteger(c, noFin){
+  try{ const {data:row}=await sb.from("casos").select("data").eq("id",c.id).maybeSingle();
+    if(row&&row.data){ protegerDatosCliente(noFin, row.data);
+      // reflejar en memoria para no volver a pisar en el próximo guardado
+      ['cliente','cuenta','relato','adjuntos','cuentasAfectadas','docs','drive'].forEach(k=>{ if(noFin[k]!==undefined) c[k]=noFin[k]; });
+      if(noFin.formCompletado){ c.formCompletado=noFin.formCompletado; c.formCompletadoFecha=noFin.formCompletadoFecha; }
+    }
+  }catch(e){ console.error("proteger",e); }
+}
 async function cloudSaveCaseNow(c){
   if(!CLOUD||!sb||!c) return;
   try{
     const noFin = JSON.parse(JSON.stringify(c)); delete noFin.finanzas; delete noFin.pagos;
+    await _proteger(c, noFin);
     await sb.from("casos").upsert({ id:c.id, data:noFin, cliente_nombre:clienteFull(c), estado:c.estado, form_token:c.formToken||null, updated_at:new Date().toISOString(), updated_by:SESSION.id });
     await sb.from("case_finance").upsert({ caso_id:c.id, finanzas:c.finanzas||{}, pagos:c.pagos||[], updated_at:new Date().toISOString() });
   }catch(e){ console.error("cloudSaveCaseNow",e); toast("Error guardando en la nube","err"); }

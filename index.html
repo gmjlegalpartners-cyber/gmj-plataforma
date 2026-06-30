@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.06.24 · B26 informe: imágenes embebidas + paquete para IA";
+const BUILD = "2026.06.24 · B27 paquete IA en PDF (jsPDF) + imágenes";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -1529,32 +1529,46 @@ async function aiGenerarInforme(){
     openDocPreview("informe", docHead()+html+informeAnexoImgsHtml(c));
   }catch(e){ toast("Error de IA: "+e.message,"err"); }
 }
-// Genera UN archivo (PDF) con prompt + datos + imágenes del cliente, para subir a ChatGPT/Claude.
+// Genera UN PDF (con jsPDF directo) con prompt + datos + imágenes del cliente, para subir a ChatGPT/Claude.
 async function descargarPaqueteIA(){
   const c=CURRENT; const v=validateDoc(c,"informe"); if(!v.ok){ toast("Faltan datos para el informe: "+v.missing.join(", "),"err"); return; }
   toast("Preparando el paquete para IA (cargando adjuntos)…");
-  DOC_IMGS=await cargarImagenesInforme(c);
-  const modelo=DB.config.informeModeloGuia||INFORME_MODELO_DEFAULT;
-  const instrucciones="Sos un abogado de GMJ Legal Partners. Con TODO lo que figura en este archivo (instrucciones, modelo guía, datos del caso e imágenes adjuntas del cliente), redactá el INFORME formal de solicitud de revisión y rehabilitación de cuentas dirigido a META PLATFORMS, INC. Seguí EXACTAMENTE la estructura, secciones (numeración romana) y estilo del modelo guía. Aprovechá lo que se ve en las imágenes (capturas, DNI) si suma a la acreditación. No inventes datos. Tono profesional, respetuoso y persuasivo; sin viñetas en la síntesis.";
-  const adjs=(c.adjuntos||[]); const caps=adjs.filter(a=>a.tipo==='Otra documentación'); const dnis=adjs.filter(a=>/DNI/i.test(a.tipo||""));
-  const imgsBlock = (caps.length||dnis.length)
-    ? (caps.length?`<p><b>Capturas y pruebas:</b></p>`+caps.map((a,i)=>`<p style="margin:6pt 0 2pt"><b>${i+1}. ${esc(a.desc||"Documento")}</b></p>${adjImgTag(a)}`).join(""):'')
-      +(dnis.length?`<p><b>DNI del titular:</b></p>`+dnis.map(a=>`<p style="margin:6pt 0 2pt">${esc(a.desc||a.tipo)}</p>${adjImgTag(a)}`).join(""):'')
-    : '<p>(sin imágenes cargadas)</p>';
-  const html=docHead()+`
-    <h1>PAQUETE PARA GENERAR EL INFORME CON IA</h1>
-    <p style="color:#555;font-size:9.5pt">Subí este archivo a ChatGPT o Claude (admiten archivos con imágenes) y pedile que genere el informe. Contiene instrucciones, modelo guía, datos del caso y las imágenes del cliente.</p>
-    <h2>1) INSTRUCCIONES PARA LA IA</h2>
-    <p>${esc(instrucciones)}</p>
-    <h2>2) MODELO GUÍA DEL INFORME</h2>
-    ${esc(modelo).split(/\n{2,}/).map(p=>`<p style="margin:0 0 4pt">${p.replace(/\n/g,"<br>")}</p>`).join("")}
-    <h2>3) DATOS DEL CASO</h2>
-    ${esc(aiContextoInforme(c)).split(/\n/).map(l=>`<p style="margin:0 0 2pt">${l||"&nbsp;"}</p>`).join("")}
-    <h2>4) DOCUMENTACIÓN E IMÁGENES DEL CLIENTE</h2>
-    ${imgsBlock}`;
-  const filename="Paquete_IA_Informe_"+clienteFull(c).replace(/[ ,]+/g,"_");
-  try{ await docToPdfFile({tipo:"informe", html}, filename); toast("✓ Paquete descargado — subilo a ChatGPT o Claude y pedile el informe"); }
-  catch(e){ toast("No se pudo generar el PDF: "+(e.message||e),"err"); }
+  try{
+    await ensureHtml2Pdf();
+    const JsPDF=(window.jspdf&&window.jspdf.jsPDF)||window.jsPDF;
+    if(!JsPDF){ toast("No se pudo cargar el generador de PDF","err"); return; }
+    DOC_IMGS=await cargarImagenesInforme(c);
+    const modelo=DB.config.informeModeloGuia||INFORME_MODELO_DEFAULT;
+    const instrucciones="Sos un abogado de GMJ Legal Partners. Con TODO lo que figura en este archivo (instrucciones, modelo guia, datos del caso e imagenes adjuntas del cliente), redacta el INFORME formal de solicitud de revision y rehabilitacion de cuentas dirigido a META PLATFORMS, INC. Segui EXACTAMENTE la estructura, secciones (numeracion romana) y estilo del modelo guia. Aprovecha lo que se ve en las imagenes (capturas, DNI) si suma a la acreditacion. No inventes datos. Tono profesional, respetuoso y persuasivo; sin viñetas en la sintesis.";
+    const doc=new JsPDF({unit:'pt',format:'a4'});
+    const W=doc.internal.pageSize.getWidth(), H=doc.internal.pageSize.getHeight(); const M=42; let y=M;
+    const nl=h=>{ if(y+h>H-M){ doc.addPage(); y=M; } };
+    const para=(t,size,bold,gap)=>{ size=size||10; gap=(gap==null?5:gap); doc.setFont('helvetica',bold?'bold':'normal'); doc.setFontSize(size); const lines=doc.splitTextToSize(String(t==null?'':t),W-2*M); for(const l of lines){ nl(size+3); doc.text(l,M,y); y+=size+3; } y+=gap; };
+    const heading=t=>{ nl(24); para(t,12.5,true,5); };
+    para("PAQUETE PARA GENERAR EL INFORME CON IA",15,true,3);
+    para("Subi este archivo a ChatGPT o Claude (admiten archivos con imagenes) y pedile que genere el informe.",9,false,10);
+    heading("1) INSTRUCCIONES PARA LA IA"); para(instrucciones);
+    heading("2) MODELO GUIA DEL INFORME"); para(modelo);
+    heading("3) DATOS DEL CASO"); para(aiContextoInforme(c));
+    heading("4) DOCUMENTACION E IMAGENES DEL CLIENTE");
+    const adjs=(c.adjuntos||[]); const rel=adjs.filter(a=>a.tipo==='Otra documentación'||/DNI/i.test(a.tipo||""));
+    if(!rel.length) para("(Sin archivos cargados por el cliente.)",10);
+    for(const a of rel){
+      para((a.desc||a.tipo||'Documento')+(a.nombre?(' - '+a.nombre):''),10,true,2);
+      const data=DOC_IMGS[a.nombre];
+      if(data && adjEsImagen(a)){
+        try{
+          const props=doc.getImageProperties(data);
+          const ratio=(props.height/props.width)||1; const maxW=W-2*M; let iw=maxW, ih=maxW*ratio;
+          const maxH=H-2*M-24; if(ih>maxH){ ih=maxH; iw=ih/ratio; }
+          nl(ih+10); doc.addImage(data, (props.fileType||'JPEG'), M, y, iw, ih); y+=ih+12;
+        }catch(e){ para("[no se pudo incrustar la imagen "+(a.nombre||'')+"]",9,false,6); }
+      } else if(adjEsImagen(a)){ para("[imagen aun no disponible para incrustar]",9,false,6); }
+      else { para("[archivo adjunto (PDF/otro) - se acompaña aparte]",9,false,6); }
+    }
+    doc.save("Paquete_IA_Informe_"+clienteFull(c).replace(/[ ,]+/g,"_")+".pdf");
+    toast("✓ Paquete descargado — subilo a ChatGPT o Claude y pedile el informe");
+  }catch(e){ toast("No se pudo generar el PDF: "+(e.message||e),"err"); }
 }
 /* ---- Opción SIN costo de API: copiar el prompt para pegar en ChatGPT/Claude web ---- */
 function copyText(t,msg){

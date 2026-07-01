@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.06.30 · B29 anti-pisada (protege datos del cliente al guardar)";
+const BUILD = "2026.06.30 · B30 docs a Drive + fichas de todos los casos";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -1776,6 +1776,36 @@ async function repushDrive(){
     renderCaso();
   }catch(e){ console.error(e); toast("Error al reintentar","err"); }
 }
+// Guarda un documento generado (PDF) en la carpeta de Drive del caso (usa la acción upload de drive-sync).
+async function guardarDocEnDrive(d, silent){
+  if(!CLOUD||!sb){ if(!silent)toast("Solo en la versión nube","err"); return; }
+  try{
+    if(!silent) toast("Guardando el documento en Drive…");
+    const nombre=docTitle(d.tipo).replace(/[ /]+/g,"_")+"_v"+(d.version||1)+"_"+clienteFull(CURRENT).replace(/[ ,]+/g,"_")+".pdf";
+    const b64=await docToPdfBase64(d);
+    const {data:{session}}=await sb.auth.getSession();
+    const r=await fetch(FUNCTIONS_URL+"/drive-sync",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({casoId:CURRENT.id,action:"upload",tipo:docTitle(d.tipo),nombre,mime:"application/pdf",base64:b64})});
+    const j=await r.json();
+    if(j&&j.ok){ if(j.drive){ if(!silent)toast("✓ Documento guardado en la carpeta de Drive"); } else if(!silent) toast("Guardado en respaldo (Google del estudio no conectado)","err"); }
+    else if(!silent) toast("No se pudo guardar en Drive: "+((j&&(j.detail||j.error))||"error"),"err");
+  }catch(e){ console.error("guardarDocEnDrive",e); if(!silent)toast("Error al guardar el documento en Drive","err"); }
+}
+// Genera/actualiza la "Ficha de datos" en Drive para TODOS los casos (para los cargados antes de esta función).
+async function generarFichasTodos(){
+  if(!CLOUD||!sb){ toast("Solo en la versión nube","err"); return; }
+  const casos=(DB.casos||[]).filter(c=>c && ((c.cliente&&(c.cliente.apellido||c.cliente.nombre))||c.formCompletado));
+  if(!casos.length){ toast("No hay casos con datos para procesar","err"); return; }
+  if(!confirm("Se va a generar/actualizar la 'Ficha de datos' en la carpeta de Drive de "+casos.length+" casos. Puede tardar unos minutos. No cierres la página. ¿Continuar?"))return;
+  toast("Generando fichas en Drive… ("+casos.length+" casos)");
+  let ok=0,fail=0;
+  const {data:{session}}=await sb.auth.getSession(); const tk=session&&session.access_token;
+  for(const c of casos){
+    try{ const r=await fetch(FUNCTIONS_URL+"/drive-sync",{method:"POST",headers:{"Authorization":"Bearer "+tk,"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({casoId:c.id,action:"datos"})}); const j=await r.json(); if(j&&j.ok)ok++; else fail++; }
+    catch(e){ fail++; }
+    await new Promise(res=>setTimeout(res,450));
+  }
+  toast("✓ Fichas generadas en Drive: "+ok+" ok"+(fail?(" · "+fail+" con error"):""));
+}
 async function createDrive(){
   if(CLOUD){
     toast("Creando carpeta en Google Drive…");
@@ -1827,6 +1857,7 @@ function tabDocs(c){
     <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
       <button class="btn btn-ghost btn-sm" onclick="downloadDoc('${d.id}','word')">Word</button>
       <button class="btn btn-ghost btn-sm" onclick="downloadDoc('${d.id}','pdf')">PDF</button>
+      ${CLOUD?`<button class="btn btn-ghost btn-sm" onclick="guardarDocEnDrive(CURRENT.docs.find(x=>x.id==='${d.id}'),false)" title="Guardar este documento en la carpeta de Drive del caso">☁ Drive</button>`:''}
       <button class="btn btn-gold btn-sm" onclick="sendDocModal('${d.id}')">📤 Enviar</button>
       <select class="btn btn-ghost btn-sm" onchange="setDocEstado('${d.id}',this.value)" style="padding:5px"><option value="">estado…</option>${["borrador","enviado","firmado","final"].map(s=>`<option ${d.estado===s?'selected':''}>${s}</option>`).join("")}</select>
     </div></div>`).join(""):`<div class="empty">Todavía no se generaron documentos</div>`;
@@ -2394,7 +2425,8 @@ function finalizeDoc(tipo){
   // auto estado del caso
   if(tipo==="contrato"&&c.estado==="Documentación completa") c.estado="Contrato enviado";
   logAction(c, docTitle(tipo)+" generado (v"+ver+")");
-  save(); closeModal(); toast(docTitle(tipo)+" generado y guardado en Drive"); renderCaso();
+  save(); closeModal(); toast(docTitle(tipo)+" generado ✓"); renderCaso();
+  if(CLOUD) guardarDocEnDrive(doc, false); // guardado automático en la carpeta de Drive del caso
 }
 function docExportCSS(tipo){
   if(tipo==="carta_poder"){
@@ -3705,6 +3737,11 @@ function renderConfig(){
         <div class="alert alert-info"><span>💡</span><div>Descargá un respaldo <b>completo</b> de todos los datos del estudio (casos, finanzas, gastos, cuentas, relatos y configuración) en un archivo. Recomendado: <b>una vez por día</b> y antes de cambios importantes.${CLOUD?' Además se guarda una copia en Supabase automáticamente.':''}</div></div>
         <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary" onclick="descargarBackup()">⬇️ Descargar backup completo</button>${!CLOUD?`<button class="btn btn-ghost" onclick="importarBackup()">⬆️ Importar backup (cargar datos)</button>`:''}</div>
         <div class="hint" style="margin-top:8px">El archivo queda en tu carpeta de Descargas. Guardalo en un lugar seguro (Drive, disco, etc.).${!CLOUD?' <b>Importar</b> reemplaza los datos de esta prueba con los del archivo (modo borrador).':''}</div>
+      </div></div>`:''}
+      ${isSocio()&&CLOUD?`<div class="card" style="grid-column:1/-1"><div class="card-h"><h3>📄 Fichas de datos en Drive</h3></div><div class="card-b">
+        <div class="alert alert-info"><span>💡</span><div>Genera (o actualiza) el archivo <b>"Ficha de datos del cliente"</b> en la carpeta de Drive de <b>todos los casos</b>. Útil para los clientes que cargaron el formulario <b>antes</b> de que existiera esta función. Requiere el Google del estudio conectado.</div></div>
+        <button class="btn btn-primary" onclick="generarFichasTodos()">📄 Generar ficha en Drive de todos los casos</button>
+        <div class="hint" style="margin-top:8px">Procesa un caso por vez (puede tardar unos minutos según la cantidad). No cierres la página mientras corre.</div>
       </div></div>`:''}
       ${isSocio()?`<div class="card" style="grid-column:1/-1"><div class="card-h"><h3>Etiquetas de expedientes</h3></div><div class="card-b">
         <p class="sub" style="margin:-4px 0 12px">Estas son las etiquetas que se pueden poner a cada caso (varias por caso). Agregá o eliminá las que quieras; los cambios se reflejan en todos los expedientes y en el panel.</p>

@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.06.30 · B31 fix PDF a Drive (no en blanco)";
+const BUILD = "2026.06.30 · B32 fix PDF render (altura+viewport)";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -1910,28 +1910,49 @@ function ensureJsPDF(){
 function _pdfWrap(d){
   const small=d.tipo==="carta_poder";
   const scoped='<style>.pdfbody{font-family:"Times New Roman",Georgia,serif;font-size:'+(small?'12px':'13px')+';line-height:1.35;color:#000}.pdfbody p{text-align:justify;margin:0 0 7px}.pdfbody h1,.pdfbody h2{text-align:center;font-size:16px;margin:0 0 6px}.pdfbody img{max-width:100%}.pdfbody table{page-break-inside:avoid}</style>';
+  // IMPORTANTE: html2canvas sólo captura contenido que esté DENTRO del viewport (0,0).
+  // Si el contenedor está en position:fixed;left:-10000px sale en blanco (altura 0).
+  // Por eso lo ubicamos en (0,0) pero dentro de un contenedor recortado a 0x0
+  // (overflow:hidden) para que sea invisible al usuario y no haya parpadeo.
+  const holder=document.createElement("div");
+  holder.className="_pdfholder";
+  holder.style.cssText="position:fixed;left:0;top:0;width:0;height:0;overflow:hidden;z-index:-1;opacity:1;pointer-events:none";
   const wrap=document.createElement("div"); wrap.className="pdfbody";
-  wrap.style.cssText="position:fixed;left:-10000px;top:0;width:794px;background:#fff;padding:0";
+  wrap.style.cssText="position:absolute;left:0;top:0;width:794px;background:#fff;padding:0";
   wrap.innerHTML=scoped+d.html;
-  document.body.appendChild(wrap);
+  holder.appendChild(wrap);
+  document.body.appendChild(holder);
+  wrap._holder=holder;
   return wrap;
 }
-function _pdfOpt(filename){ return { margin:[12,14,14,14], filename:(filename||"documento")+".pdf", image:{type:"jpeg",quality:0.98}, html2canvas:{scale:2,backgroundColor:"#ffffff",useCORS:true}, jsPDF:{unit:"mm",format:"a4",orientation:"portrait"}, pagebreak:{mode:["css","legacy"]} }; }
+function _pdfCleanup(wrap){ try{ ((wrap&&wrap._holder)||wrap).remove(); }catch(e){} }
+function _pdfWaitImages(el){
+  const imgs=[].slice.call(el.querySelectorAll("img"));
+  if(!imgs.length) return Promise.resolve();
+  return Promise.all(imgs.map(im=>(im.complete&&im.naturalHeight!==0)?Promise.resolve():new Promise(res=>{im.onload=im.onerror=()=>res(); setTimeout(res,4000);})));
+}
+function _pdfOpt(filename, el){
+  // Pasamos ancho/alto EXPLÍCITOS a html2canvas (medidos del elemento real).
+  // Sin esto, html2canvas mide altura 0 y el PDF sale en blanco.
+  const sw=el?el.scrollWidth:794, sh=el?el.scrollHeight:0;
+  return { margin:[12,14,14,14], filename:(filename||"documento")+".pdf",
+    image:{type:"jpeg",quality:0.98},
+    html2canvas:{scale:2,backgroundColor:"#ffffff",useCORS:true,width:sw,height:sh,windowWidth:sw,windowHeight:sh,scrollX:0,scrollY:0},
+    jsPDF:{unit:"mm",format:"a4",orientation:"portrait"}, pagebreak:{mode:["css","legacy"]} };
+}
 async function docToPdfFile(d, filename){
   await ensureHtml2Pdf(); const wrap=_pdfWrap(d);
-  try{ await window.html2pdf().set(_pdfOpt(filename)).from(wrap).save(); } finally { wrap.remove(); }
+  try{ await _pdfWaitImages(wrap); await window.html2pdf().set(_pdfOpt(filename,wrap)).from(wrap).save(); } finally { _pdfCleanup(wrap); }
 }
 async function docToPdfBase64(d){
   await ensureHtml2Pdf(); const wrap=_pdfWrap(d);
   try{
-    // Usamos la MISMA cadena de render que la descarga (.save()) para que el PDF
-    // no salga en blanco: esperamos a que se genere el canvas y recién ahí sacamos
-    // el base64. El atajo .outputPdf("datauristring") devolvía el PDF antes de renderizar.
-    const worker=window.html2pdf().set(_pdfOpt("doc")).from(wrap);
-    const pdf=await worker.toPdf().get("pdf");
-    const uri=pdf.output("datauristring");
-    return (String(uri).split(",")[1]||"");
-  } finally { wrap.remove(); }
+    await _pdfWaitImages(wrap);
+    // Misma cadena de render que la descarga (.save()): esperamos a que se genere
+    // el canvas con dimensiones explícitas y recién ahí sacamos el base64.
+    const pdf=await window.html2pdf().set(_pdfOpt("doc",wrap)).from(wrap).toPdf().get("pdf");
+    return (String(pdf.output("datauristring")).split(",")[1]||"");
+  } finally { _pdfCleanup(wrap); }
 }
 async function sendDocVia(id,via){
   const c=CURRENT, d=c.docs.find(x=>x.id===id);

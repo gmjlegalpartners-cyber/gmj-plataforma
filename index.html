@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.06.30 · B30 docs a Drive + fichas de todos los casos";
+const BUILD = "2026.06.30 · B31 fix PDF a Drive (no en blanco)";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -1923,7 +1923,15 @@ async function docToPdfFile(d, filename){
 }
 async function docToPdfBase64(d){
   await ensureHtml2Pdf(); const wrap=_pdfWrap(d);
-  try{ const uri=await window.html2pdf().set(_pdfOpt("doc")).from(wrap).outputPdf("datauristring"); return (String(uri).split(",")[1]||""); } finally { wrap.remove(); }
+  try{
+    // Usamos la MISMA cadena de render que la descarga (.save()) para que el PDF
+    // no salga en blanco: esperamos a que se genere el canvas y recién ahí sacamos
+    // el base64. El atajo .outputPdf("datauristring") devolvía el PDF antes de renderizar.
+    const worker=window.html2pdf().set(_pdfOpt("doc")).from(wrap);
+    const pdf=await worker.toPdf().get("pdf");
+    const uri=pdf.output("datauristring");
+    return (String(uri).split(",")[1]||"");
+  } finally { wrap.remove(); }
 }
 async function sendDocVia(id,via){
   const c=CURRENT, d=c.docs.find(x=>x.id===id);

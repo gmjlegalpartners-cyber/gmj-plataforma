@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.03 · B34 contrato: sin hoja en blanco + firmas más grandes";
+const BUILD = "2026.07.03 · B35 normalizar gastos en la nube + gastos sin fecha impactan caja";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -658,6 +658,9 @@ async function cloudLoad(){
   });
   DB.casos.sort((a,b)=>(b.id||"").localeCompare(a.id||""));
   DB.casos.forEach(c=>{ if(c.finanzas) recalcEstadoPago(c); });
+  // Normalizar ítems de gastos en casos viejos (Notificación / Honorarios iniciales+finales).
+  // En la nube migrate() no corre, así que lo hacemos acá una vez cargados los casos.
+  normalizarGastosTodos();
   _tareasSig=tareasSignature(DB.tareas);
   _cfgSig=cfgSignature();
 }
@@ -2213,7 +2216,7 @@ function tabGastos(c){
     <div class="card-b" style="padding-bottom:6px"><div class="alert alert-info"><span>ℹ️</span><div>Cada caso incluye por defecto <b>Notificación</b>, <b>Honorarios iniciales del mediador</b> y <b>Honorarios finales del mediador</b> como checklist de control. Al marcarlos <b>abonado</b> se encienden los checks del panel de casos.</div></div></div>
     <table><thead><tr><th>Gasto</th><th>Estado</th><th>Importe</th><th>Fecha pago</th><th>Medio</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
-function setGasto(id,k,v){ const g=CURRENT.gastos.find(x=>x.id===id); g[k]=v; if(k==="estado"&&v==="abonado")logAction(CURRENT,"Gasto abonado: "+g.nombre); save(); }
+function setGasto(id,k,v){ const g=CURRENT.gastos.find(x=>x.id===id); g[k]=v; if(k==="estado"&&v==="abonado"){ if(!g.fecha) g.fecha=new Date().toISOString().slice(0,10); logAction(CURRENT,"Gasto abonado: "+g.nombre); } save(); if(ROUTE==="caso")renderCaso(); }
 function addGasto(){ CURRENT.gastos.push({id:uid("g"),nombre:"Nuevo gasto",estado:"pendiente",importe:"",moneda:"ARS",fecha:"",medio:"",obs:"",adjunto:""}); save(); const last=CURRENT.gastos[CURRENT.gastos.length-1]; editGasto(last.id); }
 function editGasto(id){
   const g=CURRENT.gastos.find(x=>x.id===id);
@@ -3720,11 +3723,14 @@ function setFinMonth(v){ if(v){ FINMONTH=v; renderCajaOperativa(); } }
 // Movimientos de caja de un mes = gastos del estudio (gastosGen) + gastos ABONADOS de cada caso.
 // Los gastos de caso se muestran para reconciliar con el disponible (ya lo descuentan), con su concepto y caso.
 function movimientosCajaMes(ym){
-  const out=[];
+  const out=[]; const curMonth=new Date().toISOString().slice(0,7);
   (DB.gastosGen||[]).forEach(g=>{ if((g.fecha||"").slice(0,7)!==ym) return;
     out.push({id:g.id,source:'gen',fecha:g.fecha,categoria:g.categoria||'otros',concepto:g.concepto||'—',importe:Number(g.importe||0),moneda:g.moneda==='USD'?'USD':'ARS',estado:g.estado||'abonado',medio:g.medio||'',socio:g.socio||'',casoId:null,casoLabel:''}); });
-  (DB.casos||[]).forEach(c=>{ (c.gastos||[]).forEach(g=>{ if(g.estado!=='abonado')return; if((g.fecha||"").slice(0,7)!==ym)return; const imp=Number(g.importe||0); if(!imp)return;
-    out.push({id:g.id,source:'caso',fecha:g.fecha,categoria:'caso',concepto:g.nombre||'Gasto',importe:imp,moneda:g.moneda==='USD'?'USD':'ARS',estado:'abonado',medio:g.medio||'',socio:'',casoId:c.id,casoLabel:clienteFull(c)+' ('+c.id+')'}); }); });
+  (DB.casos||[]).forEach(c=>{ (c.gastos||[]).forEach(g=>{ if(g.estado!=='abonado')return; const imp=Number(g.importe||0); if(!imp)return;
+    // Un gasto abonado SIN fecha de pago se imputa al mes actual (para que impacte igual en la caja).
+    const gm=(g.fecha||"").slice(0,7); const enMes = gm ? (gm===ym) : (ym===curMonth);
+    if(!enMes) return;
+    out.push({id:g.id,source:'caso',fecha:g.fecha||'',categoria:'caso',concepto:g.nombre||'Gasto',importe:imp,moneda:g.moneda==='USD'?'USD':'ARS',estado:'abonado',medio:g.medio||'',socio:'',casoId:c.id,casoLabel:clienteFull(c)+' ('+c.id+')',sinFecha:!gm}); }); });
   return out;
 }
 function renderCajaOperativa(){
@@ -3741,7 +3747,7 @@ function renderCajaOperativa(){
   const catBadge=k=>`<span class="badge ${k==='empleados'?'b-blue':k==='licencias'?'b-gold':k==='adelanto_socio'?'b-red':k==='caso'?'b-blue':k==='operativo'?'b-grey':'b-grey'}">${k==='caso'?'Gasto de caso':esc(ggCatLabel(k))}</span>`;
   const rows=movMes.length?movMes.slice().sort((x,y)=>(y.fecha||"").localeCompare(x.fecha||"")).map(m=>`
     <tr class="clickable" onclick="${m.source==='caso'?`go('caso','${m.casoId}')`:`gastoGenModal('${m.id}')`}">
-      <td>${fdate(m.fecha)}</td>
+      <td>${m.sinFecha?'<span style="color:var(--muted)">sin fecha</span>':fdate(m.fecha)}</td>
       <td>${catBadge(m.categoria||'otros')}${m.categoria==='adelanto_socio'&&m.socio?`<br><small style="color:var(--muted)">${esc(userName(m.socio))}</small>`:''}</td>
       <td><b>${esc(m.concepto||'—')}</b>${m.source==='caso'?`<br><small style="color:var(--muted)">📁 ${esc(m.casoLabel)}</small>`:''}</td>
       <td>${money(m.importe,m.moneda)}</td>

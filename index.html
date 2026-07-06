@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.03 · B35 normalizar gastos en la nube + gastos sin fecha impactan caja";
+const BUILD = "2026.07.06 · B36 stand by por caso + pago único aparta el total";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -581,6 +581,15 @@ function cobradoDe(c){ const f=c.finanzas; return (c.pagos||[]).reduce((s,p)=>s+
 function cobradoSaldoDe(c){ const f=c.finanzas||{};
   const adel=(c.pagos||[]).filter(p=>p.esAdelanto).reduce((s,p)=>s+pagoEnMonedaCaso(p,f.moneda),0);
   return Math.max(cobradoDe(c)-adel,0);
+}
+// Base de plata cobrada que respalda el stand by (posible devolución) de un caso:
+// - Si el caso tiene SALDO / 2ª cuota (pago dividido): se respalda con lo cobrado del saldo,
+//   así no se aparta nada hasta que empiecen a pagar esa segunda parte.
+// - Si se pagó TODO JUNTO (sin saldo, el pago entra como adelanto): se respalda con TODO lo
+//   cobrado, para poder apartar el total del reembolso igual.
+function baseReservaStandBy(c){
+  const saldoPactado = saldoDe(c);
+  return saldoPactado > 0 ? cobradoSaldoDe(c) : cobradoDe(c);
 }
 function syncAdelanto(c){
   const f=c.finanzas; const ade=Number(f.adelanto||0); c.pagos=c.pagos||[];
@@ -3344,7 +3353,7 @@ function netLiquidableCaso(c){
   const dev=Number(f.devolucion||0);
   const devEnStandBy = dev>0 && f.estadoResultado!=='favorable' && !['realizada_dev','cancelada_dev'].includes(f.estadoDevolucion);
   // El stand by se respalda con lo cobrado del SALDO (2ª cuota), no con el primer pago.
-  const reservaCaso = devEnStandBy ? Math.min(dev, cobradoSaldoDe(c)) : 0;
+  const reservaCaso = devEnStandBy ? Math.min(dev, baseReservaStandBy(c)) : 0;
   const devRealizada = f.estadoDevolucion==='realizada_dev'?dev:0;
   let gastosCaso=0; (c.gastos||[]).forEach(g=>{ if(g.estado==='abonado') gastosCaso+=gastoCostoEnCaso(g, f.moneda); });
   const liq=liquidacionesDe(c.id).reduce((s,l)=>s+(l.reparto||[]).reduce((ss,r)=>ss+Number(r.monto||0),0),0);
@@ -3360,10 +3369,11 @@ function standByDetalle(){
     const f=c.finanzas||{}; const dev=Number(f.devolucion||0);
     const devEnStandBy = dev>0 && f.estadoResultado!=='favorable' && !['realizada_dev','cancelada_dev'].includes(f.estadoDevolucion);
     if(!devEnStandBy) return;
-    const saldoCobrado = cobradoSaldoDe(c);
-    const reserva = Math.min(dev, saldoCobrado);   // lo que hoy impacta en stand by
-    const sinFondear = Math.max(dev - reserva, 0);  // devolución pactada aún sin respaldo del saldo
-    out.push({ c, moneda:f.moneda, dev, saldoCobrado, reserva, sinFondear,
+    const pagoUnico = saldoDe(c) <= 0;              // pagó todo junto (sin saldo dividido)
+    const saldoCobrado = baseReservaStandBy(c);     // base que respalda el stand by
+    const reserva = Math.min(dev, saldoCobrado);    // lo que hoy impacta en stand by
+    const sinFondear = Math.max(dev - reserva, 0);  // devolución aún sin respaldo cobrado
+    out.push({ c, moneda:f.moneda, dev, saldoCobrado, reserva, sinFondear, pagoUnico,
                totalPagado: Number(f.montoTotal||0)>0 && cobradoDe(c)>=Number(f.montoTotal||0) });
   });
   // primero los que ya tienen reserva efectiva, ordenados por monto reservado desc
@@ -3413,7 +3423,7 @@ function calcFinanzasGlobal(){
     // Se reserva mientras el caso no se resolvió favorable y la devolución no se realizó/canceló.
     const devEnStandBy = dev>0 && f.estadoResultado!=='favorable' && !['realizada_dev','cancelada_dev'].includes(f.estadoDevolucion);
     // El stand by se respalda con lo cobrado del SALDO (2ª cuota), no con el primer pago.
-    const reservaCaso = devEnStandBy ? Math.min(dev, cobradoSaldoDe(c)) : 0;
+    const reservaCaso = devEnStandBy ? Math.min(dev, baseReservaStandBy(c)) : 0;
     if(!casoEsHistorial(c)){
       a.pendCobro[m]+=Math.max(Number(f.montoTotal||0)-cob,0);
       if(devEnStandBy) a.reservaDev[m]+=reservaCaso;
@@ -3689,12 +3699,13 @@ function renderFinanzasGlobal(){
     ? `<div class="card" style="margin-top:8px"><div class="card-h"><h3>⏸️ Detalle del stand by por caso</h3></div><div class="empty" style="padding:16px">No hay casos en stand by. Aparecen acá los casos abiertos con devolución pactada mientras no se resuelvan.</div></div>`
     : `<div class="card" style="margin-top:8px"><div class="card-h"><h3>⏸️ Detalle del stand by por caso</h3><span class="badge b-amber">${sbDet.length}</span></div>
        <div class="card-b" style="padding:0 0 4px"><table>
-         <thead><tr><th>Caso</th><th style="text-align:right">Devolución pactada</th><th style="text-align:right">Cobrado del saldo</th><th style="text-align:right">En stand by</th><th style="text-align:center">Acciones</th></tr></thead>
+         <thead><tr><th>Caso</th><th style="text-align:right">Devolución pactada</th><th style="text-align:right">Cobrado (respaldo)</th><th style="text-align:right">En stand by</th><th style="text-align:center">Acciones</th></tr></thead>
          <tbody>${sbDet.map(d=>{
            const c=d.c;
-           const estadoSaldo = d.totalPagado
+           const pagoUnicoTag = d.pagoUnico ? `<span class="badge b-blue" style="font-size:10px">pago único</span> ` : '';
+           const estadoSaldo = pagoUnicoTag + (d.totalPagado
              ? `<span class="badge b-green" style="font-size:10px">100% pagado</span>`
-             : (d.sinFondear>0 ? `<span class="badge b-amber" style="font-size:10px">falta cobrar ${money(d.sinFondear,d.moneda)}</span>` : `<span class="badge b-grey" style="font-size:10px">parcial</span>`);
+             : (d.sinFondear>0 ? `<span class="badge b-amber" style="font-size:10px">falta cobrar ${money(d.sinFondear,d.moneda)}</span>` : `<span class="badge b-grey" style="font-size:10px">parcial</span>`));
            return `<tr>
              <td><b class="clickable" style="color:var(--navy)" onclick="go('caso','${c.id}')">${esc(clienteFull(c))}</b><br>${estadoSaldo}</td>
              <td style="text-align:right">${money(d.dev,d.moneda)}</td>
@@ -3707,7 +3718,7 @@ function renderFinanzasGlobal(){
          }).join("")}</tbody>
          <tfoot><tr style="border-top:2px solid var(--line2);font-weight:700"><td>Total en stand by</td><td></td><td></td><td style="text-align:right;color:#b07d1a">${dosMon(sbTotal)}</td><td></td></tr></tfoot>
        </table></div>
-       <div class="card-b"><div class="hint"><b>Cobrado</b> = el caso salió favorable, el estudio se queda la devolución → pasa a la caja disponible. <b>Reembolsado</b> = se devolvió al cliente → se descuenta de la caja. El monto “En stand by” es lo que ya está respaldado con lo cobrado del <b>saldo/2ª cuota</b>; si un caso no pagó el 100%, la parte sin cobrar aún no se reserva.</div></div></div>`;
+       <div class="card-b"><div class="hint"><b>Cobrado</b> = el caso salió favorable, el estudio se queda la devolución → pasa a la caja disponible. <b>Reembolsado</b> = se devolvió al cliente → se descuenta de la caja.<br>El monto “En stand by” se respalda con lo cobrado del <b>saldo/2ª cuota</b>. En los casos de <b>pago único</b> (cobrado todo junto, sin saldo) se aparta el <b>total del reembolso</b>. Si un caso no pagó el 100%, la parte sin cobrar aún no se reserva.</div></div></div>`;
   // ---- contenido por pestaña ----
   let cont="";
   if(FINTAB==="resumen"){ cont=`

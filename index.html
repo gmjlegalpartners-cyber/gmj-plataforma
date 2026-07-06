@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.06 · B37 firma electrónica del cliente (contrato+poder) + expediente probatorio · stand by por caso";
+const BUILD = "2026.07.06 · B38 liquidación entre socios (compensación 50/50 + detalle) · sin 'pendiente de liquidar'";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -3858,10 +3858,7 @@ function allGastos(){
 }
 function calcFinanzasGlobal(){
   const z=()=>({USD:0,ARS:0}); const cur=m=>(m==="ARS"?"ARS":"USD");
-  const a={pendCobro:z(),pendDev:z(),pendGasto:z(),pendLiq:z(),cobrado:z(),cobradoReal:z(),gastosPag:z(),devRealizada:z(),fxOut:z(),fxIn:z(),liquidado:z(),adelantosSocios:z(),reservaDev:z()};
-  // liquidado por caso (suma de repartos)
-  const liqByCaso={};
-  (DB.liquidaciones||[]).forEach(l=>{ const m=cur(l.moneda); const dist=(l.reparto||[]).reduce((s,r)=>s+Number(r.monto||0),0); a.liquidado[m]+=dist; liqByCaso[l.caso_id]=(liqByCaso[l.caso_id]||0)+dist; });
+  const a={pendCobro:z(),pendDev:z(),pendGasto:z(),cobrado:z(),cobradoReal:z(),gastosPag:z(),devRealizada:z(),fxOut:z(),fxIn:z(),adelantosSocios:z(),reservaDev:z()};
   casosActivos().forEach(c=>{
     const f=c.finanzas||{}; const m=cur(f.moneda); const cob=cobradoDe(c); const dev=Number(f.devolucion||0);
     a.cobrado[m]+=cob; // cobrado medido en la moneda PACTADA (para facturación)
@@ -3876,8 +3873,6 @@ function calcFinanzasGlobal(){
       a.pendCobro[m]+=Math.max(Number(f.montoTotal||0)-cob,0);
       if(devEnStandBy) a.reservaDev[m]+=reservaCaso;
       if(["pendiente_dev","parcial_dev"].includes(f.estadoDevolucion)) a.pendDev[m]+=dev;
-      // pendiente de liquidar: cobrado − devoluciones (hechas o en stand by) − gastos del caso − ya liquidado
-      a.pendLiq[m]+=netLiquidableCaso(c);
     }
     if(f.estadoDevolucion==="realizada_dev") a.devRealizada[m]+=dev;
     (c.gastos||[]).forEach(g=>{ const gm=cur(g.moneda); const imp=Number(g.importe||0); if(!imp||g.estado==='no corresponde')return; if(g.estado==='abonado') a.gastosPag[gm]+=imp; else a.pendGasto[gm]+=imp; });
@@ -3891,8 +3886,8 @@ function calcFinanzasGlobal(){
   (DB.cambios||[]).forEach(x=>{ const mo=cur(x.moneda_origen), md=cur(x.moneda_destino); a.fxOut[mo]+=Number(x.monto_origen||0); a.fxIn[md]+=Number(x.monto_destino||0); });
   // caja bruta (toda la plata REAL que entró menos lo que salió, por moneda efectiva)
   a.cajaBruta={
-    USD: a.cobradoReal.USD - a.gastosPag.USD - a.adelantosSocios.USD - a.devRealizada.USD - a.fxOut.USD + a.fxIn.USD - a.liquidado.USD,
-    ARS: a.cobradoReal.ARS - a.gastosPag.ARS - a.adelantosSocios.ARS - a.devRealizada.ARS - a.fxOut.ARS + a.fxIn.ARS - a.liquidado.ARS
+    USD: a.cobradoReal.USD - a.gastosPag.USD - a.adelantosSocios.USD - a.devRealizada.USD - a.fxOut.USD + a.fxIn.USD,
+    ARS: a.cobradoReal.ARS - a.gastosPag.ARS - a.adelantosSocios.ARS - a.devRealizada.ARS - a.fxOut.ARS + a.fxIn.ARS
   };
   // caja DISPONIBLE real del estudio = bruta menos lo reservado por posibles devoluciones (stand by)
   a.caja={ USD: a.cajaBruta.USD - a.reservaDev.USD, ARS: a.cajaBruta.ARS - a.reservaDev.ARS };
@@ -3902,18 +3897,62 @@ function calcFinanzasGlobal(){
 // Repartible = caja disponible + adelantos ya retirados − gastos pendientes (programados). Se divide entre la cantidad de socios.
 function liquidacionesSocios(a){
   const byName={};
-  socios().forEach(u=>{ const n=u.nombre||"Socio"; if(!byName[n]) byName[n]={nombre:n, ids:[], USD:0, ARS:0}; byName[n].ids.push(u.id); });
+  socios().forEach(u=>{ const n=u.nombre||"Socio"; if(!byName[n]) byName[n]={nombre:n, ids:[], USD:0, ARS:0, items:[]}; byName[n].ids.push(u.id); });
   (DB.gastosGen||[]).forEach(g=>{ if(g.categoria!=='adelanto_socio'||g.estado==='pendiente')return; const imp=Number(g.importe||0); if(!imp)return; const m=g.moneda==='USD'?'USD':'ARS';
     let entry=Object.values(byName).find(s=>s.ids.includes(g.socio));
-    if(!entry){ byName['(sin asignar)']=byName['(sin asignar)']||{nombre:'(sin asignar)',ids:[],USD:0,ARS:0}; entry=byName['(sin asignar)']; }
+    if(!entry){ byName['(sin asignar)']=byName['(sin asignar)']||{nombre:'(sin asignar)',ids:[],USD:0,ARS:0,items:[]}; entry=byName['(sin asignar)']; }
     entry[m]+=imp;
+    entry.items.push({ fecha:g.fecha||"", concepto:g.concepto||"Adelanto", monto:imp, moneda:m });
   });
   const list=Object.values(byName);
+  list.forEach(s=>s.items.sort((x,y)=>(y.fecha||"").localeCompare(x.fecha||"")));
   const nSoc=Math.max(list.filter(s=>s.nombre!=='(sin asignar)').length,1);
+  // Bolsa repartible = caja disponible + lo ya retirado por socios − gastos pendientes. Se parte en partes iguales.
   const distrib={ USD:a.caja.USD + a.adelantosSocios.USD - a.pendGasto.USD, ARS:a.caja.ARS + a.adelantosSocios.ARS - a.pendGasto.ARS };
   const share={ USD:distrib.USD/nSoc, ARS:distrib.ARS/nSoc };
   list.forEach(s=>{ const real=s.nombre!=='(sin asignar)'; s.pendiente={ USD: real?(share.USD - s.USD):0, ARS: real?(share.ARS - s.ARS):0 }; });
   return {list, distrib, share, nSoc};
+}
+// Bloque visual de la liquidación entre socios: bolsa, la mitad de cada uno, retirado y cuánto falta para emparejar.
+function liqSociosBlockHtml(liqSoc){
+  const reales = liqSoc.list.filter(s=>s.nombre!=='(sin asignar)');
+  const sinAsig = liqSoc.list.find(s=>s.nombre==='(sin asignar)');
+  if(!reales.length) return '<div class="empty">No hay socios cargados.</div>';
+  const compenLinea=(mon)=>{
+    const arr=reales.map(s=>({n:s.nombre, pend:s.pendiente[mon]})).sort((a,b)=>b.pend-a.pend);
+    const top=arr[0]; const over=arr.filter(x=>x.pend<-0.005);
+    if(Math.abs(top.pend)<0.005 && !over.length) return `<span style="color:var(--muted)">${mon}: emparejado, cada socio está en su mitad.</span>`;
+    let msg = top.pend>0.005 ? `${mon}: para emparejar, a <b>${esc(top.n)}</b> le corresponde retirar <b>${money(top.pend,mon)}</b> hasta su mitad.` : `${mon}: ambos están en o por encima de su mitad.`;
+    if(over.length) msg += ` <span style="color:#c0392b">(${over.map(o=>esc(o.n)+" retiró "+money(-o.pend,mon)+" de más").join("; ")})</span>`;
+    return msg;
+  };
+  const cards = reales.map(s=>{
+    const cell=(mon)=>{
+      const pend=s.pendiente[mon];
+      const estado = Math.abs(pend)<0.005 ? `<span style="color:#1c7a40">en su mitad</span>`
+        : (pend>0 ? `le corresponde <b style="color:#1c7a40">${money(pend,mon)}</b> más` : `retiró de más <b style="color:#c0392b">${money(-pend,mon)}</b>`);
+      return `<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:1px 0"><span style="color:var(--muted)">${mon}</span><span style="text-align:right">retiró ${money(s[mon],mon)} · le toca ${money(liqSoc.share[mon],mon)} · ${estado}</span></div>`;
+    };
+    return `<div class="stat clickable" style="border-left:4px solid #7c5cbf;cursor:pointer" onclick="liqSocioDetalle('${esc(s.nombre).replace(/'/g,"\\'")}')" title="Ver detalle de adelantos">
+      <div class="lab">⚖️ ${esc(s.nombre)} <span style="font-weight:400;color:var(--muted);font-size:11px">— ver detalle</span></div>
+      ${cell("ARS")}${cell("USD")}
+    </div>`;
+  }).join("");
+  const bolsa = `<div class="hint" style="margin-bottom:8px">Bolsa repartible: <b>${money(liqSoc.distrib.ARS,"ARS")}</b> · <b>${money(liqSoc.distrib.USD,"USD")}</b> — a cada socio le corresponde <b>${money(liqSoc.share.ARS,"ARS")}</b> · <b>${money(liqSoc.share.USD,"USD")}</b>.</div>`;
+  const compen = `<div class="alert alert-info" style="margin-top:8px"><span>⚖️</span><div>${compenLinea("ARS")}<br>${compenLinea("USD")}</div></div>`;
+  const aviso = (sinAsig && (sinAsig.ARS||sinAsig.USD)) ? `<div class="alert alert-warn" style="margin-top:8px"><span>⚠</span><div>Hay adelantos <b>sin socio asignado</b> (${money(sinAsig.ARS,"ARS")} · ${money(sinAsig.USD,"USD")}). Asignales el socio en Caja operativa para que la compensación sea exacta.</div></div>` : "";
+  return `${bolsa}<div class="grid g2">${cards}</div>${compen}${aviso}`;
+}
+// Detalle de adelantos de un socio (fecha, concepto, monto).
+function liqSocioDetalle(nombre){
+  const a=calcFinanzasGlobal(); const liqSoc=liquidacionesSocios(a);
+  const s=liqSoc.list.find(x=>x.nombre===nombre); if(!s){ toast("Sin datos del socio","err"); return; }
+  const rows = s.items.length ? s.items.map(it=>`<tr><td>${fdate(it.fecha)||'—'}</td><td>${esc(it.concepto)}</td><td style="text-align:right">${money(it.monto,it.moneda)}</td></tr>`).join("")
+    : `<tr><td colspan="3" class="empty">Sin adelantos registrados</td></tr>`;
+  const real = s.nombre!=='(sin asignar)';
+  const resumen = real ? `<div class="hint" style="margin:0 0 8px">Retiró <b>${money(s.ARS,"ARS")}</b> · <b>${money(s.USD,"USD")}</b>. Le corresponde <b>${money(liqSoc.share.ARS,"ARS")}</b> · <b>${money(liqSoc.share.USD,"USD")}</b>. Le corresponde aún <b>${money(Math.max(s.pendiente.ARS,0),"ARS")}</b> · <b>${money(Math.max(s.pendiente.USD,0),"USD")}</b> para llegar a su mitad.</div>` : "";
+  modal({ title:`Detalle de adelantos — ${s.nombre}`, size:"", body:`${resumen}<div class="card" style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Concepto</th><th style="text-align:right">Monto</th></tr></thead><tbody>${rows}</tbody></table></div>`,
+    footer:`<button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>` });
 }
 /* ---------- LIQUIDACIÓN ENTRE SOCIOS (solo socios) ---------- */
 function socios(){ return DB.usuarios.filter(u=>u.rol==='socio'); }
@@ -4069,11 +4108,7 @@ function renderFinanzasGlobal(){
   setCrumb("Finanzas global"); topActions("");
   const a=calcFinanzasGlobal();
   const liqSoc=liquidacionesSocios(a);
-  const socioLiqCards = liqSoc.list.map(s=>`<div class="stat" style="border-left:4px solid #7c5cbf">
-      <div class="lab">⚖️ ${esc(s.nombre)}</div>
-      <div class="val" style="font-size:15px">${money(s.USD,"USD")} · ${money(s.ARS,"ARS")}</div>
-      <div class="sub">total retirado (adelantos)</div>
-    </div>`).join("") || '<div class="empty">Aún no hay adelantos a socios cargados (Caja operativa → categoría “Adelanto entre socios”).</div>';
+  const socioLiqCards = liqSociosBlockHtml(liqSoc);
   const todos=casosActivos();
   const activos=todos.filter(c=>!casoEsHistorial(c));
   const histo=todos.filter(c=>casoEsHistorial(c));
@@ -4126,20 +4161,6 @@ function renderFinanzasGlobal(){
   const TABS=[["resumen","Resumen"],["casos","Casos"],["gastos","Gastos"],["cambios","Cambios de divisa"],["movimientos","Movimientos"]];
   if(FINTAB==="liquidaciones") FINTAB="resumen";
   const tabBar=`<div class="tabs" style="margin-bottom:18px">${TABS.map(([k,t])=>`<button class="${FINTAB===k?'active':''}" onclick="setFinTab('${k}')">${t}</button>`).join("")}</div>`;
-  // ---- liquidaciones: listos para liquidar + historial + por socio ----
-  const listos=activos.filter(c=>netLiquidableCaso(c)>0);
-  const listosCards=listos.length?listos.map(c=>{ const f=c.finanzas||{}; return `<div class="card" style="padding:0"><div class="card-b" style="padding:12px 14px">
-      <div style="font-weight:700;color:var(--navy)">${esc(clienteFull(c))}</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">${finLabel(f.estadoResultado)} · ${finLabel(f.estadoCobro)}</div>
-      <div style="display:flex;align-items:flex-end;justify-content:space-between">
-        <div><div style="font-size:12px;color:var(--muted)">para repartir</div><div style="font-size:18px;font-weight:700;color:#1c7a40">${money(netLiquidableCaso(c),f.moneda)}</div></div>
-        <button class="btn btn-primary btn-sm" onclick="liqModal('${c.id}')">⚖️ Liquidar</button>
-      </div></div></div>`;}).join(""):'<div class="card"><div class="empty">No hay casos con plata lista para repartir. Aparecen acá cuando el caso está cobrado y resuelto.</div></div>';
-  const lhRows=liqHistorialRows(FINFILTER.liqSocio);
-  const liqHistRows=lhRows.length?lhRows.map(r=>`<tr class="clickable" onclick="openLiqById('${r.liqId}')"><td>${fdate(r.fecha)}</td><td>${esc(r.cliente)}</td><td><b>${esc(r.socio)}</b></td><td style="text-align:right">${money(r.monto,r.moneda)}</td><td><span class="badge ${FIN_COLOR[r.estado]||(r.estado==='pendiente'?'b-amber':'b-green')}">${esc(LIQ_EST[r.estado]||r.estado)}</span></td></tr>`).join(""):`<tr><td colspan="5" class="empty">Sin liquidaciones registradas</td></tr>`;
-  const porSocio=resumenPorSocio();
-  const socioCards=Object.values(porSocio).length?Object.values(porSocio).map(s=>`<div class="stat"><div class="lab">${esc(s.nombre)}</div><div class="val" style="font-size:16px">${money(s.USD,"USD")} · ${money(s.ARS,"ARS")}</div></div>`).join(""):'<div class="empty">Sin datos</div>';
-  const socioFiltro=`<select onchange="FINFILTER.liqSocio=this.value;renderFinanzasGlobal()"><option value="">Todos los socios</option>${socios().map(u=>`<option value="${u.id}" ${FINFILTER.liqSocio===u.id?'selected':''}>${esc(u.nombre)}</option>`).join("")}</select>`;
   // ---- contenido por pestaña ----
   let cont="";
   // ---- desglose del stand by (por caso) ----
@@ -4170,9 +4191,8 @@ function renderFinanzasGlobal(){
        </table></div>
        <div class="card-b"><div class="hint"><b>Cobrado</b> = el caso salió favorable, el estudio se queda la devolución → pasa a la caja disponible. <b>Reembolsado</b> = se devolvió al cliente → se descuenta de la caja.<br>El monto “En stand by” se respalda con lo cobrado del <b>saldo/2ª cuota</b>. En los casos de <b>pago único</b> (cobrado todo junto, sin saldo) se aparta el <b>total del reembolso</b>. Si un caso no pagó el 100%, la parte sin cobrar aún no se reserva.</div></div></div>`;
   if(FINTAB==="resumen"){ cont=`
-    <div class="grid g4" style="margin-bottom:8px">
+    <div class="grid g3" style="margin-bottom:8px">
       <div class="stat"><div class="lab">Pendiente de cobro</div><div class="val" style="font-size:17px">${dosMon(a.pendCobro)}</div></div>
-      <div class="stat"><div class="lab">Pendiente de liquidar</div><div class="val" style="font-size:17px">${dosMon(a.pendLiq)}</div></div>
       <div class="stat"><div class="lab">Devolución a realizar</div><div class="val" style="font-size:17px">${dosMon(a.pendDev)}</div></div>
       <div class="stat"><div class="lab">Pendiente de gastos</div><div class="val" style="font-size:17px">${dosMon(a.pendGasto)}</div></div>
     </div>
@@ -4182,8 +4202,8 @@ function renderFinanzasGlobal(){
       <div class="stat"><div class="lab">Caja bruta (antes de stand by)</div><div class="val" style="font-size:17px">${dosMon(a.cajaBruta)}</div></div>
     </div>
     <div class="sec-title" style="font-weight:700;color:var(--navy);margin:14px 0 8px">⚖️ Liquidación entre socios</div>
-    <div class="grid g2" style="margin-bottom:8px">${socioLiqCards}</div>
-    <div class="hint" style="margin-bottom:10px">Total <b>retirado</b> por cada socio (adelantos cargados en Caja operativa → categoría “Adelanto entre socios”).</div>
+    ${socioLiqCards}
+    <div class="hint" style="margin:6px 0 10px">Los adelantos se cargan en <b>Caja operativa</b> → categoría “Adelanto entre socios”. Tocá cada socio para ver el detalle (fecha y concepto).</div>
     <div class="alert alert-info"><span>💱</span><div>Si un caso se pactó en USD pero se cobró en pesos, esos pesos suman a la <b>caja en ARS</b> (efectivo real), no a la de dólares. Para pasar pesos a dólares usá <b>Cambios de divisa</b> con su tipo de cambio.</div></div>
     <div class="alert alert-warn"><span>⏸️</span><div>El monto <b>en stand by</b> es la <b>devolución pactada</b> de casos sin resolver: no es plata del estudio todavía. Si el caso termina favorable pasa a la caja; si termina negativo se devuelve. Por eso no se reparte ni se gasta hasta cerrar el caso.</div></div>
     <div class="card" style="margin-top:8px"><div class="card-h"><h3>¿Cómo se compone la caja disponible?</h3></div>
@@ -4192,7 +4212,7 @@ function renderFinanzasGlobal(){
         <tr><td>Dólares comprados / vendidos (cambios)</td><td style="text-align:right">${a.fxIn.ARS-a.fxOut.ARS>=0?'+ ':'− '}${money(Math.abs(a.fxIn.ARS-a.fxOut.ARS),"ARS")}</td><td style="text-align:right">${a.fxIn.USD-a.fxOut.USD>=0?'+ ':'− '}${money(Math.abs(a.fxIn.USD-a.fxOut.USD),"USD")}</td></tr>
         <tr><td>Gastos abonados (casos + operativos)</td><td style="text-align:right;color:#c0392b">− ${money(a.gastosPag.ARS,"ARS")}</td><td style="text-align:right;color:#c0392b">− ${money(a.gastosPag.USD,"USD")}</td></tr>
         <tr><td>Devoluciones realizadas</td><td style="text-align:right;color:#c0392b">− ${money(a.devRealizada.ARS,"ARS")}</td><td style="text-align:right;color:#c0392b">− ${money(a.devRealizada.USD,"USD")}</td></tr>
-        <tr><td>Liquidado / adelantos a socios</td><td style="text-align:right;color:#c0392b">− ${money(a.liquidado.ARS+a.adelantosSocios.ARS,"ARS")}</td><td style="text-align:right;color:#c0392b">− ${money(a.liquidado.USD+a.adelantosSocios.USD,"USD")}</td></tr>
+        <tr><td>Adelantos retirados por socios</td><td style="text-align:right;color:#c0392b">− ${money(a.adelantosSocios.ARS,"ARS")}</td><td style="text-align:right;color:#c0392b">− ${money(a.adelantosSocios.USD,"USD")}</td></tr>
         <tr><td>Reservado en stand by (posible devolución)</td><td style="text-align:right;color:#b07d1a">− ${money(a.reservaDev.ARS,"ARS")}</td><td style="text-align:right;color:#b07d1a">− ${money(a.reservaDev.USD,"USD")}</td></tr>
         <tr style="border-top:2px solid var(--line2);font-weight:700"><td>= Caja disponible</td><td style="text-align:right">${money(a.caja.ARS,"ARS")}</td><td style="text-align:right">${money(a.caja.USD,"USD")}</td></tr>
       </tbody></table>

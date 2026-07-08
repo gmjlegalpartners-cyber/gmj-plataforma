@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.08 · B40 módulo Presupuestos (documento base editable + logo)";
+const BUILD = "2026.07.08 · B41 fix PDF presupuesto (texto + paginación + logo)";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -2149,25 +2149,48 @@ function _buildDocPdf(d, cont, cache, S){
     pdf.setFont("times","normal"); pdf.setFontSize(footPt); pdf.setTextColor(90); pdf.text("CABA - contacto@gmj-abogados.com.ar", PW/2, y, {align:"center",baseline:"top"}); pdf.setTextColor(0); y+=mm(footPt)*1.2+1;
     pdf.setDrawColor(22,41,77); pdf.setLineWidth(0.6); pdf.line(ML,y,PW-MR,y); y+=5;
   }
+  function renderPresuHead(el){ const img=el.querySelector(":scope > img")||el.querySelector("img"); const src=img&&img.getAttribute("src"); const ci=src&&cache[src];
+    if(src&&ci&&ci.w){ const w=26, h=w*(ci.h/ci.w||1.18); need(h+11); try{ pdf.addImage(src,"PNG",(PW-w)/2,y,w,h); }catch(e){} y+=h+2.5; }
+    pdf.setFont("times","bold"); pdf.setFontSize(h1Pt); need(mm(h1Pt)*1.2); pdf.text("GMJ LEGAL PARTNERS", PW/2, y, {align:"center",baseline:"top"}); y+=mm(h1Pt)*1.12;
+    pdf.setDrawColor(22,41,77); pdf.setLineWidth(0.6); pdf.line(ML,y,PW-MR,y); y+=5; }
+  function paraAlign(el, pt){ const st=el.getAttribute("style")||""; const align=/text-align:\s*right/.test(st)?"right":/text-align:\s*center/.test(st)?"center":"left";
+    const t=(el.textContent||"").replace(/\s+/g," ").trim(); if(!t) return; pdf.setFont("times","normal"); pdf.setFontSize(pt); const lh=mm(pt)*1.42;
+    pdf.splitTextToSize(t,maxW).forEach(ln=>{ need(lh); const x=align==="right"?(PW-MR):align==="center"?(PW/2):ML; pdf.text(ln,x,y,{align:align,baseline:"top"}); y+=lh; }); y+=mm(pt)*0.4; }
+  function renderList(el){ for(const li of [].slice.call(el.children)){ if(li.tagName!=="LI") continue; const b=document.createElement("span"); b.textContent="\u2022  "; li.insertBefore(b, li.firstChild); para(li, bodyPt, false); } y+=mm(bodyPt)*0.4; }
   function walkBlock(node){ for(const el of [].slice.call(node.children)){ const tag=el.tagName;
     if(tag==="H1") heading(el.textContent.trim(),h1Pt);
     else if(tag==="H2") heading(el.textContent.trim(),h2Pt);
     else if(tag==="P") para(el, bodyPt);
+    else if(tag==="UL"||tag==="OL") renderList(el);
     else if(tag==="TABLE") renderSigTable(el);
     else if(tag==="DIV"){ const txt=el.textContent||"";
       if(el.classList.contains("sig")) renderSigDiv(el);
+      else if(el.querySelector(":scope > img")) renderPresuHead(el);
       else if(/Constancia de aceptaci/i.test(txt)) para(el, footPt, false);
       else if(/GMJ LEGAL PARTNERS/.test(txt) && el.querySelector(":scope > div") && !el.querySelector("p")) renderLetterhead();
+      else if(el.children.length===0 && txt.trim()) paraAlign(el, /gmj\.abogados|contacto@|www\.|@gmj/i.test(txt)?footPt:bodyPt);
       else walkBlock(el);
     }
   } }
   walkBlock(cont);
   return pdf;
 }
+let _LOGO_PNG_CACHE=null;
+async function logoToPng(){
+  if(_LOGO_PNG_CACHE) return _LOGO_PNG_CACHE;
+  const uri="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(LOGO_FULL);
+  const img=new Image(); img.width=120; img.height=142;
+  await new Promise((res,rej)=>{ img.onload=res; img.onerror=rej; img.src=uri; });
+  const sc=4; const cv=document.createElement("canvas"); cv.width=120*sc; cv.height=142*sc;
+  cv.getContext("2d").drawImage(img,0,0,cv.width,cv.height);
+  try{ _LOGO_PNG_CACHE=cv.toDataURL("image/png"); }catch(e){ _LOGO_PNG_CACHE=null; }
+  return _LOGO_PNG_CACHE;
+}
 async function _renderDocPdfJs(d, mode, filename){
   await ensureJsPDF();
   const cont=document.createElement("div"); cont.style.cssText="position:absolute;left:-99999px;top:0;width:794px"; cont.innerHTML=d.html; document.body.appendChild(cont);
   try{
+    if(d.tipo==="presupuesto"){ try{ const png=await logoToPng(); if(png) cont.querySelectorAll("img").forEach(im=>{ if((im.getAttribute("src")||"").indexOf("image/svg")>=0) im.setAttribute("src",png); }); }catch(e){ console.warn("logoToPng",e); } }
     const imgEls=[].slice.call(cont.querySelectorAll("img"));
     const cache={}; (await _preloadImgs(imgEls.map(im=>im.getAttribute("src")))).forEach(o=>{ cache[o.src]=o; });
     // Auto-ajuste: contrato máximo 2 hojas, carta poder máximo 1. Se prueba a escala 1
@@ -2180,11 +2203,11 @@ async function _renderDocPdfJs(d, mode, filename){
   } finally { try{ cont.remove(); }catch(e){} }
 }
 async function docToPdfFile(d, filename){
-  if(d && (d.tipo==="contrato"||d.tipo==="carta_poder")){ try{ return await _renderDocPdfJs(d,"save",filename); }catch(e){ console.error("jsPDF render, uso fallback",e); } }
+  if(d && (d.tipo==="contrato"||d.tipo==="carta_poder"||d.tipo==="presupuesto")){ try{ return await _renderDocPdfJs(d,"save",filename); }catch(e){ console.error("jsPDF render, uso fallback",e); } }
   return _renderDocPdf(d,"save",filename);
 }
 async function docToPdfBase64(d){
-  if(d && (d.tipo==="contrato"||d.tipo==="carta_poder")){ try{ return await _renderDocPdfJs(d,"b64","doc"); }catch(e){ console.error("jsPDF render, uso fallback",e); } }
+  if(d && (d.tipo==="contrato"||d.tipo==="carta_poder"||d.tipo==="presupuesto")){ try{ return await _renderDocPdfJs(d,"b64","doc"); }catch(e){ console.error("jsPDF render, uso fallback",e); } }
   return _renderDocPdf(d,"b64","doc");
 }
 async function sendDocVia(id,via){

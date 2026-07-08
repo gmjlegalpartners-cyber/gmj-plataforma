@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.06 · B38 liquidación entre socios (compensación 50/50 + detalle) · sin 'pendiente de liquidar'";
+const BUILD = "2026.07.08 · B39 fix: formulario del cliente carga sin sesión (DB init)";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -3301,6 +3301,10 @@ function sendByMail(what){
 function openClientForm(token){ location.hash="form="+token; renderClientForm(token); }
 function renderClientForm(token){ const c=DB.casos.find(x=>x.formToken===token); paintForm(token,c,"submitClientForm"); }
 async function renderClientFormCloud(token){
+  // El cliente entra SIN login: en esta ruta DB todavía no está inicializado.
+  // El backend public-form ahora devuelve config, y más abajo se hace DB.config=...;
+  // sin este init, DB es undefined y tira "No se pudo cargar el formulario".
+  if(!DB) DB={config:{},abogados:[],usuarios:[],casos:[]};
   document.getElementById("login").classList.add("hidden"); document.getElementById("app").classList.add("hidden");
   let root=document.getElementById("formRoot"); if(!root){ root=document.createElement("div"); root.id="formRoot"; document.body.appendChild(root);} root.classList.remove("hidden");
   root.innerHTML=`<div style="padding:60px;text-align:center;color:#64748b">Cargando formulario…</div>`;

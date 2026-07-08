@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.08 · B39 fix: formulario del cliente carga sin sesión (DB init)";
+const BUILD = "2026.07.08 · B40 módulo Presupuestos (documento base editable + logo)";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -669,6 +669,7 @@ async function cloudLoad(){
     abogados: cfg.abogados||[],
     usuarios: (profs.data||[]).map(p=>({id:p.id,nombre:p.nombre,rol:p.rol})),
     casos: [],
+    presupuestos: [],
     tareas: tk.data||[],
     notificaciones: nt.data||[],
     cambios: cd.data||[],
@@ -976,7 +977,7 @@ function initApp(){
   document.getElementById("uav").textContent = SESSION.nombre.split(" ").map(s=>s[0]).slice(0,2).join("");
   document.getElementById("unm").textContent = SESSION.nombre;
   document.getElementById("url").textContent = isSocio()?"Socio / Administrador":"Colaborador";
-  setLogos(); buildNav(); renderBell(); go("dashboard");
+  setLogos(); buildNav(); renderBell(); go("dashboard"); loadPresupuestosCloud();
   const bt=document.getElementById("buildTag"); if(bt)bt.textContent="Versión "+BUILD;
 }
 function buildNav(){
@@ -984,6 +985,7 @@ function buildNav(){
     {k:"dashboard", i:"▦", t:"Panel"},
     {k:"casos", i:"📁", t:"Casos"},
     {k:"tareas", i:"✅", t:"Tareas"},
+    {k:"presupuestos", i:"🧾", t:"Presupuestos"},
   ];
   if(isSocio()) items.push({k:"finanzas", i:"💰", t:"Finanzas global"});
   if(isSocio()) items.push({k:"operativa", i:"📅", t:"Caja operativa"});
@@ -1002,6 +1004,7 @@ function go(route, arg){
   if(route==="dashboard"){ setActiveNav("dashboard"); renderDashboard(); }
   else if(route==="casos"){ setActiveNav("casos"); renderCasos(); }
   else if(route==="tareas"){ setActiveNav("tareas"); renderTareas(); }
+  else if(route==="presupuestos"){ setActiveNav("presupuestos"); renderPresupuestos(); }
   else if(route==="caso"){ setActiveNav("casos"); CURRENT=DB.casos.find(c=>c.id===arg); ACTIVE_TAB="resumen"; EDIT_AUD=null; renderCaso(); }
   else if(route==="finanzas"){ setActiveNav("finanzas"); renderFinanzasGlobal(); }
   else if(route==="operativa"){ setActiveNav("operativa"); renderCajaOperativa(); }
@@ -1994,7 +1997,7 @@ function constanciaFirmaHtml(c){
       <div class="hint" style="margin-top:10px">Este registro es la prueba del consentimiento. La huella SHA-256 permite verificar que el PDF guardado no fue alterado: si el archivo cambia, la huella no coincide.</div>
     </div></div>`;
 }
-function docTitle(t){ return {contrato:"Contrato de servicios",carta_poder:"Carta poder bilingüe",mediacion:"Solicitud de mediación",informe:"Informe de revisión para Meta"}[t]||t; }
+function docTitle(t){ return {contrato:"Contrato de servicios",carta_poder:"Carta poder bilingüe",mediacion:"Solicitud de mediación",informe:"Informe de revisión para Meta",presupuesto:"Presupuesto"}[t]||t; }
 function setDocEstado(id,e){ if(!e)return; const d=CURRENT.docs.find(x=>x.id===id); d.estado=e; logAction(CURRENT,docTitle(d.tipo)+" → "+e); save(); toast("Estado actualizado"); renderCaso(); }
 
 /* ---------- ENVÍO DE DOCUMENTOS (WhatsApp / mail) ---------- */
@@ -2851,6 +2854,7 @@ function plantillaSeed(){ DB.config.plantillas=DB.config.plantillas||{};
   ["carta_poder","mediacion"].forEach(k=>{ if(!DB.config.plantillas[k]||!(DB.config.plantillas[k].html||"").trim()) DB.config.plantillas[k]={html:DEFAULT_PLANTILLAS[k],updated:null}; });
   if(!DB.config.plantillas.contrato_con_reintegro||!(DB.config.plantillas.contrato_con_reintegro.html||"").trim()) DB.config.plantillas.contrato_con_reintegro={html:DEFAULT_CONTRATO(true),updated:null};
   if(!DB.config.plantillas.contrato_sin_reintegro||!(DB.config.plantillas.contrato_sin_reintegro.html||"").trim()) DB.config.plantillas.contrato_sin_reintegro={html:DEFAULT_CONTRATO(false),updated:null};
+  if(!DB.config.plantillas.presupuesto||!(DB.config.plantillas.presupuesto.html||"").trim()) DB.config.plantillas.presupuesto={html:DEFAULT_PRESUPUESTO(),updated:null};
 }
 function buildDocHtml(c,tipo){
   if(tipo==="contrato") return tplContrato(c); // contrato: generado por codigo (firmas + reintegro condicional)
@@ -2867,11 +2871,11 @@ let PL_TIPO=null, PL_RANGE=null;
 // Editor activo (modelo en Configuración = "pl_editor"; documento de un caso = "docEdit").
 let PL_EDITOR_ID="pl_editor";
 function plEd(){ return document.getElementById(PL_EDITOR_ID); }
-const PL_TITULOS={contrato:"Contrato de servicios",contrato_con_reintegro:"Contrato de servicios (con reintegro)",contrato_sin_reintegro:"Contrato de servicios (sin reintegro)",carta_poder:"Carta poder",mediacion:"Solicitud de mediación"};
+const PL_TITULOS={contrato:"Contrato de servicios",contrato_con_reintegro:"Contrato de servicios (con reintegro)",contrato_sin_reintegro:"Contrato de servicios (sin reintegro)",carta_poder:"Carta poder",mediacion:"Solicitud de mediación",presupuesto:"Presupuesto"};
 function openPlantillaEditor(tipo){
   plantillaSeed(); PL_TIPO=tipo; PL_RANGE=null; PL_EDITOR_ID="pl_editor";
   const html=(DB.config.plantillas[tipo]||{}).html||"";
-  const pal=DOC_VARS.map(v=>`<button type="button" class="btn btn-ghost btn-sm" style="margin:2px;font-size:11px" onclick="insertVar('${v[0]}')" title="${esc(v[1])}">${'{{'+v[0]+'}}'}</button>`).join("");
+  const pal=(tipo==="presupuesto"?PRESU_VARS:DOC_VARS).map(v=>`<button type="button" class="btn btn-ghost btn-sm" style="margin:2px;font-size:11px" onclick="insertVar('${v[0]}')" title="${esc(v[1])}">${'{{'+v[0]+'}}'}</button>`).join("");
   setCrumb("Modelo · "+PL_TITULOS[tipo],"Configuración");
   topActions(`<button class="btn btn-ghost" onclick="renderConfig()">← Volver</button><button class="btn btn-primary" onclick="savePlantilla()">💾 Guardar modelo</button>`);
   document.getElementById("view").innerHTML=`
@@ -3051,13 +3055,15 @@ function insertVar(tok){
 }
 function savePlantilla(){ const ed=plEd(); if(!ed)return; plImgDeselect(); DB.config.plantillas=DB.config.plantillas||{}; DB.config.plantillas[PL_TIPO]={html:ed.innerHTML,updated:now()}; save(); toast("Modelo guardado ✓ — se usará en los próximos documentos"); }
 function resetPlantilla(){ if(!confirm("¿Restaurar el modelo base original? Se descartan tus cambios de este documento."))return; DB.config.plantillas=DB.config.plantillas||{};
-  const def = PL_TIPO==="contrato_con_reintegro"?DEFAULT_CONTRATO(true) : PL_TIPO==="contrato_sin_reintegro"?DEFAULT_CONTRATO(false) : DEFAULT_PLANTILLAS[PL_TIPO];
+  const def = PL_TIPO==="contrato_con_reintegro"?DEFAULT_CONTRATO(true) : PL_TIPO==="contrato_sin_reintegro"?DEFAULT_CONTRATO(false) : PL_TIPO==="presupuesto"?DEFAULT_PRESUPUESTO() : DEFAULT_PLANTILLAS[PL_TIPO];
   DB.config.plantillas[PL_TIPO]={html:def,updated:now()}; save(); openPlantillaEditor(PL_TIPO); toast("Modelo restaurado"); }
 function previewPlantilla(){
   const ed=plEd(); if(!ed)return;
   const c=(typeof CURRENT!=="undefined"&&CURRENT)||casosActivos()[0]||(DB.casos||[])[0];
   const small=PL_TIPO==="carta_poder";
-  const body=c?(docHead(small)+renderPlantilla(ed.innerHTML,c)):(docHead(small)+ed.innerHTML);
+  let body;
+  if(PL_TIPO==="presupuesto"){ body=presuHeader()+renderPresuPlantilla(ed.innerHTML, PRESU_SAMPLE()); }
+  else body=c?(docHead(small)+renderPlantilla(ed.innerHTML,c)):(docHead(small)+ed.innerHTML);
   const css=docExportCSS(PL_TIPO);
   const w=window.open("","_blank");
   w.document.write(`<html><head><title>Vista previa — ${esc(PL_TITULOS[PL_TIPO])}</title><meta charset="utf-8"><style>${css} body{background:#f0f0f0;padding:24px}.page{position:relative;background:#fff;max-width:780px;margin:0 auto;padding:48px 56px;box-shadow:0 2px 12px rgba(0,0,0,.15)}.page img{max-width:100%}</style></head><body><div class="page">${body}</div><p style="text-align:center;color:#888;font-size:10pt;margin-top:16pt">— Vista previa${c?' con datos de: '+esc(clienteFull(c)):' (sin caso de ejemplo: las variables se ven sin reemplazar)'} —</p></body></html>`);
@@ -4451,6 +4457,7 @@ function renderConfig(){
           <div class="hint" style="margin:2px 0 8px">El sistema elige solo cuál usar según Finanzas. Las firmas del estudio y el cierre se agregan automáticamente (no hace falta ponerlos en el texto).</div>
           <div class="doc-row" style="cursor:pointer" onclick="openPlantillaEditor('carta_poder')"><div class="meta"><b>Carta poder</b><br><small>Bilingüe, una carilla</small></div><span class="ic">✏️</span></div>
           <div class="doc-row" style="cursor:pointer" onclick="openPlantillaEditor('mediacion')"><div class="meta"><b>Solicitud de mediación</b><br><small>Requirente, requeridos y síntesis</small></div><span class="ic">✏️</span></div>
+          <div class="doc-row" style="cursor:pointer" onclick="openPlantillaEditor('presupuesto')"><div class="meta"><b>Presupuesto — Recuperación de cuenta</b><br><small>Documento base del módulo Presupuestos (logo + texto editable)</small></div><span class="ic">✏️</span></div>
         </div>
       </div></div>
     </div>`;
@@ -4869,6 +4876,257 @@ function getFormToken(){
   }
   return null;
 }
+
+/* ============================================================
+   MÓDULO PRESUPUESTOS (BORRADOR — no publicado)
+   Disponible para socios y colaboradores. Genera el documento
+   automáticamente y permite crear el caso a partir del presupuesto.
+   ============================================================ */
+let PRESU_CUOTAS=[];   // cuotas en edición dentro del modal
+let PRESU_DRAFT=null;  // presupuesto en previsualización
+function presupuestosPool(){ if(!DB.presupuestos) DB.presupuestos=[]; return DB.presupuestos; }
+
+async function loadPresupuestosCloud(){
+  if(!CLOUD||!sb) return;
+  try{
+    const {data,error}=await sb.from("presupuestos").select("*").order("created_at",{ascending:false});
+    if(error){ console.warn("presupuestos: tabla aún no creada (borrador):", error.message); return; }
+    if(Array.isArray(data)){
+      DB.presupuestos=data.map(r=>({id:r.id,fecha:r.fecha,cliente:r.cliente||{},cuenta:r.cuenta||{},moneda:r.moneda||"USD",montoTotal:r.monto_total,cuotas:r.cuotas||[],reintegro:r.reintegro||{aplica:false,importe:0},html:r.html||"",casoId:r.caso_id||null,creadoPor:r.creado_por||null,drive:r.drive||null}));
+      if(ROUTE==="presupuestos") renderPresupuestos();
+    }
+  }catch(e){ /* borrador: sin tabla, se ignora */ }
+}
+
+function presuNombreArch(p){ return ("Presupuesto_"+((p.cliente.apellido||"")+"_"+(p.cliente.nombre||""))).replace(/[ ,]+/g,"_").replace(/_+/g,"_"); }
+function presuFechaLarga(f){
+  const ms=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+  const d=f?new Date(f+"T00:00:00"):new Date();
+  return d.getDate()+" de "+ms[d.getMonth()]+" del "+d.getFullYear();
+}
+
+/* ---- Documento del presupuesto (encabezado con LOGO, sin domicilio) ---- */
+function logoImgTag(w,h){ const uri="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(LOGO_FULL); return `<img src="${uri}" style="width:${w}px;height:${h}px;display:block;margin:0 auto 6px" alt="GMJ Legal Partners">`; }
+function presuHeader(){
+  return `<div style="text-align:center;border-bottom:2px solid #16294d;padding-bottom:8pt;margin-bottom:12pt">
+    ${logoImgTag(58,69)}
+    <div style="font-family:Georgia,'Times New Roman',serif;font-weight:700;letter-spacing:3px;color:#16294d;font-size:16pt">GMJ LEGAL PARTNERS</div>
+  </div>`;
+}
+// Variables propias del presupuesto (para la plantilla editable de Configuración)
+const PRESU_VARS=[["fecha","Fecha"],["nombre_cliente","Nombre y apellido"],["cuenta_url","URL cuenta afectada"],["honorarios_total","Honorarios totales"],["forma_pago","Forma de pago (cuotas)"],["bloque_reintegro","Bloque de reintegro"]];
+const PRESU_RAW=new Set(["forma_pago","bloque_reintegro"]);
+function docVarsPresu(p){
+  const nombre=(((p.cliente&&p.cliente.nombre)||"")+" "+((p.cliente&&p.cliente.apellido)||"")).trim();
+  const M=m=>money(m,p.moneda);
+  const cuotasLi=(p.cuotas||[]).map(q=>`<li style="margin-bottom:4px"><b>${esc(q.label)}:</b> ${M(q.importe)}</li>`).join("");
+  const forma=`<ul style="margin:0 0 7px 20px;padding:0">${cuotasLi}</ul>`;
+  const reint=(p.reintegro&&p.reintegro.aplica&&Number(p.reintegro.importe)>0)?`<p><b>Política de reintegro:</b></p><p>En caso de no lograrse la recuperación de la cuenta dentro del plazo indicado, se prevé un reintegro parcial de <b>${M(p.reintegro.importe)}</b>, sujeto al cumplimiento de las condiciones que serán detalladas en el contrato correspondiente.</p>`:"";
+  return { fecha:presuFechaLarga(p.fecha), nombre_cliente:nombre, cuenta_url:(p.cuenta&&p.cuenta.url)||"—", honorarios_total:M(p.montoTotal), forma_pago:forma, bloque_reintegro:reint };
+}
+function renderPresuPlantilla(html,p){ const v=docVarsPresu(p); return (html||"").replace(/\{\{\s*(\w+)\s*\}\}/g,(mm,k)=>(k in v)?(PRESU_RAW.has(k)?v[k]:esc(v[k])):mm); }
+function PRESU_SAMPLE(){ return {fecha:new Date().toISOString().slice(0,10),cliente:{nombre:"Juan",apellido:"PÉREZ"},cuenta:{url:"https://www.instagram.com/usuario"},moneda:"USD",montoTotal:700,cuotas:[{label:"Al momento de confirmar el servicio",importe:350},{label:"Antes de la audiencia con META",importe:350}],reintegro:{aplica:true,importe:200}}; }
+// Texto base del presupuesto (editable desde Configuración > Modelos de documentos)
+function DEFAULT_PRESUPUESTO(){
+  return `
+  <div style="text-align:right;font-size:11px;color:#555;margin-bottom:6px">{{fecha}}</div>
+  <h1>Presupuesto – Recuperación de cuenta en Instagram</h1>
+  <p><b>Sr./Sra. {{nombre_cliente}}</b></p>
+  <p><b>URL Cuenta afectada:</b> {{cuenta_url}}</p>
+  <p><b>Servicio ofrecido:</b></p>
+  <p>Intervención profesional orientada a la recuperación de acceso a cuentas de Instagram hackeadas, suspendidas o bloqueadas, mediante un procedimiento extrajudicial estructurado que permite canalizar el reclamo de forma efectiva ante Meta Platforms.</p>
+  <p>El servicio incluye la gestión integral del caso, contemplando todas las instancias necesarias para lograr la revisión de la cuenta, tales como presentaciones formales, gestiones profesionales, intervención en instancias de mediación, negociación con representantes de la plataforma y seguimiento continuo del trámite.</p>
+  <p>Asimismo, el valor del servicio contempla gastos operativos asociados, incluyendo costos de mediación, notificaciones, logística internacional, asistencia letrada y demás erogaciones necesarias para llevar adelante el procedimiento.</p>
+  <p><b>Honorarios totales: {{honorarios_total}}</b></p>
+  <p><b>Forma de pago:</b></p>
+  {{forma_pago}}
+  <p>El pago podrá realizarse mediante transferencia bancaria o en efectivo, tanto en dólares estadounidenses como en pesos argentinos, tomando en este último caso el tipo de cambio oficial vigente al día del pago. En caso de optarse por el pago en efectivo, la entrega se coordinará previamente dentro de días y horarios hábiles.</p>
+  <p><b>Plazos estimados:</b></p>
+  <p>Una vez iniciada la instancia principal de gestión, los casos suelen resolverse en un plazo aproximado de 30 días, sin perjuicio de que el tiempo puede variar según cada situación particular y los procesos internos de la plataforma. A los fines de considerar agotadas las gestiones realizadas, se establece un plazo máximo de 90 días, período dentro del cual se mantiene el seguimiento activo del caso.</p>
+  <p><b>Importante:</b></p>
+  <p>Se trata de un servicio profesional que implica una obligación de medios y no de resultado, dado que la decisión final depende exclusivamente de las políticas y procesos internos de la plataforma. No obstante, la experiencia en este tipo de gestiones permite abordar los casos con un alto grado de efectividad.</p>
+  {{bloque_reintegro}}
+  <div style="margin-top:26px;text-align:center;font-size:11px;color:#555;border-top:1px solid #ccc;padding-top:8px">@gmj.abogados &nbsp;&middot;&nbsp; www.gmj-abogados.com.ar &nbsp;&middot;&nbsp; contacto@gmj-abogados.com.ar</div>`;
+}
+function tplPresupuesto(p){
+  plantillaSeed();
+  const pl=(DB.config.plantillas||{}).presupuesto;
+  const tpl=(pl&&(pl.html||"").trim())?pl.html:DEFAULT_PRESUPUESTO();
+  return presuHeader()+renderPresuPlantilla(tpl,p);
+}
+
+/* ---- Listado ---- */
+function renderPresupuestos(){
+  setCrumb("Presupuestos");
+  topActions(`<button class="btn btn-primary btn-sm" onclick="openNewPresupuesto()">＋ Nuevo presupuesto</button>`);
+  const list=presupuestosPool().slice().sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""));
+  const rows=list.length?list.map(p=>{
+    const tieneCaso=!!p.casoId;
+    return `<tr>
+      <td>${fdate(p.fecha)}</td>
+      <td><b>${esc(p.cliente.apellido||"")} ${esc(p.cliente.nombre||"")}</b>${p.cuenta&&p.cuenta.url?`<br><small style="color:var(--muted)">${esc(p.cuenta.url)}</small>`:""}</td>
+      <td style="text-align:right">${money(p.montoTotal,p.moneda)}</td>
+      <td>${(p.reintegro&&p.reintegro.aplica)?`<span class="badge b-gold">reintegro ${money(p.reintegro.importe,p.moneda)}</span>`:`<span class="badge b-grey">sin reintegro</span>`}</td>
+      <td>${tieneCaso?`<span class="badge b-green">Caso ${esc(p.casoId)}</span>`:`<span class="badge b-amber">Sin caso</span>`}</td>
+      <td style="text-align:center;white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" onclick="verPresupuesto('${p.id}')">👁 Ver</button>
+        <button class="btn btn-ghost btn-sm" onclick="descargarPresupuesto('${p.id}')">⬇ PDF</button>
+        ${tieneCaso
+          ? `<button class="btn btn-ghost btn-sm" onclick="go('caso','${p.casoId}')">📁 Ver caso</button>`
+          : `<button class="btn btn-primary btn-sm" onclick="generarCasoDesdePresupuesto('${p.id}')">➕ Generar caso</button>`}
+      </td></tr>`;
+  }).join(""):`<tr><td colspan="6" class="empty">Todavía no generaste presupuestos. Tocá “Nuevo presupuesto”.</td></tr>`;
+  document.getElementById("view").innerHTML=`
+    <div class="pagehead"><div><h2>Presupuestos</h2><div class="sub">Generá presupuestos automáticos · es el primer paso de la contratación</div></div>
+      <button class="btn btn-primary" onclick="openNewPresupuesto()">＋ Nuevo presupuesto</button></div>
+    <div class="alert alert-info"><span>🧾</span><div>Completá los datos y el sistema arma el presupuesto listo para enviar. Cada presupuesto queda guardado; desde él podés <b>generar el caso</b> con las condiciones económicas ya cargadas.</div></div>
+    <div class="card" style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Monto</th><th>Reintegro</th><th>Estado</th><th style="text-align:center">Acciones</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+/* ---- Alta ---- */
+function openNewPresupuesto(){
+  PRESU_CUOTAS=[{label:"Al momento de confirmar el servicio",importe:""},{label:"Antes de la audiencia con META",importe:""}];
+  modal({title:"Nuevo presupuesto", size:"", body:`
+    <div class="frow fr2">${inp("pr_ap","Apellido","")}${inp("pr_no","Nombre","")}</div>
+    ${inp("pr_url","Cuenta afectada (URL)","")}
+    <div class="frow fr2">${sel("pr_mon","Moneda",["USD","ARS"],"USD")}${inp("pr_total","Monto total (honorarios)","","number")}</div>
+    <div class="section-title" style="margin-top:6px">Forma de pago (cuotas)</div>
+    <div id="pr_cuotas"></div>
+    <button type="button" class="btn btn-ghost btn-sm" onclick="presuAddCuota()" style="margin-top:2px">＋ Agregar cuota</button>
+    <div class="hint" style="margin-top:6px">Al generar el caso, la <b>1ª cuota</b> se toma como adelanto y el resto como saldo.</div>
+    <div class="section-title" style="margin-top:14px">Política de reintegro</div>
+    <div class="check"><input type="checkbox" id="pr_reint_ck" onchange="presuToggleReint()"><label for="pr_reint_ck" style="margin:0;font-weight:500">Tiene reintegro si no se recupera la cuenta</label></div>
+    <div id="pr_reint_box" style="display:none;margin-top:8px">${inp("pr_reint","Monto del reintegro parcial","","number")}</div>
+    <div class="hint" style="margin-top:4px">Si no corresponde reintegro, dejalo destildado y esa sección no aparece en el presupuesto.</div>`,
+    footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="presuGenerar()">Generar presupuesto</button>`});
+  presuRenderCuotas();
+  const t=document.getElementById("pr_total"); if(t) t.addEventListener("input",presuAutoSplit);
+}
+function presuRenderCuotas(){
+  const box=document.getElementById("pr_cuotas"); if(!box) return;
+  box.innerHTML=PRESU_CUOTAS.map((q,i)=>`<div class="frow" style="grid-template-columns:1fr 130px 36px;gap:8px;margin-bottom:8px;align-items:end">
+    <div class="field" style="margin:0"><label>Concepto</label><input value="${esc(q.label||"")}" oninput="PRESU_CUOTAS[${i}].label=this.value"></div>
+    <div class="field" style="margin:0"><label>Importe</label><input type="number" value="${q.importe}" oninput="PRESU_CUOTAS[${i}].importe=this.value"></div>
+    <button type="button" class="btn btn-ghost btn-sm" onclick="presuDelCuota(${i})" title="Quitar" style="height:38px">✕</button>
+  </div>`).join("");
+}
+function presuAddCuota(){ PRESU_CUOTAS.push({label:"Cuota "+(PRESU_CUOTAS.length+1),importe:""}); presuRenderCuotas(); }
+function presuDelCuota(i){ PRESU_CUOTAS.splice(i,1); presuRenderCuotas(); }
+function presuAutoSplit(){
+  const total=Number(val("pr_total")||0); if(!total||!PRESU_CUOTAS.length) return;
+  if(PRESU_CUOTAS.some(q=>q.importe!==""&&q.importe!=null)) return; // no pisar montos ya cargados
+  const n=PRESU_CUOTAS.length, each=Math.round((total/n)*100)/100;
+  PRESU_CUOTAS.forEach((q,i)=> q.importe = i===n-1 ? Math.round((total-each*(n-1))*100)/100 : each);
+  presuRenderCuotas();
+}
+function presuToggleReint(){ const on=document.getElementById("pr_reint_ck").checked; const b=document.getElementById("pr_reint_box"); if(b) b.style.display=on?"":"none"; }
+
+function presuGenerar(){
+  const ap=val("pr_ap").trim(), no=val("pr_no").trim(), url=val("pr_url").trim();
+  const moneda=val("pr_mon")||"USD", total=Number(val("pr_total")||0);
+  if(!ap||!no){ toast("Nombre y apellido son obligatorios","err"); return; }
+  if(!total){ toast("Cargá el monto total","err"); return; }
+  const cuotas=PRESU_CUOTAS.map(q=>({label:(q.label||"").trim()||"Cuota", importe:Number(q.importe||0)})).filter(q=>q.importe>0);
+  if(!cuotas.length){ toast("Cargá al menos una cuota con importe","err"); return; }
+  const reintOn=document.getElementById("pr_reint_ck").checked, reintImp=Number(val("pr_reint")||0);
+  const p={
+    id:uid("pre"), fecha:new Date().toISOString().slice(0,10),
+    cliente:{apellido:ap.toUpperCase(), nombre:no}, cuenta:{url},
+    moneda, montoTotal:total, cuotas,
+    reintegro:{aplica:reintOn&&reintImp>0, importe:reintOn?reintImp:0},
+    creadoPor:SESSION?SESSION.id:null, casoId:null, drive:null
+  };
+  PRESU_DRAFT=p; closeModal(); presuPreview(tplPresupuesto(p), p);
+}
+
+/* ---- Previsualización ---- */
+function presuPreview(html, p){
+  modal({title:"Previsualización — Presupuesto", size:"lg", body:`
+    <div class="alert alert-info"><span>✏️</span><div>Revisá el presupuesto. Podés editar el texto antes de guardarlo.${CLOUD?" Al guardar se registra y se sube a Drive + Supabase.":" Al guardar queda registrado en este dispositivo."}</div></div>
+    <div id="presuEdit" contenteditable="true" class="docview" style="border:1px solid var(--line);border-radius:8px;padding:30px 36px;background:#fff;max-height:60vh;overflow:auto">${html}</div>`,
+    footer:`<button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>
+      <button class="btn btn-ghost" onclick="descargarPresupuestoLive()">⬇ Descargar PDF</button>
+      <button class="btn btn-primary" onclick="presuGuardar()">✓ Guardar presupuesto</button>`});
+}
+function presuCapturarHtml(){ const e=document.getElementById("presuEdit"); return e?e.innerHTML:(PRESU_DRAFT&&PRESU_DRAFT.html)||""; }
+function descargarPresupuestoLive(){
+  const p=PRESU_DRAFT||{}; const html=presuCapturarHtml();
+  toast("Generando PDF…");
+  docToPdfFile({tipo:"presupuesto",html}, presuNombreArch(p));
+}
+async function presuGuardar(){
+  const p=PRESU_DRAFT; if(!p){ closeModal(); return; }
+  p.html=presuCapturarHtml();
+  const pool=presupuestosPool(); const ix=pool.findIndex(x=>x.id===p.id);
+  if(ix>=0) pool[ix]=p; else pool.unshift(p);
+  closeModal(); toast("Guardando presupuesto…");
+  await persistPresupuesto(p);
+  toast("Presupuesto guardado ✓"); go("presupuestos");
+}
+
+/* ---- Persistencia: Supabase (tabla presupuestos) + Drive (best-effort) ---- */
+async function persistPresupuesto(p){
+  if(!CLOUD){ if(typeof saveLocal==="function") saveLocal(); return; }
+  // 1) Registro en Supabase (tabla 'presupuestos'; en el borrador puede no existir todavía)
+  try{
+    const row={ id:p.id, fecha:p.fecha, cliente:p.cliente, cuenta:p.cuenta, moneda:p.moneda,
+      monto_total:Number(p.montoTotal||0), cuotas:p.cuotas||[], reintegro:p.reintegro||{aplica:false,importe:0},
+      html:p.html||"", caso_id:p.casoId||null, creado_por:p.creadoPor||null, updated_at:new Date().toISOString() };
+    const { error } = await sb.from("presupuestos").upsert(row);
+    if(error) console.warn("presupuestos upsert (tabla pendiente de crear):", error.message);
+  }catch(e){ console.warn("persistPresupuesto/supabase", e); }
+  // 2) PDF en Drive (a la carpeta del caso si ya existe; si no, a la carpeta general de presupuestos)
+  try{
+    const b64=await docToPdfBase64({tipo:"presupuesto",html:p.html});
+    const nombre=presuNombreArch(p)+".pdf";
+    const {data:{session}}=await sb.auth.getSession();
+    const hdrs={"Authorization":"Bearer "+(session&&session.access_token),"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY};
+    const body = p.casoId
+      ? { casoId:p.casoId, action:"upload", tipo:"Presupuesto", nombre, mime:"application/pdf", base64:b64 }
+      : { action:"presupuesto", presupuestoId:p.id, nombre, mime:"application/pdf", base64:b64 };
+    const r=await fetch(FUNCTIONS_URL+"/drive-sync",{method:"POST",headers:hdrs,body:JSON.stringify(body)});
+    const j=await r.json().catch(()=>({}));
+    if(j&&(j.link||j.drive||j.respaldo)) p.drive=j.drive||{link:j.link||""};
+    else console.warn("drive presupuesto (acción pendiente de agregar al backend):", (j&&(j.detail||j.error))||r.status);
+  }catch(e){ console.warn("persistPresupuesto/drive", e); }
+}
+
+/* ---- Acciones de la lista ---- */
+function verPresupuesto(id){ const p=presupuestosPool().find(x=>x.id===id); if(!p) return; PRESU_DRAFT=p; presuPreview(p.html||tplPresupuesto(p), p); }
+function descargarPresupuesto(id){ const p=presupuestosPool().find(x=>x.id===id); if(!p) return; toast("Generando PDF…"); docToPdfFile({tipo:"presupuesto",html:p.html||tplPresupuesto(p)}, presuNombreArch(p)); }
+
+/* ---- Generar el CASO a partir del presupuesto (primer paso de la contratación) ---- */
+async function generarCasoDesdePresupuesto(id){
+  const p=presupuestosPool().find(x=>x.id===id); if(!p) return;
+  if(p.casoId){ go("caso",p.casoId); return; }
+  if(!confirm("Se va a crear un caso nuevo a partir de este presupuesto, con el cliente y las condiciones económicas ya cargadas (monto, cuotas y reintegro). ¿Continuar?")) return;
+  DB.counter=(DB.counter||0)+1;
+  const idc="C-"+String(DB.counter).padStart(4,"0");
+  const c=demoCase();
+  const adelanto=Number((p.cuotas[0]&&p.cuotas[0].importe)||0);
+  const saldo=Math.max(Number(p.montoTotal||0)-adelanto,0);
+  Object.assign(c,{
+    id:idc, estado:"Nuevo caso", fechaAlta:new Date().toISOString().slice(0,10),
+    responsable:SESSION?SESSION.id:"", abogadoPatrocinante:(DB.abogados[0]&&DB.abogados[0].id)||"",
+    proximaAccion:"Enviar formulario al cliente", fechaLimite:"",
+    cliente:{apellido:p.cliente.apellido||"", nombre:p.cliente.nombre||"", dni:"", cuit:"", nacionalidad:"Argentina", fechaNac:"", estadoCivil:"", conyuge:"", domicilio:"", localidad:"", provincia:"", cp:"", tel:"", email:""},
+    cuenta:{plataforma:"Instagram", url:p.cuenta.url||"", handle:"", emailVinc:"", telVinc:"", tipo:"", pautaActiva:false, saldoRetenido:false, cuentasVinc:"", businessManager:false, metodoPago:false, campanasActivas:false, hackeo:false},
+    relato:{fechaSusp:"",mensaje:"",tipoSusp:"",apelo:false,recibioResp:false,hackeo:false,recupParcial:false,volvioSusp:false,perdida:"",original:"",sintesis:""},
+    finanzas:{moneda:p.moneda||"USD", montoTotal:p.montoTotal||"", adelanto:adelanto||"", saldo:saldo||"", fechaAdelanto:"", fechaSaldo:"", devolucion:(p.reintegro&&p.reintegro.aplica)?p.reintegro.importe:"", estadoPago:"pendiente", medioPago:"", obs:"Generado desde presupuesto", ...finEstadosDefault(), hist:[]},
+    pagos:[],
+    gastos:GASTOS_DEFAULT.map(n=>({id:uid("g"),nombre:n,estado:"pendiente",importe:"",moneda:"ARS",fecha:"",medio:"",obs:"",adjunto:""})),
+    docs:[], tareas:[], adjuntos:[], drive:{link:"",creada:false}, objeto:DB.config.objeto, citarFacebook:true, audiencia:null, avance:{},
+    historial:[], formToken:null, observaciones:"Presupuesto asociado: "+money(p.montoTotal,p.moneda), presupuestoId:p.id
+  });
+  logAction(c,"Caso creado desde presupuesto");
+  DB.casos.unshift(c);
+  p.casoId=idc;
+  if(CLOUD){ CURRENT=c; try{ await cloudInsertCase(c); }catch(e){ console.error(e); } await persistPresupuesto(p); }
+  else { save(); }
+  toast("Caso "+idc+" creado desde el presupuesto ✓");
+  go("caso", idc);
+}
+
 (async function boot(){
   // Formulario público del cliente (con o sin nube)
   const formTk=getFormToken();

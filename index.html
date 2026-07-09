@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.08 · B41 fix PDF presupuesto (texto + paginación + logo)";
+const BUILD = "2026.07.08 · B42 fix formulario cliente: contrato/poder sin requeridos en config";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -3191,7 +3191,7 @@ function tplCartaPoder(c){
 <p>Atentamente, ${esc(nombre)}</p>
 <div class="sig"><div>_______________________<br>${esc(nombre)} — DNI ${esc(cl.dni)}</div></div>`;
 }
-function reqMostrados(c){ let r=DB.config.requeridos.slice(); if(c.citarFacebook===false) r=r.filter(x=>!/facebook/i.test(x.nombre)); return r; }
+function reqMostrados(c){ let r=(Array.isArray(DB.config.requeridos)&&DB.config.requeridos.length?DB.config.requeridos:DEFAULT_REQUERIDOS).slice(); if(c.citarFacebook===false) r=r.filter(x=>!/facebook/i.test(x.nombre)); return r; }
 function tplMediacion(c){
   const cl=c.cliente; const ab=DB.abogados.find(a=>a.id===c.abogadoPatrocinante)||{};
   const req=reqMostrados(c); const sint=c.relato.sintesis||c.relato.original||"";

@@ -317,7 +317,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.08 · B42 fix formulario cliente: contrato/poder sin requeridos en config";
+const BUILD = "2026.07.08 · B43 envío más rápido (adjuntos en paralelo) + sin botón demo";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -3649,7 +3649,6 @@ function formSuccessConDocs(){
       <button class="btn btn-gold" onclick="descargarDocCliente('poder')">⬇ Descargar carta poder</button>
     </div>
     <p style="color:var(--muted);font-size:12px;margin-top:16px">Guardá tus copias. Ante cualquier duda, escribinos.</p>
-    <button class="btn btn-ghost btn-sm" style="margin-top:14px" onclick="backToApp()">Volver a la plataforma (demo)</button>
   </div></div></div>`;
 }
 // Genera los documentos firmados, calcula la huella SHA-256 de cada PDF y guarda el
@@ -3760,27 +3759,26 @@ async function submitClientFormCloud(token){
       try{
         const cB64=await docToPdfBase64({tipo:"contrato", html:docs.contrato});
         const pB64=await docToPdfBase64({tipo:"carta_poder", html:docs.poder});
-        consent.contratoHash = cB64? await sha256Hex(b64ToBytes(cB64)) : "";
-        consent.poderHash    = pB64? await sha256Hex(b64ToBytes(pB64)) : "";
-        // Subir los PDF firmados a la carpeta del caso (Drive + respaldo en Storage).
+        const [cH,pH]=await Promise.all([ cB64? sha256Hex(b64ToBytes(cB64)) : Promise.resolve(""), pB64? sha256Hex(b64ToBytes(pB64)) : Promise.resolve("") ]);
+        consent.contratoHash=cH; consent.poderHash=pH;
+        // El contrato se sube PRIMERO: asegura la carpeta del caso en Drive (evita carpetas duplicadas).
         if(cB64) consent.contratoRef = await subeDrive("Contrato firmado","Contrato_"+nombreArch+".pdf", cB64);
         if(pB64) consent.poderRef    = await subeDrive("Carta poder firmada","Carta_poder_"+nombreArch+".pdf", pB64);
       }catch(e){ console.error("hash/upload docs",e); }
       docsPayload=[{tipo:"contrato",html:docs.contrato,hash:consent.contratoHash},{tipo:"carta_poder",html:docs.poder,hash:consent.poderHash}];
     }
-    // ---------- POST del formulario (incluye consentimiento + documentos) ----------
+    // ---------- POST del formulario (guarda datos + documentos ANTES de subir los adjuntos) ----------
     const r=await fetch(FUNCTIONS_URL+"/public-form",{method:"POST",headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({token,cliente,cuenta,cuentasAfectadas,relato,adjuntos,consent,docs:docsPayload})});
     const j=await r.json();
     if(!j.ok){ toast("No se pudo enviar el formulario","err"); return; }
-    // ---------- Subir los archivos del cliente (DNI, comprobante, etc.) a Drive ----------
-    let okCount=0, failCount=0;
-    for(const job of jobs){
-      try{
-        const b64=await fileToB64(job.file);
-        const rr=await fetch(FUNCTIONS_URL+"/drive-sync",{method:"POST",headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({formToken:token,action:"upload",tipo:job.tipo,nombre:job.file.name,mime:job.file.type||"application/octet-stream",base64:b64})});
-        const jj=await rr.json().catch(()=>({}));
-        if(rr.ok && !jj.error) okCount++; else { failCount++; console.error("drive-sync",jj.error||rr.status); }
-      }catch(e){ failCount++; console.error("upload",job.tipo,e); }
+    // ---------- Subir los archivos del cliente a Drive EN PARALELO (antes era uno por uno) ----------
+    const subeArchivo=async(job)=>{ try{ const b64=await fileToB64(job.file); const rr=await fetch(FUNCTIONS_URL+"/drive-sync",{method:"POST",headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({formToken:token,action:"upload",tipo:job.tipo,nombre:job.file.name,mime:job.file.type||"application/octet-stream",base64:b64})}); const jj=await rr.json().catch(()=>({})); return (rr.ok && !jj.error); }catch(e){ console.error("upload",job.tipo,e); return false; } };
+    let okCount=0;
+    if(jobs.length){
+      let arr;
+      if(autoDocs){ arr=await Promise.allSettled(jobs.map(subeArchivo)); }  // la carpeta ya existe (contrato subido) -> todo en paralelo
+      else { const f=await subeArchivo(jobs[0]); const rest=await Promise.allSettled(jobs.slice(1).map(subeArchivo)); arr=[{status:"fulfilled",value:f}].concat(rest); } // 1º crea la carpeta, el resto en paralelo
+      okCount=arr.filter(x=>x.status==="fulfilled" && x.value).length;
     }
     // Pantalla final: si autogeneró, ofrece descargar las copias firmadas.
     if(autoDocs){ formSuccessConDocs(); }

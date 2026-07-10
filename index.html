@@ -340,7 +340,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.10 · B44 dejado de percibir + modo oscuro + presupuestos persistentes";
+const BUILD = "2026.07.10 · B45 fix sincronización en vivo (no interrumpe la edición) + reintento de reconexión";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -810,8 +810,7 @@ let _tareasSig="";
 function tareasSignature(rows){ return (rows||[]).map(t=>t.id+":"+t.estado+":"+(t.asignados||[]).join(",")+":"+(t.vence||"")+":"+(t.hora||"")+":"+t.prioridad+":"+(t.titulo||"")+":"+(t.observaciones||"").length).sort().join("|"); }
 async function refreshTareasLive(){
   if(!CLOUD||!sb||!SESSION) return;
-  if(document.getElementById("modalRoot") && document.getElementById("modalRoot").innerHTML.trim()) return;
-  if(document.getElementById("tkMenu")) return;
+  if(_refreshBusy()) return; // B45: no redibujar mientras el usuario edita / hay modal o menú abierto
   try{
     const [{data:td},{data:nd}]=await Promise.all([
       sb.from("tareas").select("*"),
@@ -919,12 +918,20 @@ async function openNotif(id){
 }
 function fdatetime(s){ if(!s) return ""; const d=new Date(s); if(isNaN(d)) return esc(s); const p=n=>String(n).padStart(2,"0"); return `${p(d.getDate())}/${p(d.getMonth()+1)} ${p(d.getHours())}:${p(d.getMinutes())}`; }
 let _refreshTimer=null;
+// B45: la sincronización en vivo NO debe pisar al usuario mientras edita (input/textarea/select enfocado),
+// ni cuando hay un modal o un menú abierto.
+function _refreshBusy(){
+  const a=document.activeElement;
+  const editing = a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName);
+  const m=document.getElementById("modalRoot");
+  return !!(editing || (m && m.innerHTML.trim()) || document.getElementById("tkMenu"));
+}
 function cloudRefresh(){
   if(_refreshTimer) clearTimeout(_refreshTimer);
-  _refreshTimer=setTimeout(async()=>{
-    if(document.getElementById("modalRoot").innerHTML.trim()) return; // no interrumpir edición
+  _refreshTimer=setTimeout(async function run(){
+    if(_refreshBusy()){ _refreshTimer=setTimeout(run, 1500); return; } // reintenta después, sin interrumpir la edición
     const curId = CURRENT ? CURRENT.id : null; const tab = ACTIVE_TAB;
-    await cloudLoad();
+    try{ await cloudLoad(); }catch(e){ console.warn("cloudRefresh/cloudLoad falló, reintento", e); _refreshTimer=setTimeout(run, 3000); return; }
     if(ROUTE==="caso" && curId){ CURRENT=DB.casos.find(c=>c.id===curId)||null; ACTIVE_TAB=tab; if(CURRENT) renderCaso(); else go("casos"); }
     else if(ROUTE) go(ROUTE);
     renderBell();

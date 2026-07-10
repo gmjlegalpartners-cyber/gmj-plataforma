@@ -20,6 +20,28 @@
   --grey-bg:#f1f5f9; --text:#0f172a; --shadow:0 1px 3px rgba(15,31,61,.08),0 1px 2px rgba(15,31,61,.06);
   --shadow-lg:0 10px 30px rgba(15,31,61,.12); --radius:12px;
 }
+/* ===== MODO OSCURO ===== (los documentos/plantillas usan background:#fff inline y quedan en blanco a propósito) */
+:root[data-theme="dark"]{
+  --navy:#e7ebf3; --navy2:#0f1d34; --slate:#cbd5e1; --slate2:#aab6c8;
+  --muted:#93a1b8; --line:#26324a; --line2:#3a4967; --bg:#0b1220; --card:#151f33;
+  --gold:#d6b24e; --gold-soft:#332a12; --primary:#3b82f6; --primary-d:#2563eb;
+  --green:#4ade80; --green-bg:#123321; --amber:#fbbf24; --amber-bg:#3a2c10;
+  --red:#f87171; --red-bg:#3a1a1a; --blue:#60a5fa; --blue-bg:#14273f;
+  --grey-bg:#1c2740; --text:#e6eaf2;
+  --shadow:0 1px 3px rgba(0,0,0,.55),0 1px 2px rgba(0,0,0,.4);
+  --shadow-lg:0 14px 36px rgba(0,0,0,.6);
+}
+[data-theme="dark"] .sidebar{background:#0c1626}
+[data-theme="dark"] #login{background:linear-gradient(135deg,#0c1626,#0f1d34 60%,#10233f)}
+[data-theme="dark"] .toast{background:#1e293b}
+[data-theme="dark"] .topbar,[data-theme="dark"] .stat,[data-theme="dark"] .modal,[data-theme="dark"] .notif-panel,[data-theme="dark"] .notif-h,[data-theme="dark"] .bell-btn,[data-theme="dark"] .tk-kebab,[data-theme="dark"] .tk-menu,[data-theme="dark"] .tk-estado,[data-theme="dark"] .btn-ghost,[data-theme="dark"] .btn-danger,[data-theme="dark"] .login-card,[data-theme="dark"] .field input,[data-theme="dark"] .field select,[data-theme="dark"] .field textarea,[data-theme="dark"] .filters input,[data-theme="dark"] .filters select{background:var(--card);color:var(--text)}
+[data-theme="dark"] .btn-ghost{border-color:var(--line2)}
+[data-theme="dark"] th{background:#0f1a2c}
+[data-theme="dark"] tr.clickable:hover,[data-theme="dark"] .btn-ghost:hover,[data-theme="dark"] .role-opt:hover,[data-theme="dark"] .tk-menu button:hover{background:rgba(255,255,255,.05)}
+[data-theme="dark"] .notif-item.unread{background:rgba(59,130,246,.16)}
+[data-theme="dark"] .alert-warn{color:#fbbf24}
+[data-theme="dark"] .alert-info{color:#93c5fd}
+[data-theme="dark"] .alert-ok{color:#86efac}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
@@ -287,6 +309,7 @@ tr.clickable:hover{background:#f8fafc}
       <div class="crumb" id="crumb"><b>Panel</b></div>
       <div style="display:flex;align-items:center;gap:14px">
         <div id="topActions"></div>
+        <button class="bell-btn" id="themeToggle" onclick="toggleTheme()" title="Modo claro / oscuro">🌙</button>
         <div id="notifBell" style="position:relative"></div>
       </div>
     </div>
@@ -317,7 +340,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.08 · B43 envío más rápido (adjuntos en paralelo) + sin botón demo";
+const BUILD = "2026.07.10 · B44 dejado de percibir + modo oscuro + presupuestos persistentes";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -996,6 +1019,10 @@ function buildNav(){
   document.getElementById("nav").innerHTML=h;
 }
 function setActiveNav(k){ document.querySelectorAll(".nav a").forEach(a=>a.classList.remove("active")); const el=document.getElementById("nav-"+k); if(el) el.classList.add("active"); }
+/* ---- Modo oscuro ---- */
+function applyTheme(t){ t=(t==='dark')?'dark':'light'; document.documentElement.setAttribute('data-theme',t); try{localStorage.setItem('gmj_theme',t);}catch(e){} const b=document.getElementById('themeToggle'); if(b) b.textContent=(t==='dark')?'☀️':'🌙'; }
+function toggleTheme(){ const cur=(document.documentElement.getAttribute('data-theme')==='dark')?'dark':'light'; applyTheme(cur==='dark'?'light':'dark'); }
+function initTheme(){ let t='light'; try{ t=localStorage.getItem('gmj_theme')||'light'; }catch(e){} applyTheme(t); }
 function setCrumb(t, sub){ document.getElementById("crumb").innerHTML = (sub?`${esc(sub)} `:"")+`<b>${esc(t)}</b>`; }
 function topActions(html){ document.getElementById("topActions").innerHTML=html||""; }
 
@@ -1028,11 +1055,13 @@ function renderDashboard(){
   const venc=cs.filter(c=>c.fechaLimite).sort((a,b)=>a.fechaLimite.localeCompare(b.fechaLimite));
   let finCards="", gastosRow="";
   if(isSocio()){
-    let totalUSD=0, cobradoUSD=0, totalARS=0, cobradoARS=0;
+    let totalUSD=0, cobradoUSD=0, totalARS=0, cobradoARS=0, dejUSD=0, dejARS=0;
     cs.forEach(c=>{ const f=c.finanzas; const pagado=cobradoDe(c); // cobrado en la moneda pactada (convierte pagos en pesos)
-      if(f.moneda==="USD"){ totalUSD+=Number(f.montoTotal||0); cobradoUSD+=pagado; } else { totalARS+=Number(f.montoTotal||0); cobradoARS+=pagado; } });
+      const noCob=Math.max(Number(f.montoTotal||0)-pagado,0);
+      if(f.moneda==="USD"){ totalUSD+=Number(f.montoTotal||0); cobradoUSD+=pagado; if(f.saldoIncobrable) dejUSD+=noCob; } else { totalARS+=Number(f.montoTotal||0); cobradoARS+=pagado; if(f.saldoIncobrable) dejARS+=noCob; } });
+    const pendUSD=Math.max(totalUSD-cobradoUSD-dejUSD,0), pendARS=Math.max(totalARS-cobradoARS-dejARS,0);
     finCards=`
-      <div class="stat gold"><div class="lab">Facturación pactada (USD)</div><div class="val">${money(totalUSD,"USD")}</div><div class="sub">Cobrado: ${money(cobradoUSD,"USD")} · Pendiente: ${money(totalUSD-cobradoUSD,"USD")}</div></div>
+      <div class="stat gold"><div class="lab">Facturación pactada (USD)</div><div class="val">${money(totalUSD,"USD")}</div><div class="sub">Cobrado: ${money(cobradoUSD,"USD")} · Pendiente: ${money(pendUSD,"USD")}</div></div>
       <div class="stat green"><div class="lab">Facturación pactada (ARS)</div><div class="val">${money(totalARS,"ARS")}</div><div class="sub">Cobrado: ${money(cobradoARS,"ARS")}</div></div>`;
     // gastos generales del estudio (suma de todos los casos)
     let gPendARS=0,gAbonARS=0,gPendUSD=0,gAbonUSD=0;
@@ -1051,6 +1080,12 @@ function renderDashboard(){
       <div class="stat green" style="border-left:4px solid #1c7a40;cursor:pointer" onclick="go('finanzas')"><div class="lab">💵 Caja disponible — PESOS</div><div class="val">${money(aD.caja.ARS,"ARS")}</div><div class="sub">efectivo real en pesos (cobros + cambios − gastos)</div></div>
       <div class="stat green" style="border-left:4px solid #1c7a40;cursor:pointer" onclick="go('finanzas')"><div class="lab">💵 Caja disponible — DÓLARES</div><div class="val">${money(aD.caja.USD,"USD")}</div><div class="sub">efectivo real en dólares</div></div>
     </div>`;
+    if(dejARS>0||dejUSD>0){
+      gastosRow += `<div class="grid g2" style="margin-bottom:18px">
+        <div class="stat amber" style="border-left:4px solid #b45309;cursor:pointer" onclick="go('finanzas')"><div class="lab">📉 Dejado de percibir — PESOS</div><div class="val">${money(dejARS,"ARS")}</div><div class="sub">saldos que no se van a cobrar (casos resueltos sin pago)</div></div>
+        <div class="stat amber" style="border-left:4px solid #b45309;cursor:pointer" onclick="go('finanzas')"><div class="lab">📉 Dejado de percibir — DÓLARES</div><div class="val">${money(dejUSD,"USD")}</div><div class="sub">saldos que no se van a cobrar</div></div>
+      </div>`;
+    }
   }
   let estadoBreak={};
   cs.forEach(c=>estadoBreak[c.estado]=(estadoBreak[c.estado]||0)+1);
@@ -2492,13 +2527,32 @@ function tabFinanzas(c){
 function finEstadoBlock(c){
   const f=c.finanzas; const soc=isSocio();
   const selBox=(id,label,opts,v,locked)=>`<div class="field"><label>${label}</label><select id="${id}" ${locked?'disabled style="background:#f1f5f9;color:var(--muted)"':''}>${opts.map(o=>`<option value="${o}" ${v===o?'selected':''}>${finLabel(o)}</option>`).join("")}</select>${locked?'<div class="hint">Solo socios</div>':''}</div>`;
+  const saldoAbierto=Math.max(Number(f.montoTotal||0)-cobradoDe(c),0);
+  const incBox = soc ? `<div style="margin-top:12px;padding:11px 13px;border:1px solid var(--line);border-radius:8px;background:#fff8f0">
+      <label class="check" style="display:flex;gap:9px;align-items:flex-start;margin:0;font-weight:500;cursor:pointer">
+        <input type="checkbox" ${f.saldoIncobrable?'checked':''} onchange="toggleIncobrable(this.checked)" style="margin-top:2px">
+        <span>Saldo incobrable — el cliente no abonará el saldo (caso resuelto sin cobro).<br><small style="color:var(--muted)">El saldo pendiente${saldoAbierto>0?` (${money(saldoAbierto,f.moneda)})`:''} sale de “pendiente por cobrar” y pasa a <b>“Dejado de percibir”</b>.</small></span>
+      </label>
+      ${f.saldoIncobrable?`<div class="frow fr2" style="margin-top:9px">
+        <div class="field"><label>Fecha</label><input type="date" value="${f.fechaIncobrable||''}" onchange="setIncobrableCampo('fechaIncobrable',this.value)"></div>
+        <div class="field"><label>Motivo (opcional)</label><input value="${esc(f.motivoIncobrable||'')}" onchange="setIncobrableCampo('motivoIncobrable',this.value)" placeholder="Ej: recuperó la cuenta y no quiso seguir"></div>
+      </div>`:''}
+    </div>` : '';
   return `<div class="card" style="margin-top:18px"><div class="card-h"><h3>Estado financiero del caso</h3>
-      <span class="badge ${FIN_COLOR[f.estadoCobro]||'b-grey'}">${finLabel(f.estadoCobro)}</span></div><div class="card-b">
+      <span class="badge ${FIN_COLOR[f.estadoCobro]||'b-grey'}">${finLabel(f.estadoCobro)}</span>${f.saldoIncobrable?'<span class="badge b-amber" style="margin-left:6px">Saldo incobrable</span>':''}</div><div class="card-b">
     <div class="frow fr2">${selBox("fe_cobro","Estado de cobro",FIN_COBRO,f.estadoCobro,false)}${selBox("fe_res","Resultado del caso",FIN_RESULTADO,f.estadoResultado,!soc)}</div>
     <div class="frow fr2">${selBox("fe_dev","Devolución al cliente",FIN_DEVOLUCION,f.estadoDevolucion,!soc)}${selBox("fe_liq","Liquidación entre socios",FIN_LIQUIDACION,f.estadoLiquidacion,!soc)}</div>
     <button class="btn btn-primary" onclick="saveFinEstados()">Guardar estado financiero</button>
+    ${incBox}
   </div></div>`;
 }
+function toggleIncobrable(on){ const c=CURRENT,f=c.finanzas; f.saldoIncobrable=!!on;
+  if(on&&!f.fechaIncobrable) f.fechaIncobrable=new Date().toISOString().slice(0,10);
+  const saldoAbierto=Math.max(Number(f.montoTotal||0)-cobradoDe(c),0);
+  finLog(c, on?"Saldo marcado como incobrable (dejado de percibir)":"Saldo incobrable desmarcado", on?money(saldoAbierto,f.moneda):"");
+  save(); renderCaso();
+}
+function setIncobrableCampo(campo,valor){ CURRENT.finanzas[campo]=valor; save(); }
 function finHistCard(c){
   const h=(c.finanzas.hist||[]);
   const rows=h.length?h.map(x=>`<div class="tl-item"><div class="d"></div><div class="act">${esc(x.accion)}${x.detalle?` — <span style="color:var(--muted)">${esc(x.detalle)}</span>`:''}</div><div class="meta">${esc(userName(x.usuario))} · ${esc(x.fecha)}</div></div>`).join(""):'<div class="empty">Sin movimientos financieros registrados</div>';
@@ -3889,7 +3943,7 @@ function allGastos(){
 }
 function calcFinanzasGlobal(){
   const z=()=>({USD:0,ARS:0}); const cur=m=>(m==="ARS"?"ARS":"USD");
-  const a={pendCobro:z(),pendDev:z(),pendGasto:z(),cobrado:z(),cobradoReal:z(),gastosPag:z(),devRealizada:z(),fxOut:z(),fxIn:z(),adelantosSocios:z(),reservaDev:z()};
+  const a={pendCobro:z(),dejadoPercibir:z(),pendDev:z(),pendGasto:z(),cobrado:z(),cobradoReal:z(),gastosPag:z(),devRealizada:z(),fxOut:z(),fxIn:z(),adelantosSocios:z(),reservaDev:z()};
   casosActivos().forEach(c=>{
     const f=c.finanzas||{}; const m=cur(f.moneda); const cob=cobradoDe(c); const dev=Number(f.devolucion||0);
     a.cobrado[m]+=cob; // cobrado medido en la moneda PACTADA (para facturación)
@@ -3900,8 +3954,11 @@ function calcFinanzasGlobal(){
     const devEnStandBy = dev>0 && f.estadoResultado!=='favorable' && !['realizada_dev','cancelada_dev'].includes(f.estadoDevolucion);
     // El stand by se respalda con lo cobrado del SALDO (2ª cuota); si fue pago único, con todo lo cobrado.
     const reservaCaso = devEnStandBy ? Math.min(dev, baseReservaStandBy(c)) : 0;
+    const noCob=Math.max(Number(f.montoTotal||0)-cob,0);
+    // Saldo que el cliente no va a abonar (caso resuelto sin cobro): sale de "pendiente por cobrar" y va a "dejado de percibir".
+    if(f.saldoIncobrable) a.dejadoPercibir[m]+=noCob;
     if(!casoEsHistorial(c)){
-      a.pendCobro[m]+=Math.max(Number(f.montoTotal||0)-cob,0);
+      if(!f.saldoIncobrable) a.pendCobro[m]+=noCob;
       if(devEnStandBy) a.reservaDev[m]+=reservaCaso;
       if(["pendiente_dev","parcial_dev"].includes(f.estadoDevolucion)) a.pendDev[m]+=dev;
     }
@@ -4222,8 +4279,9 @@ function renderFinanzasGlobal(){
        </table></div>
        <div class="card-b"><div class="hint"><b>Cobrado</b> = el caso salió favorable, el estudio se queda la devolución → pasa a la caja disponible. <b>Reembolsado</b> = se devolvió al cliente → se descuenta de la caja.<br>El monto “En stand by” se respalda con lo cobrado del <b>saldo/2ª cuota</b>. En los casos de <b>pago único</b> (cobrado todo junto, sin saldo) se aparta el <b>total del reembolso</b>. Si un caso no pagó el 100%, la parte sin cobrar aún no se reserva.</div></div></div>`;
   if(FINTAB==="resumen"){ cont=`
-    <div class="grid g3" style="margin-bottom:8px">
+    <div class="grid g4" style="margin-bottom:8px">
       <div class="stat"><div class="lab">Pendiente de cobro</div><div class="val" style="font-size:17px">${dosMon(a.pendCobro)}</div></div>
+      <div class="stat" style="border-left:4px solid #b45309"><div class="lab">Dejado de percibir</div><div class="val" style="font-size:17px">${dosMon(a.dejadoPercibir)}</div><div class="hint" style="margin-top:2px">saldos de casos resueltos sin cobro</div></div>
       <div class="stat"><div class="lab">Devolución a realizar</div><div class="val" style="font-size:17px">${dosMon(a.pendDev)}</div></div>
       <div class="stat"><div class="lab">Pendiente de gastos</div><div class="val" style="font-size:17px">${dosMon(a.pendGasto)}</div></div>
     </div>
@@ -5149,6 +5207,7 @@ async function generarCasoDesdePresupuesto(id){
 }
 
 (async function boot(){
+  initTheme();
   // Formulario público del cliente (con o sin nube)
   const formTk=getFormToken();
   if(formTk){
@@ -5165,5 +5224,6 @@ async function generarCasoDesdePresupuesto(id){
   }
 })();
 </script>
+<!-- GMJ panel · build B44 -->
 </body>
 </html>

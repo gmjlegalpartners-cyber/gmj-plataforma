@@ -7,6 +7,9 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/l10n/es.js"></script>
 <meta name="googlebot" content="noindex, nofollow">
 <title>GMJ Legal Partners — Plataforma de Gestión</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -42,6 +45,18 @@
 [data-theme="dark"] .alert-warn{color:#fbbf24}
 [data-theme="dark"] .alert-info{color:#93c5fd}
 [data-theme="dark"] .alert-ok{color:#86efac}
+[data-theme="dark"] .flatpickr-calendar{background:var(--card);color:var(--text);box-shadow:0 8px 28px rgba(0,0,0,.6)}
+[data-theme="dark"] .flatpickr-calendar.arrowTop:before,[data-theme="dark"] .flatpickr-calendar.arrowTop:after{border-bottom-color:var(--card)}
+[data-theme="dark"] .flatpickr-calendar.arrowBottom:before,[data-theme="dark"] .flatpickr-calendar.arrowBottom:after{border-top-color:var(--card)}
+[data-theme="dark"] .flatpickr-months,[data-theme="dark"] .flatpickr-current-month,[data-theme="dark"] .flatpickr-current-month input.cur-year,[data-theme="dark"] .flatpickr-monthDropdown-months,[data-theme="dark"] span.flatpickr-weekday{color:var(--text);fill:var(--text);background:transparent}
+[data-theme="dark"] .flatpickr-day{color:var(--text)}
+[data-theme="dark"] .flatpickr-day:hover,[data-theme="dark"] .flatpickr-day:focus{background:var(--grey-bg);border-color:var(--grey-bg)}
+[data-theme="dark"] .flatpickr-day.selected{background:var(--primary);border-color:var(--primary);color:#fff}
+[data-theme="dark"] .flatpickr-day.flatpickr-disabled,[data-theme="dark"] .flatpickr-day.prevMonthDay,[data-theme="dark"] .flatpickr-day.nextMonthDay{color:var(--muted)}
+[data-theme="dark"] .flatpickr-time input,[data-theme="dark"] .flatpickr-time .flatpickr-am-pm,[data-theme="dark"] .flatpickr-time .flatpickr-time-separator{color:var(--text)}
+[data-theme="dark"] .flatpickr-time input:hover,[data-theme="dark"] .flatpickr-time .flatpickr-am-pm:hover{background:var(--grey-bg)}
+[data-theme="dark"] .flatpickr-months .flatpickr-prev-month svg,[data-theme="dark"] .flatpickr-months .flatpickr-next-month svg{fill:var(--text)}
+[data-theme="dark"] .numInputWrapper span{border-color:var(--line2)}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
@@ -359,7 +374,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.10 · B47 responsive celular/iPad (menú lateral, tablas, modales) + contraste modo oscuro";
+const BUILD = "2026.07.10 · B48 próxima audiencia en dashboard + selector fecha/hora (flatpickr) + auto-dividir cuotas + contraste editor audiencia";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -1183,8 +1198,8 @@ function renderCasos(){
   });
   const rows=list.map(c=>{
     const prog=caseProgress(c);
-    const med=(audsOf(c)||[]).filter(a=>a.fecha).map(a=>a.fecha).sort();
-    const tieneMed=med.length>0;
+    const px=proxAud(c);
+    const tieneMed=!!px;
     const solic=!!c.medSolicitada;
     const ck=casoChecks(c);
     const chk=(ok,lab,full)=>`<span class="badge ${ok?'b-green':'b-grey'}" title="${full}" style="font-size:10px;margin:1px 1px">${ok?'✓':'○'} ${lab}</span>`;
@@ -1194,7 +1209,7 @@ function renderCasos(){
       <td>${esc(c.cuenta.handle||"—")}<br><small style="color:var(--muted)">${esc(c.cuenta.plataforma||"")}</small></td>
       <td style="max-width:220px">${ets.length?ets.map(n=>`<span class="badge ${etiquetaColor(n)}" style="margin:1px 2px;font-size:11px">${esc(n)}</span>`).join(""):'<span class="badge b-grey">—</span>'}</td>
       <td style="text-align:center;white-space:nowrap;font-size:11px;line-height:1.7">
-        ${tieneMed?`<span class="badge b-green" title="Audiencia: ${fdate(med[0])}">📅 ${fdate(med[0])}</span>`:`<span class="badge b-grey">sin fecha</span>`}
+        ${tieneMed?`<span class="badge ${(!px.realizada && px.fecha>=new Date().toISOString().slice(0,10))?'b-green':'b-grey'}" title="Próxima audiencia: ${fdate(px.fecha)}${px.realizada?' (realizada)':''}">📅 ${fdate(px.fecha)}</span>`:`<span class="badge b-grey">sin fecha</span>`}
         <span class="badge ${solic?'b-gold':'b-grey'}" title="${solic?'Solicitud enviada al mediador':'Aún no se solicitó al mediador'}">📨 ${solic?'sí':'—'}</span><br>
         ${chk(ck.notif,'Notif',ck.notif?'Notificación paga':'Notificación pendiente')}${chk(ck.honIni,'H.ini',ck.honIni?'Honorarios iniciales pagos':'Honorarios iniciales pendientes')}${chk(ck.honFin,'H.fin',ck.honFin?'Honorarios finales pagos':'Honorarios finales pendientes')}
       </td>
@@ -1356,7 +1371,7 @@ function renderTab(){
   else if(t==="doc") el.innerHTML=tabDoc(c);
   else if(t==="drive") el.innerHTML=tabDrive(c);
   else if(t==="docs") el.innerHTML=tabDocs(c);
-  else if(t==="mediacion") el.innerHTML=tabMediacion(c);
+  else if(t==="mediacion"){ el.innerHTML=tabMediacion(c); setTimeout(initAudPickers,0); }
   else if(t==="gastos") el.innerHTML=tabGastos(c);
   else if(t==="finanzas") el.innerHTML= tabFinanzas(c);
   else if(t==="tareas") el.innerHTML=tabTareas(c);
@@ -1412,7 +1427,7 @@ function tabResumen(c){
         <dt>Saldo retenido</dt><dd>${c.cuenta.saldoRetenido?"Sí":"No"}</dd>
       </dl></div></div>
     ${finBlock}
-    ${(()=>{ const auds=audsOf(c); if(!auds.length) return ''; const next=auds.slice().sort((x,y)=>((x.fecha||'')+(x.hora||'')).localeCompare((y.fecha||'')+(y.hora||'')))[0];
+    ${(()=>{ const auds=audsOf(c); if(!auds.length) return ''; const next=proxAud(c)||auds[0];
       return `<div class="card"><div class="card-h"><h3>Audiencias de mediación</h3><span class="badge ${next.realizada?'b-green':next.calCreado?'b-blue':'b-gold'}">${auds.length>1?auds.length+' agendadas':(next.realizada?'Realizada':next.calCreado?'En calendario':'Agendada')}</span></div><div class="card-b">
       <dl class="kv">
         <dt>Próxima</dt><dd><b>${fdate(next.fecha)} · ${esc(next.hora||'—')}</b></dd>
@@ -2376,6 +2391,18 @@ function saveMediacion(){ CURRENT.objeto=val("md_obj"); DB.config.mediador=val("
 /* ---------- AUDIENCIA + GOOGLE CALENDAR ---------- */
 let EDIT_AUD=null;
 function audsOf(c){ if(c.audiencias) return c.audiencias; if(c.audiencia&&c.audiencia.fecha) return [Object.assign({id:'a0'},c.audiencia)]; return []; }
+// Próxima audiencia a realizarse: la más cercana pendiente (fecha >= hoy y no realizada). Si no hay futuras, la más reciente.
+function proxAud(c){ const A=(audsOf(c)||[]).filter(a=>a.fecha); if(!A.length) return null; const hoy=new Date().toISOString().slice(0,10); const key=a=>(a.fecha||'')+(a.hora||''); const fut=A.filter(a=>!a.realizada && a.fecha>=hoy).sort((x,y)=>key(x).localeCompare(key(y))); return fut.length?fut[0]:A.slice().sort((x,y)=>key(y).localeCompare(key(x)))[0]; }
+// Selector de fecha/hora amigable (flatpickr) para el editor de audiencias. En celular usa el nativo.
+function initAudPickers(){
+  if(typeof flatpickr==='undefined') return;
+  try{
+    var f=document.getElementById('au_fec');
+    if(f && !f._flatpickr) flatpickr(f,{dateFormat:"Y-m-d",altInput:true,altFormat:"j M Y",locale:(flatpickr.l10ns&&flatpickr.l10ns.es)?"es":"default"});
+    var h=document.getElementById('au_hora');
+    if(h && !h._flatpickr) flatpickr(h,{enableTime:true,noCalendar:true,dateFormat:"H:i",time_24hr:true,minuteIncrement:15});
+  }catch(e){ console.warn("flatpickr init",e); }
+}
 function ensureAudiencias(c){ if(!c.audiencias){ c.audiencias=(c.audiencia&&c.audiencia.fecha)?[Object.assign({id:uid('a')},c.audiencia)]:[]; } if(c.audiencia!==undefined) delete c.audiencia; }
 function audBadge(a){ return a.realizada?'<span class="badge b-green">Realizada</span>':a.calCreado?'<span class="badge b-blue">En calendario</span>':'<span class="badge b-gold">Agendada</span>'; }
 function tabAudiencia(c){
@@ -2395,7 +2422,7 @@ function audSummaryCard(c,a){
 }
 function audEditForm(c,a){
   const isNew=a.id==="__new__";
-  return `<div style="border:1.5px solid var(--primary);border-radius:10px;padding:16px;margin-bottom:12px;background:#fbfdff">
+  return `<div style="border:1.5px solid var(--primary);border-radius:10px;padding:16px;margin-bottom:12px;background:var(--grey-bg)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="color:var(--navy)">${isNew?'Nueva audiencia':'Editando audiencia'}</b>${isNew?'':audBadge(a)}</div>
     <div class="frow fr3">${inp("au_fec","Fecha",a.fecha||"","date")}${inp("au_hora","Hora",a.hora||"10:00","time")}${sel("au_dur","Duración",["30 min","60 min","90 min","120 min"],a.duracion||"60 min")}</div>
     <div class="frow fr2">${sel("au_mod","Modalidad",["Virtual","Presencial"],a.modalidad||"Virtual")}${inp("au_link","Link de reunión (si es virtual)",a.linkReunion||"")}</div>
@@ -4994,6 +5021,7 @@ function getFormToken(){
    automáticamente y permite crear el caso a partir del presupuesto.
    ============================================================ */
 let PRESU_CUOTAS=[];   // cuotas en edición dentro del modal
+let PRESU_MANUAL=false; // true cuando el usuario editó una cuota a mano (para no pisarla al auto-dividir)
 let PRESU_DRAFT=null;  // presupuesto en previsualización
 function presupuestosPool(){ if(!DB.presupuestos) DB.presupuestos=[]; return DB.presupuestos; }
 
@@ -5096,7 +5124,7 @@ function renderPresupuestos(){
 
 /* ---- Alta ---- */
 function openNewPresupuesto(){
-  PRESU_CUOTAS=[{label:"Al momento de confirmar el servicio",importe:""},{label:"Antes de la audiencia con META",importe:""}];
+  PRESU_CUOTAS=[{label:"Al momento de confirmar el servicio",importe:""},{label:"Antes de la audiencia con META",importe:""}]; PRESU_MANUAL=false;
   modal({title:"Nuevo presupuesto", size:"", body:`
     <div class="frow fr2">${inp("pr_ap","Apellido","")}${inp("pr_no","Nombre","")}</div>
     ${inp("pr_url","Cuenta afectada (URL)","")}
@@ -5117,16 +5145,19 @@ function presuRenderCuotas(){
   const box=document.getElementById("pr_cuotas"); if(!box) return;
   box.innerHTML=PRESU_CUOTAS.map((q,i)=>`<div class="frow" style="grid-template-columns:1fr 130px 36px;gap:8px;margin-bottom:8px;align-items:end">
     <div class="field" style="margin:0"><label>Concepto</label><input value="${esc(q.label||"")}" oninput="PRESU_CUOTAS[${i}].label=this.value"></div>
-    <div class="field" style="margin:0"><label>Importe</label><input type="number" value="${q.importe}" oninput="PRESU_CUOTAS[${i}].importe=this.value"></div>
+    <div class="field" style="margin:0"><label>Importe</label><input type="number" value="${q.importe}" oninput="PRESU_CUOTAS[${i}].importe=this.value;PRESU_MANUAL=true"></div>
     <button type="button" class="btn btn-ghost btn-sm" onclick="presuDelCuota(${i})" title="Quitar" style="height:38px">✕</button>
   </div>`).join("");
 }
-function presuAddCuota(){ PRESU_CUOTAS.push({label:"Cuota "+(PRESU_CUOTAS.length+1),importe:""}); presuRenderCuotas(); }
-function presuDelCuota(i){ PRESU_CUOTAS.splice(i,1); presuRenderCuotas(); }
+function presuAddCuota(){ PRESU_CUOTAS.push({label:"Cuota "+(PRESU_CUOTAS.length+1),importe:""}); if(!PRESU_MANUAL)presuAutoSplit(); else presuRenderCuotas(); }
+function presuDelCuota(i){ PRESU_CUOTAS.splice(i,1); if(!PRESU_MANUAL)presuAutoSplit(); else presuRenderCuotas(); }
+// Reparte el total en partes iguales entre las cuotas (50/50 con dos, o dividido por la cantidad).
+// Se mantiene en sincronía mientras el usuario no edite una cuota a mano.
 function presuAutoSplit(){
-  const total=Number(val("pr_total")||0); if(!total||!PRESU_CUOTAS.length) return;
-  if(PRESU_CUOTAS.some(q=>q.importe!==""&&q.importe!=null)) return; // no pisar montos ya cargados
-  const n=PRESU_CUOTAS.length, each=Math.round((total/n)*100)/100;
+  if(PRESU_MANUAL){ presuRenderCuotas(); return; } // el usuario ya ajustó montos: no pisar
+  const total=Number(val("pr_total")||0); const n=PRESU_CUOTAS.length; if(!n) return;
+  if(!total){ PRESU_CUOTAS.forEach(q=>q.importe=""); presuRenderCuotas(); return; }
+  const each=Math.round((total/n)*100)/100;
   PRESU_CUOTAS.forEach((q,i)=> q.importe = i===n-1 ? Math.round((total-each*(n-1))*100)/100 : each);
   presuRenderCuotas();
 }

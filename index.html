@@ -374,7 +374,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.10 · B48 próxima audiencia en dashboard + selector fecha/hora (flatpickr) + auto-dividir cuotas + contraste editor audiencia";
+const BUILD = "2026.07.10 · B49 presupuestos: nombre/apellido/cuenta ya no son obligatorios";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -5166,7 +5166,6 @@ function presuToggleReint(){ const on=document.getElementById("pr_reint_ck").che
 function presuGenerar(){
   const ap=val("pr_ap").trim(), no=val("pr_no").trim(), url=val("pr_url").trim();
   const moneda=val("pr_mon")||"USD", total=Number(val("pr_total")||0);
-  if(!ap||!no){ toast("Nombre y apellido son obligatorios","err"); return; }
   if(!total){ toast("Cargá el monto total","err"); return; }
   const cuotas=PRESU_CUOTAS.map(q=>({label:(q.label||"").trim()||"Cuota", importe:Number(q.importe||0)})).filter(q=>q.importe>0);
   if(!cuotas.length){ toast("Cargá al menos una cuota con importe","err"); return; }

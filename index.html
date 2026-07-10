@@ -340,7 +340,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.10 · B45 fix sincronización en vivo (no interrumpe la edición) + reintento de reconexión";
+const BUILD = "2026.07.10 · B46 liquidación entre socios: redondeo + emparejado claro; sin bloque de liquidación por caso";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -2528,7 +2528,6 @@ function tabFinanzas(c){
   </div>
   ${finPlanPagos(c)}
   ${finEstadoBlock(c)}
-  ${finLiqBlock(c)}
   ${finHistCard(c)}`;
 }
 function finEstadoBlock(c){
@@ -4002,10 +4001,12 @@ function liquidacionesSocios(a){
   const list=Object.values(byName);
   list.forEach(s=>s.items.sort((x,y)=>(y.fecha||"").localeCompare(x.fecha||"")));
   const nSoc=Math.max(list.filter(s=>s.nombre!=='(sin asignar)').length,1);
+  const r2=n=>Math.round((Number(n)||0)*100)/100; // a centavos: evita diferencias fantasma por decimales sueltos
+  list.forEach(s=>{ s.USD=r2(s.USD); s.ARS=r2(s.ARS); });
   // Bolsa repartible = caja disponible + lo ya retirado por socios − gastos pendientes. Se parte en partes iguales.
-  const distrib={ USD:a.caja.USD + a.adelantosSocios.USD - a.pendGasto.USD, ARS:a.caja.ARS + a.adelantosSocios.ARS - a.pendGasto.ARS };
-  const share={ USD:distrib.USD/nSoc, ARS:distrib.ARS/nSoc };
-  list.forEach(s=>{ const real=s.nombre!=='(sin asignar)'; s.pendiente={ USD: real?(share.USD - s.USD):0, ARS: real?(share.ARS - s.ARS):0 }; });
+  const distrib={ USD:r2(a.caja.USD + a.adelantosSocios.USD - a.pendGasto.USD), ARS:r2(a.caja.ARS + a.adelantosSocios.ARS - a.pendGasto.ARS) };
+  const share={ USD:r2(distrib.USD/nSoc), ARS:r2(distrib.ARS/nSoc) };
+  list.forEach(s=>{ const real=s.nombre!=='(sin asignar)'; s.pendiente={ USD: real?r2(share.USD - s.USD):0, ARS: real?r2(share.ARS - s.ARS):0 }; });
   return {list, distrib, share, nSoc};
 }
 // Bloque visual de la liquidación entre socios: bolsa, la mitad de cada uno, retirado y cuánto falta para emparejar.
@@ -4014,12 +4015,14 @@ function liqSociosBlockHtml(liqSoc){
   const sinAsig = liqSoc.list.find(s=>s.nombre==='(sin asignar)');
   if(!reales.length) return '<div class="empty">No hay socios cargados.</div>';
   const compenLinea=(mon)=>{
-    const arr=reales.map(s=>({n:s.nombre, pend:s.pendiente[mon]})).sort((a,b)=>b.pend-a.pend);
-    const top=arr[0]; const over=arr.filter(x=>x.pend<-0.005);
-    if(Math.abs(top.pend)<0.005 && !over.length) return `<span style="color:var(--muted)">${mon}: emparejado, cada socio está en su mitad.</span>`;
-    let msg = top.pend>0.005 ? `${mon}: para emparejar, a <b>${esc(top.n)}</b> le corresponde retirar <b>${money(top.pend,mon)}</b> hasta su mitad.` : `${mon}: ambos están en o por encima de su mitad.`;
-    if(over.length) msg += ` <span style="color:#c0392b">(${over.map(o=>esc(o.n)+" retiró "+money(-o.pend,mon)+" de más").join("; ")})</span>`;
-    return msg;
+    const arr=reales.map(s=>({n:s.nombre, ret:s[mon]})).sort((a,b)=>b.ret-a.ret);
+    if(arr.length<2) return `<span style="color:var(--muted)">${mon}: hay un solo socio cargado.</span>`;
+    const diff=Math.round((arr[0].ret-arr[1].ret)*100)/100;              // diferencia entre lo retirado por cada socio
+    const resto=Math.round((liqSoc.share[mon]-arr[0].ret)*100)/100;      // lo que aún le queda a cada uno por retirar de la caja
+    if(Math.abs(diff)<0.01){
+      return `<span style="color:var(--muted)">${mon}: <b>emparejado</b> — ambos socios retiraron lo mismo${resto>0.005?`; queda ${money(resto,mon)} por retirar para cada uno de la caja`:''}.</span>`;
+    }
+    return `${mon}: <b>${esc(arr[1].n)}</b> retiró <b>${money(diff,mon)}</b> menos que <b>${esc(arr[0].n)}</b>; para emparejar puede retirar esa diferencia.`;
   };
   const cards = reales.map(s=>{
     const cell=(mon)=>{

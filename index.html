@@ -57,7 +57,7 @@ a{color:var(--primary);text-decoration:none}
 .login-card h1{font-size:20px;color:var(--navy);letter-spacing:.5px}
 .login-card .sub{color:var(--muted);font-size:13px;margin-top:4px;margin-bottom:26px}
 .role-opt{display:flex;gap:12px;align-items:center;text-align:left;border:1.5px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px;transition:.15s;width:100%}
-.role-opt:hover{border-color:var(--primary);background:#f8fafc;transform:translateY(-1px)}
+.role-opt:hover{border-color:var(--primary);background:var(--grey-bg);transform:translateY(-1px)}
 .role-opt .ico{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
 .role-opt .t{font-weight:600;color:var(--navy)}
 .role-opt .d{font-size:12px;color:var(--muted)}
@@ -128,7 +128,7 @@ a{color:var(--primary);text-decoration:none}
 .btn-gold{background:var(--gold);color:#fff}
 .btn-gold:hover{filter:brightness(.94)}
 .btn-ghost{background:#fff;border:1px solid var(--line2);color:var(--slate)}
-.btn-ghost:hover{background:#f8fafc;border-color:var(--muted)}
+.btn-ghost:hover{background:var(--grey-bg);border-color:var(--muted)}
 .btn-danger{background:#fff;border:1px solid var(--red);color:var(--red)}
 .btn-danger:hover{background:var(--red-bg)}
 .btn-sm{padding:6px 11px;font-size:12px}
@@ -158,7 +158,7 @@ table{width:100%;border-collapse:collapse}
 th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:600;padding:11px 14px;border-bottom:1px solid var(--line);background:#fafbfc}
 td{padding:13px 14px;border-bottom:1px solid var(--line);font-size:13.5px;vertical-align:middle}
 tr.clickable{cursor:pointer;transition:.1s}
-tr.clickable:hover{background:#f8fafc}
+tr.clickable:hover{background:var(--grey-bg)}
 
 .badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:11.5px;font-weight:600;white-space:nowrap}
 .b-grey{background:var(--grey-bg);color:var(--slate2)}
@@ -244,11 +244,11 @@ tr.clickable:hover{background:#f8fafc}
 .doc-row .ic{width:40px;height:40px;border-radius:9px;background:var(--gold-soft);color:var(--gold);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
 .doc-row .meta small{color:var(--muted);font-size:12px}
 .driveitem{display:flex;align-items:center;gap:11px;padding:11px 14px;border-radius:9px;transition:.1s}
-.driveitem:hover{background:#f8fafc}
+.driveitem:hover{background:var(--grey-bg)}
 .driveitem .fi{font-size:18px}
 .fileinput{border:1.5px dashed var(--line2);border-radius:10px;padding:16px;text-align:center;color:var(--muted);font-size:12.5px}
 
-.copy-link{display:flex;gap:8px;align-items:center;background:#f8fafc;border:1px solid var(--line);border-radius:9px;padding:8px 8px 8px 14px}
+.copy-link{display:flex;gap:8px;align-items:center;background:var(--grey-bg);border:1px solid var(--line);border-radius:9px;padding:8px 8px 8px 14px}
 .copy-link input{flex:1;border:none;background:none;font-size:13px;color:var(--slate);outline:none}
 
 /* checklist / tablero de avance */
@@ -272,7 +272,22 @@ tr.clickable:hover{background:#f8fafc}
 .docview p{margin-bottom:11px;text-align:justify;font-size:13px}
 .docview .sig{margin-top:50px;display:flex;justify-content:space-around;text-align:center;font-size:12.5px}
 
-@media(max-width:860px){.sidebar{width:64px}.sidebar .logo .n,.nav .sec,.nav a span:not(.i),.userbox .nm,.userbox .rl,.logout{display:none}.main{margin-left:64px}.nav a{justify-content:center}}
+/* ===== RESPONSIVE celular / tablet (B47) ===== */
+#hamb{display:none;width:38px;height:38px;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer;font-size:19px;align-items:center;justify-content:center;margin-right:4px;flex-shrink:0}
+#navOverlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:110;display:none}
+@media(max-width:860px){
+  .grid{grid-template-columns:1fr!important;gap:12px}
+  .sidebar{transform:translateX(-100%);width:250px;transition:transform .22s ease;box-shadow:0 12px 40px rgba(0,0,0,.45);z-index:120}
+  .sidebar.open{transform:translateX(0)}
+  .main{margin-left:0}
+  #hamb{display:inline-flex}
+  #navOverlay.show{display:block}
+  .topbar{padding:0 12px}
+  .content{padding:18px 14px 60px}
+  table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
+  .modal{width:100vw!important;max-width:100vw!important;min-height:100vh;border-radius:0}
+  .modal-b{max-height:calc(100vh - 130px)}
+}
 </style>
 </head>
 <body>
@@ -304,9 +319,13 @@ tr.clickable:hover{background:#f8fafc}
       <div id="buildTag" style="text-align:center;font-size:10px;color:var(--muted);margin-top:8px;opacity:.7"></div>
     </div>
   </aside>
+  <div id="navOverlay" onclick="closeSidebar()"></div>
   <div class="main">
     <div class="topbar">
-      <div class="crumb" id="crumb"><b>Panel</b></div>
+      <div style="display:flex;align-items:center;gap:8px;min-width:0">
+        <button id="hamb" onclick="toggleSidebar()" title="Menú" aria-label="Menú">☰</button>
+        <div class="crumb" id="crumb"><b>Panel</b></div>
+      </div>
       <div style="display:flex;align-items:center;gap:14px">
         <div id="topActions"></div>
         <button class="bell-btn" id="themeToggle" onclick="toggleTheme()" title="Modo claro / oscuro">🌙</button>
@@ -340,7 +359,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.10 · B46 liquidación entre socios: redondeo + emparejado claro; sin bloque de liquidación por caso";
+const BUILD = "2026.07.10 · B47 responsive celular/iPad (menú lateral, tablas, modales) + contraste modo oscuro";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -1030,11 +1049,14 @@ function setActiveNav(k){ document.querySelectorAll(".nav a").forEach(a=>a.class
 function applyTheme(t){ t=(t==='dark')?'dark':'light'; document.documentElement.setAttribute('data-theme',t); try{localStorage.setItem('gmj_theme',t);}catch(e){} const b=document.getElementById('themeToggle'); if(b) b.textContent=(t==='dark')?'☀️':'🌙'; }
 function toggleTheme(){ const cur=(document.documentElement.getAttribute('data-theme')==='dark')?'dark':'light'; applyTheme(cur==='dark'?'light':'dark'); }
 function initTheme(){ let t='light'; try{ t=localStorage.getItem('gmj_theme')||'light'; }catch(e){} applyTheme(t); }
+/* ---- Menú lateral en celular (cajón) ---- */
+function toggleSidebar(){ const s=document.querySelector('.sidebar'); const o=document.getElementById('navOverlay'); if(!s)return; const open=!s.classList.contains('open'); s.classList.toggle('open',open); if(o)o.classList.toggle('show',open); }
+function closeSidebar(){ const s=document.querySelector('.sidebar'); const o=document.getElementById('navOverlay'); if(s)s.classList.remove('open'); if(o)o.classList.remove('show'); }
 function setCrumb(t, sub){ document.getElementById("crumb").innerHTML = (sub?`${esc(sub)} `:"")+`<b>${esc(t)}</b>`; }
 function topActions(html){ document.getElementById("topActions").innerHTML=html||""; }
 
 function go(route, arg){
-  ROUTE=route; topActions("");
+  ROUTE=route; topActions(""); closeSidebar();
   if(route==="dashboard"){ setActiveNav("dashboard"); renderDashboard(); }
   else if(route==="casos"){ setActiveNav("casos"); renderCasos(); }
   else if(route==="tareas"){ setActiveNav("tareas"); renderTareas(); }
@@ -1817,7 +1839,7 @@ function tabDoc(c){
   const checklist=ADJ_TIPOS.slice(0,9).map(t=>{ const has=(c.adjuntos||[]).some(a=>a.tipo===t); return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px"><span style="color:${has?'var(--green)':'var(--line2)'};font-weight:700">${has?'✓':'○'}</span><span style="color:${has?'var(--text)':'var(--muted)'}">${esc(t)}</span></div>`; }).join("");
   return `<div class="grid g2">
     <div class="card"><div class="card-h"><h3>Formulario digital del cliente</h3></div><div class="card-b">
-      <label style="display:flex;align-items:flex-start;gap:8px;background:#f8fafc;border:1px solid var(--line2);border-radius:8px;padding:10px 12px;margin-bottom:12px;cursor:pointer">
+      <label style="display:flex;align-items:flex-start;gap:8px;background:var(--grey-bg);border:1px solid var(--line2);border-radius:8px;padding:10px 12px;margin-bottom:12px;cursor:pointer">
         <input type="checkbox" ${autoDocsCase?'checked':''} onchange="setAutoDocs(this.checked)" style="margin-top:3px;flex-shrink:0">
         <span style="font-size:13px"><b>Generar automáticamente contrato y carta poder</b> cuando el cliente complete el formulario y firme.<br><small style="color:var(--muted)">Si lo destildás, el formulario solo recopila datos y documentación (sin firma ni contrato); el contrato se lo enviás vos después de forma manual.</small></span>
       </label>
@@ -2334,11 +2356,11 @@ function tabMediacion(c){
       <input type="checkbox" id="md_fb" ${c.citarFacebook!==false?'checked':''} onchange="CURRENT.citarFacebook=this.checked;save();renderTab()">
       <label for="md_fb" style="margin:0;font-weight:600">Citar a FACEBOOK ARGENTINA S.R.L. en la mediación</label>
     </div>
-    ${reqMostrados(c).map(r=>`<div class="alert alert-info" style="background:#f8fafc;border-color:var(--line);color:var(--slate)"><span>🏢</span><div><b>${esc(r.nombre)}</b> — ${esc(r.cuit)} — ${esc(r.domicilio)}</div></div>`).join("")}
+    ${reqMostrados(c).map(r=>`<div class="alert alert-info" style="background:var(--grey-bg);border-color:var(--line);color:var(--slate)"><span>🏢</span><div><b>${esc(r.nombre)}</b> — ${esc(r.cuit)} — ${esc(r.domicilio)}</div></div>`).join("")}
     ${c.citarFacebook===false?`<div class="alert alert-warn"><span>⚠</span><div>Facebook Argentina S.R.L. <b>no se incluirá</b> en la planilla de mediación generada.</div></div>`:''}
     <div class="section-title">Mediador</div>
     <div class="field"><input id="md_med" value="${esc(DB.config.mediador)}"></div>
-    <div class="check" style="background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:6px">
+    <div class="check" style="background:var(--grey-bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:6px">
       <input type="checkbox" id="md_solic" ${c.medSolicitada?'checked':''} onchange="CURRENT.medSolicitada=this.checked; CURRENT.medSolicitadaFecha=this.checked?(new Date().toISOString().slice(0,10)):null; save(); toast(this.checked?'Marcada como solicitada al mediador':'Desmarcada'); renderTab()">
       <label for="md_solic" style="margin:0;font-weight:600">Solicitud ya enviada al mediador${c.medSolicitada&&c.medSolicitadaFecha?` <span style="font-weight:400;color:var(--muted)">· ${fdate(c.medSolicitadaFecha)}</span>`:''}</label>
     </div>
@@ -2513,10 +2535,10 @@ function tabFinanzas(c){
   </div>
   <div class="grid g2">
     <div class="card"><div class="card-h"><h3>Condiciones económicas</h3></div><div class="card-b">
-      <div class="frow fr2"><div class="field"><label>Moneda del precio</label><select id="fi_mon" onchange="finAdelRecalc()"><option ${f.moneda==="USD"?"selected":""}>USD</option><option ${f.moneda==="ARS"?"selected":""}>ARS</option></select><div class="hint">Moneda en la que se cerró el precio</div></div><div class="field"><label>Estado de cobro (automático)</label><div style="padding:9px 12px;border:1px solid var(--line2);border-radius:8px;background:#f8fafc"><span class="badge ${FIN_COLOR[f.estadoCobro]||'b-grey'}">${finLabel(f.estadoCobro)}</span></div><div class="hint">Se calcula con los pagos del Plan de pagos</div></div></div>
+      <div class="frow fr2"><div class="field"><label>Moneda del precio</label><select id="fi_mon" onchange="finAdelRecalc()"><option ${f.moneda==="USD"?"selected":""}>USD</option><option ${f.moneda==="ARS"?"selected":""}>ARS</option></select><div class="hint">Moneda en la que se cerró el precio</div></div><div class="field"><label>Estado de cobro (automático)</label><div style="padding:9px 12px;border:1px solid var(--line2);border-radius:8px;background:var(--grey-bg)"><span class="badge ${FIN_COLOR[f.estadoCobro]||'b-grey'}">${finLabel(f.estadoCobro)}</span></div><div class="hint">Se calcula con los pagos del Plan de pagos</div></div></div>
       <div class="frow fr2">${inp("fi_total","Monto total pactado",f.montoTotal,"number")}<div class="field"><label>Adelanto abonado</label><input id="fi_adel" type="number" value="${esc(f.adelanto)}" oninput="finAdelRecalc()"><div class="hint">En la moneda del precio. Si se cobró en pesos, indicá la moneda y el TC abajo.</div></div></div>
       <div class="frow fr2"><div class="field"><label>Moneda en que se cobró el adelanto</label><select id="fi_adelMon" onchange="finAdelRecalc()"><option ${aMon==="USD"?"selected":""}>USD</option><option ${aMon==="ARS"?"selected":""}>ARS</option></select></div><div class="field" id="fi_adelTcBox" style="${aDistinta?'':'display:none'}"><label>Tipo de cambio (ARS por 1 USD)</label><input id="fi_adelTc" type="number" value="${esc(aTc)}" oninput="finAdelRecalc()"><div class="hint">Se cobró ≈ <b id="fi_adelEquiv">${aEquivIni}</b></div></div></div>
-      <div class="frow fr2"><div class="field"><label>Saldo pendiente (automático)</label><input id="fi_saldo" value="${esc(f.saldo)}" disabled style="background:#f1f5f9;color:var(--muted)"><div class="hint">Monto total − adelanto. Para marcarlo pagado usá el <b>Plan de pagos</b> abajo.</div></div>${inp("fi_dev","Devolución (resultado negativo)",f.devolucion,"number")}</div>
+      <div class="frow fr2"><div class="field"><label>Saldo pendiente (automático)</label><input id="fi_saldo" value="${esc(f.saldo)}" disabled style="background:var(--grey-bg);color:var(--muted)"><div class="hint">Monto total − adelanto. Para marcarlo pagado usá el <b>Plan de pagos</b> abajo.</div></div>${inp("fi_dev","Devolución (resultado negativo)",f.devolucion,"number")}</div>
       <div class="frow fr2">${inp("fi_fadel","Fecha pago adelanto",f.fechaAdelanto,"date")}${inp("fi_fsaldo","Fecha prevista saldo",f.fechaSaldo,"date")}</div>
       ${inp("fi_medio","Medio de pago",f.medioPago)}
       <div class="field"><label>Observaciones financieras</label><textarea id="fi_obs" rows="2">${esc(f.obs)}</textarea></div>
@@ -2532,9 +2554,9 @@ function tabFinanzas(c){
 }
 function finEstadoBlock(c){
   const f=c.finanzas; const soc=isSocio();
-  const selBox=(id,label,opts,v,locked)=>`<div class="field"><label>${label}</label><select id="${id}" ${locked?'disabled style="background:#f1f5f9;color:var(--muted)"':''}>${opts.map(o=>`<option value="${o}" ${v===o?'selected':''}>${finLabel(o)}</option>`).join("")}</select>${locked?'<div class="hint">Solo socios</div>':''}</div>`;
+  const selBox=(id,label,opts,v,locked)=>`<div class="field"><label>${label}</label><select id="${id}" ${locked?'disabled style="background:var(--grey-bg);color:var(--muted)"':''}>${opts.map(o=>`<option value="${o}" ${v===o?'selected':''}>${finLabel(o)}</option>`).join("")}</select>${locked?'<div class="hint">Solo socios</div>':''}</div>`;
   const saldoAbierto=Math.max(Number(f.montoTotal||0)-cobradoDe(c),0);
-  const incBox = soc ? `<div style="margin-top:12px;padding:11px 13px;border:1px solid var(--line);border-radius:8px;background:#fff8f0">
+  const incBox = soc ? `<div style="margin-top:12px;padding:11px 13px;border:1px solid var(--line);border-radius:8px;background:var(--amber-bg)">
       <label class="check" style="display:flex;gap:9px;align-items:flex-start;margin:0;font-weight:500;cursor:pointer">
         <input type="checkbox" ${f.saldoIncobrable?'checked':''} onchange="toggleIncobrable(this.checked)" style="margin-top:2px">
         <span>Saldo incobrable — el cliente no abonará el saldo (caso resuelto sin cobro).<br><small style="color:var(--muted)">El saldo pendiente${saldoAbierto>0?` (${money(saldoAbierto,f.moneda)})`:''} sale de “pendiente por cobrar” y pasa a <b>“Dejado de percibir”</b>.</small></span>
@@ -2582,7 +2604,7 @@ function marcarSaldoPagado(){ const c=CURRENT,f=c.finanzas; const saldo=saldoDe(
     <div class="alert alert-info"><span>💵</span><div>Saldo / diferencia pactado: <b>${money(saldo,f.moneda)}</b></div></div>
     ${sel("sp_mon","Moneda en que se cobró",[f.moneda,otra],f.moneda)}
     <div id="sp_tcbox" style="display:none">
-      <div class="frow fr2">${inp("sp_tc",`Tipo de cambio (ARS por 1 USD)`,"","number")}<div class="field"><label>Equivale a recibir</label><div id="sp_equiv" style="padding:9px 12px;border:1px solid var(--line2);border-radius:8px;background:#f8fafc;font-weight:600">—</div></div></div>
+      <div class="frow fr2">${inp("sp_tc",`Tipo de cambio (ARS por 1 USD)`,"","number")}<div class="field"><label>Equivale a recibir</label><div id="sp_equiv" style="padding:9px 12px;border:1px solid var(--line2);border-radius:8px;background:var(--grey-bg);font-weight:600">—</div></div></div>
     </div>
     <div class="frow fr2">${inp("sp_fec","Fecha del pago",new Date().toISOString().slice(0,10),"date")}${inp("sp_med","Medio de pago",f.medioPago||"")}</div>
     ${inp("sp_obs","Observaciones (opcional)","")}`,
@@ -2640,7 +2662,7 @@ function addPago(){
   modal({title:"Registrar pago", size:"sm", body:`
     <div class="frow fr2">${inp("pa_imp","Importe",CURRENT.finanzas.adelanto||"","number")}${sel("pa_mon","Moneda del pago",["USD","ARS"],fm)}</div>
     <div id="pa_tcbox" style="display:none">
-      <div class="frow fr2">${inp("pa_tc","Tipo de cambio (ARS por 1 USD)","","number")}<div class="field"><label>Equivale a</label><div id="pa_equiv" style="padding:9px 12px;border:1px solid var(--line2);border-radius:8px;background:#f8fafc;font-weight:600">—</div></div></div>
+      <div class="frow fr2">${inp("pa_tc","Tipo de cambio (ARS por 1 USD)","","number")}<div class="field"><label>Equivale a</label><div id="pa_equiv" style="padding:9px 12px;border:1px solid var(--line2);border-radius:8px;background:var(--grey-bg);font-weight:600">—</div></div></div>
       <div class="hint" style="margin:-4px 0 8px">El precio del caso está en <b>${fm}</b>. Cargá el TC del día y el sistema imputa el equivalente al total pactado.</div>
     </div>
     <div class="frow fr2">${inp("pa_fec","Fecha",new Date().toISOString().slice(0,10),"date")}${inp("pa_med","Medio de pago",CURRENT.finanzas.medioPago)}</div>
@@ -2669,7 +2691,7 @@ function editPago(id){
   modal({title:`Editar ${tipo.toLowerCase()}`, size:"sm", body:`
     <div class="frow fr2">${inp("pe_imp","Importe",p.importe,"number")}${sel("pe_mon","Moneda del pago",["USD","ARS"],p.moneda||fm)}</div>
     <div id="pe_tcbox" style="${(p.moneda||fm)!==fm?'':'display:none'}">
-      <div class="frow fr2">${inp("pe_tc","Tipo de cambio (ARS por 1 USD)",p.tc||"","number")}<div class="field"><label>Equivale a</label><div id="pe_equiv" style="padding:9px 12px;border:1px solid var(--line2);border-radius:8px;background:#f8fafc;font-weight:600">—</div></div></div>
+      <div class="frow fr2">${inp("pe_tc","Tipo de cambio (ARS por 1 USD)",p.tc||"","number")}<div class="field"><label>Equivale a</label><div id="pe_equiv" style="padding:9px 12px;border:1px solid var(--line2);border-radius:8px;background:var(--grey-bg);font-weight:600">—</div></div></div>
       <div class="hint" style="margin:-4px 0 8px">El precio del caso está en <b>${fm}</b>.</div>
     </div>
     <div class="frow fr2">${inp("pe_fec","Fecha",p.fecha,"date")}${inp("pe_med","Medio de pago",p.medio||"")}</div>
@@ -3441,13 +3463,13 @@ function paintForm(token,c,submitFn){
   const autoDocs = c.autoDocs!==false;
   const btnText = autoDocs ? "Aceptar, firmar y enviar" : "Enviar formulario";
   const tycTxt = DB.config.tycTexto||TC_TEXT_DEFAULT;
-  const CK=(id,inner)=>`<label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;font-size:13px;color:var(--text);background:#f8fafc;border:1px solid var(--line2);border-radius:8px;padding:9px 12px"><input type="checkbox" id="${id}" style="margin-top:2px;flex-shrink:0;width:17px;height:17px"><span>${inner}</span></label>`;
+  const CK=(id,inner)=>`<label style="display:flex;gap:9px;align-items:flex-start;cursor:pointer;font-size:13px;color:var(--text);background:var(--grey-bg);border:1px solid var(--line2);border-radius:8px;padding:9px 12px"><input type="checkbox" id="${id}" style="margin-top:2px;flex-shrink:0;width:17px;height:17px"><span>${inner}</span></label>`;
   const linkC=`<a href="#" onclick="previsualizarDocCliente('${token}','contrato');return false" style="color:var(--gold);font-weight:600;text-decoration:underline">Contrato de servicios</a>`;
   const linkP=`<a href="#" onclick="previsualizarDocCliente('${token}','poder');return false" style="color:var(--gold);font-weight:600;text-decoration:underline">Carta poder</a>`;
   const consentHtml = autoDocs ? `
         <div class="section-title">E. Consentimiento y firma</div>
         <div class="alert alert-info"><span>✍️</span><div>Al finalizar se generan automáticamente tu <b>Contrato de servicios</b> y tu <b>Carta poder</b>, y vas a poder <b>descargar tus copias al instante</b>. Leé todo, tildá cada casilla y firmá.</div></div>
-        <div style="border:1px solid var(--line2);border-radius:8px;padding:12px 14px;max-height:220px;overflow:auto;background:#f8fafc;font-size:12.5px;line-height:1.5;color:#334155;white-space:pre-wrap">${esc(tycTxt)}</div>
+        <div style="border:1px solid var(--line2);border-radius:8px;padding:12px 14px;max-height:220px;overflow:auto;background:var(--grey-bg);font-size:12.5px;line-height:1.5;color:var(--slate2);white-space:pre-wrap">${esc(tycTxt)}</div>
         <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
           ${CK("cf_ck1",`Leí y acepto los <b>Términos y Condiciones</b>.`)}
           ${CK("cf_ck2",`Leí y acepto el ${linkC} y otorgo la ${linkP} para esta gestión. <span style="color:var(--muted)">(Tocá cada enlace para leer el documento completo.)</span>`)}
@@ -3785,7 +3807,7 @@ function submitClientForm(token){
  }catch(e){ console.error("submitClientForm",e); const box=document.getElementById("cf_formerr"); if(box){ box.innerHTML="<span>⚠</span><div>Ocurrió un error al enviar el formulario. Probá de nuevo. Detalle técnico: "+esc(String((e&&e.message)||e))+"</div>"; box.style.display="flex"; box.scrollIntoView({behavior:"smooth",block:"center"}); } toast("Error al enviar","err"); }
 }
 function backToApp(){ location.hash=""; document.getElementById("formRoot").classList.add("hidden"); if(SESSION){document.getElementById("app").classList.remove("hidden"); go("caso", DB.casos.find(c=>c.estado).id||"");} else {document.getElementById("login").classList.remove("hidden");} }
-function formSuccess(){ document.getElementById("formRoot").innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f1f5f9"><div class="card" style="max-width:460px;text-align:center"><div class="card-b" style="padding:46px"><div style="font-size:48px">✅</div><h2 style="color:var(--navy);margin:14px 0 8px">¡Formulario enviado!</h2><p style="color:var(--muted)">Gracias. El estudio ya recibió tus datos y documentación. Nos pondremos en contacto a la brevedad.</p></div></div></div>`; }
+function formSuccess(){ document.getElementById("formRoot").innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--grey-bg)"><div class="card" style="max-width:460px;text-align:center"><div class="card-b" style="padding:46px"><div style="font-size:48px">✅</div><h2 style="color:var(--navy);margin:14px 0 8px">¡Formulario enviado!</h2><p style="color:var(--muted)">Gracias. El estudio ya recibió tus datos y documentación. Nos pondremos en contacto a la brevedad.</p></div></div></div>`; }
 async function submitClientFormCloud(token){
   const miss=formMissing(FORM_REQ); if(miss.length){ formFocusMissing(miss); return; }
   const cliente={apellido:val("cf_ap").toUpperCase(),nombre:val("cf_no"),dni:val("cf_dni"),cuit:val("cf_cuit"),nacionalidad:val("cf_nac"),fechaNac:val("cf_fnac"),estadoCivil:val("cf_ec"),conyuge:val("cf_con"),domicilio:val("cf_dom"),localidad:val("cf_loc"),provincia:val("cf_prov"),cp:val("cf_cp"),tel:val("cf_celular"),email:val("cf_email")};
@@ -3807,7 +3829,7 @@ async function submitClientFormCloud(token){
   if(autoDocs){ const errFirma=validarFirma(); if(errFirma){ toast(errFirma,"err"); return; } }
   const subeDrive=async(tipo,nombre,b64)=>{ try{ const rr=await fetch(FUNCTIONS_URL+"/drive-sync",{method:"POST",headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({formToken:token,action:"upload",tipo,nombre,mime:"application/pdf",base64:b64})}); const jj=await rr.json().catch(()=>({})); return (jj&&(jj.link||jj.respaldo))||""; }catch(e){ console.error("subeDrive",tipo,e); return ""; } };
   try{
-    document.getElementById("formRoot").innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f1f5f9"><div style="text-align:center;color:#64748b"><div style="font-size:32px">⏳</div><p style="margin-top:10px">Procesando tu firma y documentos, no cierres esta ventana…</p></div></div>`;
+    document.getElementById("formRoot").innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--grey-bg)"><div style="text-align:center;color:#64748b"><div style="font-size:32px">⏳</div><p style="margin-top:10px">Procesando tu firma y documentos, no cierres esta ventana…</p></div></div>`;
     // ---------- Autogeneración de contrato + poder con firma electrónica ----------
     let consent=null, docsPayload=null;
     if(autoDocs){
@@ -4404,7 +4426,7 @@ function renderCajaOperativa(){
   // historial mes a mes (últimos 6 meses, abonado) — gastos del estudio + gastos de casos
   const meses=[]; { const [y,m]=FINMONTH.split("-").map(Number); for(let i=0;i<6;i++){ const d=new Date(y,(m-1)-i,1); meses.push(d.toISOString().slice(0,7)); } }
   const histMes=meses.map(ym=>{ const t=z(); movimientosCajaMes(ym).forEach(m=>{ if(m.estado==="pendiente")return; t[m.moneda]+=m.importe; }); return {ym,t}; });
-  const histRows=histMes.map(({ym,t})=>`<tr class="clickable" onclick="setFinMonth('${ym}')" ${ym===FINMONTH?'style="background:#f1f5f9;font-weight:600"':''}><td>${finMonthName(ym)}</td><td style="text-align:right">${money(t.ARS,"ARS")}</td><td style="text-align:right">${money(t.USD,"USD")}</td></tr>`).join("");
+  const histRows=histMes.map(({ym,t})=>`<tr class="clickable" onclick="setFinMonth('${ym}')" ${ym===FINMONTH?'style="background:var(--grey-bg);font-weight:600"':''}><td>${finMonthName(ym)}</td><td style="text-align:right">${money(t.ARS,"ARS")}</td><td style="text-align:right">${money(t.USD,"USD")}</td></tr>`).join("");
 
   document.getElementById("view").innerHTML=`
     <div class="pagehead"><div><h2>Caja operativa</h2><div class="sub">Gastos del estudio (sueldos, licencias, operativos, adelantos) + gastos abonados de cada caso</div></div>

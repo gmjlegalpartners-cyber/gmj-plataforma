@@ -393,7 +393,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.10 · B50 calendario + agenda de próximas + nº de audiencia + guardar unificado (panel+calendarios) + no cambia de caso mientras trabajás";
+const BUILD = "2026.07.10 · B51 cambiar estado de la audiencia desde el calendario (menú rápido, sin entrar al caso)";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -1124,7 +1124,7 @@ function calAgendaHtml(){
   let rows='', curDay='';
   fut.forEach(e=>{
     if(e.a.fecha!==curDay){ curDay=e.a.fecha; const dd=new Date(e.a.fecha+'T00:00:00'); const rel=e.a.fecha===hoy?'HOY · ':(e.a.fecha===man?'MAÑANA · ':''); rows+=`<div style="font-size:12px;font-weight:700;color:${e.a.fecha===hoy?'var(--primary)':'var(--muted)'};text-transform:uppercase;letter-spacing:.4px;margin:14px 0 6px">${rel}${dias[dd.getDay()]} ${fdate(e.a.fecha)}</div>`; }
-    rows+=`<div class="clickable" onclick="ACTIVE_TAB='mediacion';go('caso','${e.c.id}')" style="display:flex;align-items:center;gap:12px;padding:9px 12px;border:1px solid var(--line);border-radius:9px;margin-bottom:6px;cursor:pointer">
+    rows+=`<div class="clickable" onclick="calAudMenu('${e.c.id}','${e.a.id}')" style="display:flex;align-items:center;gap:12px;padding:9px 12px;border:1px solid var(--line);border-radius:9px;margin-bottom:6px;cursor:pointer">
       <div style="font-weight:700;font-size:15px;min-width:52px;color:var(--primary)">${esc(e.a.hora||'--:--')}</div>
       <div style="flex:1;min-width:0"><div style="font-weight:600">${esc(clienteFull(e.c))} <span class="badge b-grey" style="font-size:10.5px">${e.n}ª audiencia</span></div><div style="font-size:12px;color:var(--muted)">${esc(e.c.id)}${e.a.modalidad?' · '+esc(e.a.modalidad):''}${e.a.lugar?' · '+esc(e.a.lugar):''}</div></div>
       <span class="badge ${e.a.calCreado?'b-blue':'b-gold'}">${e.a.calCreado?'En calendario':'Agendada'}</span>
@@ -1150,7 +1150,7 @@ function renderCalendario(){
     const chips=(byDay[ds]||[]).map(e=>{
       const col=e.a.realizada?'cal-done':(ds<hoy?'cal-past':(e.a.calCreado?'cal-cal':'cal-pend'));
       const ape=(e.c.cliente.apellido||clienteFull(e.c)).split(' ')[0];
-      return `<div class="cal-chip ${col}" title="${esc(clienteFull(e.c))} · ${esc(e.a.hora||'')} · ${_ordFem(e.n)} audiencia (${esc(e.c.id)})" onclick="event.stopPropagation();ACTIVE_TAB='mediacion';go('caso','${e.c.id}')">${esc(e.a.hora||'')} ${esc(ape)} · ${_ordFem(e.n)}</div>`;
+      return `<div class="cal-chip ${col}" title="${esc(clienteFull(e.c))} · ${esc(e.a.hora||'')} · ${_ordFem(e.n)} audiencia (${esc(e.c.id)})" onclick="event.stopPropagation();calAudMenu('${e.c.id}','${e.a.id}')">${esc(e.a.hora||'')} ${esc(ape)} · ${_ordFem(e.n)}</div>`;
     }).join("");
     cells+=`<div class="cal-cell ${ds===hoy?'cal-today':''}"><div class="cal-dnum">${d}</div>${chips}</div>`;
   }
@@ -1208,6 +1208,35 @@ function calExportar(){
 function calCopiar(){ const t=document.getElementById("cal_txt"); if(!t)return; t.select(); try{ navigator.clipboard.writeText(t.value); }catch(e){ try{document.execCommand('copy');}catch(_){} } toast("Copiado al portapapeles ✓"); }
 function calDescargar(){ const t=document.getElementById("cal_txt"); if(!t)return; const blob=new Blob([t.value],{type:"text/plain;charset=utf-8"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="audiencias.txt"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1500); }
 function initCalPickers(){ if(typeof flatpickr==='undefined')return; try{ ['cal_desde','cal_hasta'].forEach(id=>{ var el=document.getElementById(id); if(el && !el._flatpickr) flatpickr(el,{dateFormat:"Y-m-d",altInput:true,altFormat:"j M Y",locale:(flatpickr.l10ns&&flatpickr.l10ns.es)?"es":"default"}); }); }catch(e){} }
+// Menú rápido desde el calendario/agenda: ver y cambiar el estado de la audiencia sin entrar al caso.
+function calAudMenu(cid,aid){
+  const c=DB.casos.find(x=>x.id===cid); if(!c) return;
+  const a=audsOf(c).find(x=>x.id===aid); if(!a) return;
+  const n=audOrdN(c,a);
+  const estBadge=a.realizada?'<span class="badge b-green">Realizada</span>':(a.calCreado?'<span class="badge b-blue">En calendario</span>':'<span class="badge b-gold">Agendada</span>');
+  modal({title:"Audiencia · "+clienteFull(c), size:"", body:`
+    <div style="font-size:14px;line-height:1.7">
+      <div><b>📅 ${fdate(a.fecha)} · ${esc(a.hora||'—')}</b> <span class="badge b-grey">${n}ª audiencia</span></div>
+      <div style="color:var(--muted);font-size:13px">${esc(c.id)}${a.modalidad?' · '+esc(a.modalidad):''}${a.lugar?' · '+esc(a.lugar):''}${a.linkReunion?' · con link':''}</div>
+      <div style="margin-top:8px">Estado: ${estBadge}</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:16px">
+      ${a.realizada
+        ? `<button class="btn btn-ghost" onclick="calSetRealizada('${cid}','${aid}',false)">↩ Marcar como pendiente</button>`
+        : `<button class="btn btn-primary" onclick="calSetRealizada('${cid}','${aid}',true)">✓ Marcar como realizada</button>`}
+      <button class="btn btn-ghost" onclick="closeModal();ACTIVE_TAB='mediacion';go('caso','${cid}')">📁 Abrir el caso</button>
+    </div>`,
+    footer:`<button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>`});
+}
+async function calSetRealizada(cid,aid,val){
+  const c=DB.casos.find(x=>x.id===cid); if(!c) return; ensureAudiencias(c);
+  const a=c.audiencias.find(x=>x.id===aid); if(!a) return;
+  a.realizada=!!val;
+  logAction(c, val?"Audiencia marcada como realizada (desde el calendario)":"Audiencia marcada como pendiente (desde el calendario)");
+  await persistCaso(c);
+  closeModal(); toast(val?"Marcada como realizada ✓":"Marcada como pendiente");
+  if(ROUTE==="calendario") renderCalendario(); else if(ROUTE==="dashboard") renderDashboard();
+}
 
 /* ============================================================
    DASHBOARD

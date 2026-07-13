@@ -57,6 +57,25 @@
 [data-theme="dark"] .flatpickr-time input:hover,[data-theme="dark"] .flatpickr-time .flatpickr-am-pm:hover{background:var(--grey-bg)}
 [data-theme="dark"] .flatpickr-months .flatpickr-prev-month svg,[data-theme="dark"] .flatpickr-months .flatpickr-next-month svg{fill:var(--text)}
 [data-theme="dark"] .numInputWrapper span{border-color:var(--line2)}
+/* ===== Calendario de audiencias ===== */
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.cal-head{margin-bottom:6px}
+.cal-dow{text-align:center;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:4px 0}
+.cal-cell{min-height:98px;border:1px solid var(--line);border-radius:8px;padding:5px;background:var(--card);display:flex;flex-direction:column;gap:3px;overflow:hidden}
+.cal-cell.cal-out{background:transparent;border:none;min-height:0}
+.cal-cell.cal-today{border-color:var(--primary);box-shadow:inset 0 0 0 1px var(--primary)}
+.cal-dnum{font-size:12px;font-weight:700;color:var(--muted)}
+.cal-cell.cal-today .cal-dnum{color:var(--primary)}
+.cal-chip{font-size:10.5px;line-height:1.3;padding:3px 6px;border-radius:5px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff}
+.cal-chip.cal-pend{background:var(--gold)}
+.cal-chip.cal-cal{background:var(--primary)}
+.cal-chip.cal-done{background:var(--green)}
+.cal-chip.cal-past{background:var(--muted)}
+.cal-chip:hover{filter:brightness(1.1)}
+.cal-legend{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:12px;font-size:12px;color:var(--muted)}
+.cal-dot{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:middle}
+.cal-dot.cal-pend{background:var(--gold)}.cal-dot.cal-cal{background:var(--primary)}.cal-dot.cal-done{background:var(--green)}.cal-dot.cal-past{background:var(--muted)}
+@media(max-width:860px){.cal-grid{gap:3px}.cal-cell{min-height:64px;padding:3px}.cal-chip{font-size:9px;padding:2px 3px}.cal-dow{font-size:9px}}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
@@ -374,7 +393,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.10 · B49 presupuestos: nombre/apellido/cuenta ya no son obligatorios";
+const BUILD = "2026.07.10 · B50 calendario + agenda de próximas + nº de audiencia + guardar unificado (panel+calendarios) + no cambia de caso mientras trabajás";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -852,7 +871,7 @@ async function refreshTareasLive(){
     ]);
     if(nd){ DB.notificaciones=nd; renderBell(); }
     if(td){ const sig=tareasSignature(td); if(sig!==_tareasSig){ _tareasSig=sig; DB.tareas=td;
-      if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='caso'&&CURRENT)renderCaso(); else if(ROUTE==='dashboard')renderDashboard(); } }
+      if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='dashboard')renderDashboard(); } } // B50: NO re-renderiza la ficha del caso mientras la estás usando
   }catch(e){ console.error("refreshTareasLive",e); }
 }
 let _pollTimer=null;
@@ -963,7 +982,7 @@ function _refreshBusy(){
 function cloudRefresh(){
   if(_refreshTimer) clearTimeout(_refreshTimer);
   _refreshTimer=setTimeout(async function run(){
-    if(_refreshBusy()){ _refreshTimer=setTimeout(run, 1500); return; } // reintenta después, sin interrumpir la edición
+    if(_refreshBusy() || ROUTE==="caso"){ _refreshTimer=setTimeout(run, 1500); return; } // no refrescar mientras editás NI estando dentro de un caso (para no sacarte de donde estás)
     const curId = CURRENT ? CURRENT.id : null; const tab = ACTIVE_TAB;
     try{ await cloudLoad(); }catch(e){ console.warn("cloudRefresh/cloudLoad falló, reintento", e); _refreshTimer=setTimeout(run, 3000); return; }
     if(ROUTE==="caso" && curId){ CURRENT=DB.casos.find(c=>c.id===curId)||null; ACTIVE_TAB=tab; if(CURRENT) renderCaso(); else go("casos"); }
@@ -1048,6 +1067,7 @@ function buildNav(){
   const items=[
     {k:"dashboard", i:"▦", t:"Panel"},
     {k:"casos", i:"📁", t:"Casos"},
+    {k:"calendario", i:"🗓️", t:"Calendario"},
     {k:"tareas", i:"✅", t:"Tareas"},
     {k:"presupuestos", i:"🧾", t:"Presupuestos"},
   ];
@@ -1074,6 +1094,7 @@ function go(route, arg){
   ROUTE=route; topActions(""); closeSidebar();
   if(route==="dashboard"){ setActiveNav("dashboard"); renderDashboard(); }
   else if(route==="casos"){ setActiveNav("casos"); renderCasos(); }
+  else if(route==="calendario"){ setActiveNav("calendario"); renderCalendario(); }
   else if(route==="tareas"){ setActiveNav("tareas"); renderTareas(); }
   else if(route==="presupuestos"){ setActiveNav("presupuestos"); renderPresupuestos(); }
   else if(route==="caso"){ setActiveNav("casos"); CURRENT=DB.casos.find(c=>c.id===arg); ACTIVE_TAB="resumen"; EDIT_AUD=null; renderCaso(); }
@@ -1084,6 +1105,109 @@ function go(route, arg){
   else if(route==="form"){ renderClientForm(arg); }
   window.scrollTo(0,0);
 }
+
+/* ============================================================
+   CALENDARIO DE AUDIENCIAS
+   ============================================================ */
+let CAL_MONTH="";
+// Número de audiencia dentro del caso (1 = la más temprana por fecha/hora).
+function audOrdN(c,a){ const A=audsOf(c).filter(x=>x.fecha).slice().sort((x,y)=>((x.fecha||'')+(x.hora||'')).localeCompare((y.fecha||'')+(y.hora||''))); const idx=A.findIndex(x=>x.id===a.id); return idx>=0?idx+1:1; }
+function _ordFem(n){ return n+'ª'; }
+function audEventos(){ const evs=[]; casosActivos().forEach(c=>audsOf(c).forEach(a=>{ if(a.fecha) evs.push({c,a,n:audOrdN(c,a)}); })); return evs; }
+// Agenda de próximas audiencias (lista cronológica, agrupada por día).
+function calAgendaHtml(){
+  const hoy=new Date().toISOString().slice(0,10);
+  const man=new Date(Date.now()+864e5).toISOString().slice(0,10);
+  const fut=audEventos().filter(e=>!e.a.realizada && e.a.fecha>=hoy).sort((x,y)=>((x.a.fecha)+(x.a.hora||'')).localeCompare((y.a.fecha)+(y.a.hora||''))).slice(0,15);
+  if(!fut.length) return `<div class="card" style="padding:16px;margin-bottom:16px"><div class="card-h" style="padding:0 0 6px 0"><h3>⏭️ Próximas audiencias</h3></div><div class="empty" style="padding:16px">No hay audiencias próximas.</div></div>`;
+  const dias=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+  let rows='', curDay='';
+  fut.forEach(e=>{
+    if(e.a.fecha!==curDay){ curDay=e.a.fecha; const dd=new Date(e.a.fecha+'T00:00:00'); const rel=e.a.fecha===hoy?'HOY · ':(e.a.fecha===man?'MAÑANA · ':''); rows+=`<div style="font-size:12px;font-weight:700;color:${e.a.fecha===hoy?'var(--primary)':'var(--muted)'};text-transform:uppercase;letter-spacing:.4px;margin:14px 0 6px">${rel}${dias[dd.getDay()]} ${fdate(e.a.fecha)}</div>`; }
+    rows+=`<div class="clickable" onclick="ACTIVE_TAB='mediacion';go('caso','${e.c.id}')" style="display:flex;align-items:center;gap:12px;padding:9px 12px;border:1px solid var(--line);border-radius:9px;margin-bottom:6px;cursor:pointer">
+      <div style="font-weight:700;font-size:15px;min-width:52px;color:var(--primary)">${esc(e.a.hora||'--:--')}</div>
+      <div style="flex:1;min-width:0"><div style="font-weight:600">${esc(clienteFull(e.c))} <span class="badge b-grey" style="font-size:10.5px">${e.n}ª audiencia</span></div><div style="font-size:12px;color:var(--muted)">${esc(e.c.id)}${e.a.modalidad?' · '+esc(e.a.modalidad):''}${e.a.lugar?' · '+esc(e.a.lugar):''}</div></div>
+      <span class="badge ${e.a.calCreado?'b-blue':'b-gold'}">${e.a.calCreado?'En calendario':'Agendada'}</span>
+    </div>`;
+  });
+  return `<div class="card" style="padding:16px;margin-bottom:16px"><div class="card-h" style="padding:0 0 6px 0"><h3>⏭️ Próximas audiencias</h3><span class="badge b-gold">${fut.length}</span></div>${rows}</div>`;
+}
+function renderCalendario(){
+  setCrumb("Calendario de audiencias"); topActions("");
+  if(!/^\d{4}-\d{2}$/.test(CAL_MONTH)) CAL_MONTH=new Date().toISOString().slice(0,7);
+  const [Y,M]=CAL_MONTH.split('-').map(Number);
+  const evs=audEventos();
+  const byDay={}; evs.forEach(e=>{ (byDay[e.a.fecha]=byDay[e.a.fecha]||[]).push(e); });
+  Object.values(byDay).forEach(arr=>arr.sort((x,y)=>(x.a.hora||'').localeCompare(y.a.hora||'')));
+  const startDow=(new Date(Y,M-1,1).getDay()+6)%7, dim=new Date(Y,M,0).getDate();
+  const hoy=new Date().toISOString().slice(0,10);
+  const mesNom=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][M-1];
+  const dowNames=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  let cells='';
+  for(let i=0;i<startDow;i++) cells+=`<div class="cal-cell cal-out"></div>`;
+  for(let d=1;d<=dim;d++){
+    const ds=`${Y}-${String(M).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const chips=(byDay[ds]||[]).map(e=>{
+      const col=e.a.realizada?'cal-done':(ds<hoy?'cal-past':(e.a.calCreado?'cal-cal':'cal-pend'));
+      const ape=(e.c.cliente.apellido||clienteFull(e.c)).split(' ')[0];
+      return `<div class="cal-chip ${col}" title="${esc(clienteFull(e.c))} · ${esc(e.a.hora||'')} · ${_ordFem(e.n)} audiencia (${esc(e.c.id)})" onclick="event.stopPropagation();ACTIVE_TAB='mediacion';go('caso','${e.c.id}')">${esc(e.a.hora||'')} ${esc(ape)} · ${_ordFem(e.n)}</div>`;
+    }).join("");
+    cells+=`<div class="cal-cell ${ds===hoy?'cal-today':''}"><div class="cal-dnum">${d}</div>${chips}</div>`;
+  }
+  const t=new Date(), dow=(t.getDay()+6)%7, lun=new Date(t); lun.setDate(t.getDate()-dow); const dom=new Date(lun); dom.setDate(lun.getDate()+6);
+  const iso=x=>x.toISOString().slice(0,10);
+  document.getElementById("view").innerHTML=`
+    <div class="pagehead"><div><h2>Calendario de audiencias</h2><div class="sub">${evs.length} audiencias cargadas</div></div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-ghost btn-sm" onclick="calMes(-1)">←</button>
+        <b style="min-width:140px;text-align:center">${mesNom} ${Y}</b>
+        <button class="btn btn-ghost btn-sm" onclick="calMes(1)">→</button>
+        <button class="btn btn-ghost btn-sm" onclick="CAL_MONTH='';renderCalendario()">Hoy</button>
+      </div></div>
+    ${calAgendaHtml()}
+    <div class="card" style="padding:14px;margin-bottom:16px">
+      <div class="card-h" style="padding:0 0 10px 0"><h3>🗓️ Vista mensual</h3></div>
+      <div class="cal-grid cal-head">${dowNames.map(n=>`<div class="cal-dow">${n}</div>`).join("")}</div>
+      <div class="cal-grid">${cells}</div>
+      <div class="cal-legend"><span><span class="cal-dot cal-pend"></span>Agendada</span><span><span class="cal-dot cal-cal"></span>En calendario</span><span><span class="cal-dot cal-done"></span>Realizada</span><span><span class="cal-dot cal-past"></span>Pasada</span></div>
+    </div>
+    <div class="card" style="padding:16px">
+      <div class="card-h" style="padding:0 0 10px 0"><h3>📄 Exportar a texto para compartir</h3></div>
+      <div class="frow fr3" style="align-items:end">
+        <div class="field" style="margin:0"><label>Desde</label><input type="date" id="cal_desde" value="${iso(lun)}"></div>
+        <div class="field" style="margin:0"><label>Hasta</label><input type="date" id="cal_hasta" value="${iso(dom)}"></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-ghost btn-sm" onclick="calRango('semana')">Esta semana</button><button class="btn btn-ghost btn-sm" onclick="calRango('mes')">Este mes</button></div>
+      </div>
+      <button class="btn btn-primary" style="margin-top:10px" onclick="calExportar()">Generar texto</button>
+      <div id="cal_out" style="margin-top:12px"></div>
+    </div>`;
+  setTimeout(initCalPickers,0);
+}
+function calMes(delta){ if(!/^\d{4}-\d{2}$/.test(CAL_MONTH)) CAL_MONTH=new Date().toISOString().slice(0,7); let [Y,M]=CAL_MONTH.split('-').map(Number); M+=delta; if(M<1){M=12;Y--;} if(M>12){M=1;Y++;} CAL_MONTH=`${Y}-${String(M).padStart(2,'0')}`; renderCalendario(); }
+function calSetFecha(id,v){ const el=document.getElementById(id); if(el){ el.value=v; if(el._flatpickr) el._flatpickr.setDate(v,false); } }
+function calRango(tipo){
+  const t=new Date();
+  if(tipo==='semana'){ const dow=(t.getDay()+6)%7; const lun=new Date(t); lun.setDate(t.getDate()-dow); const dom=new Date(lun); dom.setDate(lun.getDate()+6); calSetFecha('cal_desde',lun.toISOString().slice(0,10)); calSetFecha('cal_hasta',dom.toISOString().slice(0,10)); }
+  else { const Y=t.getFullYear(),M=t.getMonth(); calSetFecha('cal_desde',new Date(Y,M,1).toISOString().slice(0,10)); calSetFecha('cal_hasta',new Date(Y,M+1,0).toISOString().slice(0,10)); }
+  calExportar();
+}
+function calExportar(){
+  const desde=val("cal_desde"), hasta=val("cal_hasta"); if(!desde||!hasta){ toast("Elegí el rango de fechas","err"); return; }
+  const evs=audEventos().filter(e=>e.a.fecha>=desde && e.a.fecha<=hasta).sort((x,y)=>((x.a.fecha)+(x.a.hora||'')).localeCompare((y.a.fecha)+(y.a.hora||'')));
+  const dias=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+  let txt=`AUDIENCIAS · ${fdate(desde)} al ${fdate(hasta)}\n`;
+  if(!evs.length){ txt+='\n(No hay audiencias en ese rango.)'; }
+  let curDay='';
+  evs.forEach(e=>{
+    if(e.a.fecha!==curDay){ curDay=e.a.fecha; const dd=new Date(e.a.fecha+'T00:00:00'); txt+=`\n${dias[dd.getDay()]} ${fdate(e.a.fecha)}\n`; }
+    txt+=`  ${e.a.hora||'--:--'} · ${clienteFull(e.c)} (${e.c.id}) — ${_ordFem(e.n)} audiencia${e.a.modalidad?' · '+e.a.modalidad:''}${e.a.linkReunion?' · '+e.a.linkReunion:''}${e.a.realizada?' [realizada]':''}\n`;
+  });
+  document.getElementById("cal_out").innerHTML=`<textarea id="cal_txt" rows="12" style="width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;white-space:pre">${esc(txt)}</textarea>
+    <div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-primary btn-sm" onclick="calCopiar()">📋 Copiar</button><button class="btn btn-ghost btn-sm" onclick="calDescargar()">⬇ Descargar .txt</button></div>`;
+}
+function calCopiar(){ const t=document.getElementById("cal_txt"); if(!t)return; t.select(); try{ navigator.clipboard.writeText(t.value); }catch(e){ try{document.execCommand('copy');}catch(_){} } toast("Copiado al portapapeles ✓"); }
+function calDescargar(){ const t=document.getElementById("cal_txt"); if(!t)return; const blob=new Blob([t.value],{type:"text/plain;charset=utf-8"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="audiencias.txt"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1500); }
+function initCalPickers(){ if(typeof flatpickr==='undefined')return; try{ ['cal_desde','cal_hasta'].forEach(id=>{ var el=document.getElementById(id); if(el && !el._flatpickr) flatpickr(el,{dateFormat:"Y-m-d",altInput:true,altFormat:"j M Y",locale:(flatpickr.l10ns&&flatpickr.l10ns.es)?"es":"default"}); }); }catch(e){} }
 
 /* ============================================================
    DASHBOARD
@@ -1150,7 +1274,7 @@ function renderDashboard(){
   cs.forEach(c=>audsOf(c).forEach(a=>{ if(a.fecha&&!a.realizada) med.push({c,a}); }));
   med.sort((x,y)=>((x.a.fecha||'')+(x.a.hora||'')).localeCompare((y.a.fecha||'')+(y.a.hora||'')));
   const medRows = med.map(({c,a})=>`<tr class="clickable" onclick="ACTIVE_TAB='mediacion';go('caso','${c.id}')">
-      <td><b>${esc(clienteFull(c))}</b><br><small style="color:var(--muted)">${esc(c.id)}</small></td>
+      <td><b>${esc(clienteFull(c))}</b><br><small style="color:var(--muted)">${esc(c.id)} · ${audOrdN(c,a)}ª audiencia</small></td>
       <td><span class="badge ${a.fecha<today?'b-red':'b-gold'}">${fdate(a.fecha)} · ${esc(a.hora||'')}</span></td>
       <td>${esc(a.modalidad||'—')}</td>
       <td>${a.calCreado?'<span class="badge b-blue">En calendario</span>':'<span class="badge b-grey">Sin calendario</span>'}</td>
@@ -1209,7 +1333,7 @@ function renderCasos(){
       <td>${esc(c.cuenta.handle||"—")}<br><small style="color:var(--muted)">${esc(c.cuenta.plataforma||"")}</small></td>
       <td style="max-width:220px">${ets.length?ets.map(n=>`<span class="badge ${etiquetaColor(n)}" style="margin:1px 2px;font-size:11px">${esc(n)}</span>`).join(""):'<span class="badge b-grey">—</span>'}</td>
       <td style="text-align:center;white-space:nowrap;font-size:11px;line-height:1.7">
-        ${tieneMed?`<span class="badge ${(!px.realizada && px.fecha>=new Date().toISOString().slice(0,10))?'b-green':'b-grey'}" title="Próxima audiencia: ${fdate(px.fecha)}${px.realizada?' (realizada)':''}">📅 ${fdate(px.fecha)}</span>`:`<span class="badge b-grey">sin fecha</span>`}
+        ${tieneMed?`<span class="badge ${(!px.realizada && px.fecha>=new Date().toISOString().slice(0,10))?'b-green':'b-grey'}" title="Próxima audiencia: ${fdate(px.fecha)}${px.realizada?' (realizada)':''}">📅 ${fdate(px.fecha)} · ${audOrdN(c,px)}ª</span>`:`<span class="badge b-grey">sin fecha</span>`}
         <span class="badge ${solic?'b-gold':'b-grey'}" title="${solic?'Solicitud enviada al mediador':'Aún no se solicitó al mediador'}">📨 ${solic?'sí':'—'}</span><br>
         ${chk(ck.notif,'Notif',ck.notif?'Notificación paga':'Notificación pendiente')}${chk(ck.honIni,'H.ini',ck.honIni?'Honorarios iniciales pagos':'Honorarios iniciales pendientes')}${chk(ck.honFin,'H.fin',ck.honFin?'Honorarios finales pagos':'Honorarios finales pendientes')}
       </td>
@@ -2415,7 +2539,7 @@ function tabAudiencia(c){
 }
 function audSummaryCard(c,a){
   return `<div onclick="editAud('${a.id}')" style="cursor:pointer;border:1px solid var(--line2);border-radius:10px;padding:13px 16px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:12px" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--line2)'">
-    <div><div style="font-weight:700;color:var(--navy);font-size:15px">📅 ${fdate(a.fecha)} · ${esc(a.hora||'—')} <span style="font-weight:400;color:var(--muted);font-size:13px">(${esc(a.duracion||'')})</span></div>
+    <div><div style="font-weight:700;color:var(--navy);font-size:15px">📅 ${fdate(a.fecha)} · ${esc(a.hora||'—')} <span style="font-weight:400;color:var(--muted);font-size:13px">(${esc(a.duracion||'')})</span> <span class="badge b-grey" style="font-size:11px">${audOrdN(c,a)}ª audiencia</span></div>
       <div style="font-size:13px;color:var(--muted);margin-top:3px">${esc(a.modalidad||'')}${a.linkReunion?` · <span style="color:var(--primary)">link</span>`:''}${a.lugar?` · ${esc(a.lugar)}`:''}</div></div>
     <div style="display:flex;gap:12px;align-items:center">${audBadge(a)}<span style="color:var(--primary);font-weight:600;font-size:13px">Editar →</span></div>
   </div>`;
@@ -2428,10 +2552,9 @@ function audEditForm(c,a){
     <div class="frow fr2">${sel("au_mod","Modalidad",["Virtual","Presencial"],a.modalidad||"Virtual")}${inp("au_link","Link de reunión (si es virtual)",a.linkReunion||"")}</div>
     ${inp("au_lugar","Lugar (si es presencial)",a.lugar||"")}
     <div class="field"><label>Observaciones</label><textarea id="au_obs" rows="2">${esc(a.obs||"")}</textarea></div>
-    <div class="alert alert-info"><span>📅</span><div>El evento se carga <b>automáticamente en TODOS</b> los calendarios de los usuarios que conectaron su Google. Si editás y volvés a "Actualizar en calendarios", el evento se <b>modifica</b> (no se duplica).</div></div>
+    <div class="alert alert-info"><span>📅</span><div>Al <b>Guardar</b>, la audiencia se registra en el panel y se carga/actualiza <b>automáticamente en TODOS</b> los calendarios de Google conectados (si ya existía, se <b>modifica</b>, no se duplica).</div></div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn btn-primary" onclick="saveAud('${a.id}')">Guardar</button>
-      <button class="btn btn-gold" onclick="crearEventoAud('${a.id}')">📅 ${a.calCreado?'Actualizar en calendarios':'Cargar en calendarios'}</button>
+      <button class="btn btn-primary" onclick="guardarAud('${a.id}')">💾 Guardar y sincronizar calendarios</button>
       ${(!isNew&&!a.realizada)?`<button class="btn btn-ghost" onclick="marcarAud('${a.id}')">✓ Marcar realizada</button>`:''}
       ${!isNew?`<button class="btn btn-danger" onclick="eliminarAud('${a.id}')">🗑 Eliminar</button>`:''}
       <button class="btn btn-ghost" onclick="cancelarEditAud()">Cerrar</button>
@@ -2482,6 +2605,38 @@ async function crearEventoAud(id){
     if(fails.length) toast(oks+" ok · sin Google: "+fails.length,"err"); else toast((yaTenia?"Actualizado":"Cargado")+" en "+oks+" agenda/s ✓");
     renderTab();
   }catch(e){ console.error(e); toast("Audiencia guardada; error en el calendario","err"); renderTab(); }
+}
+// B50: botón unificado — guarda la audiencia en el panel Y la carga/actualiza en los calendarios, todo junto.
+async function guardarAud(id){
+  const c=CURRENT; ensureAudiencias(c); const a=resolveAud(c,id); if(!a) return;
+  readAudInto(a);
+  if(!a.fecha){ toast("Cargá la fecha de la audiencia","err"); return; }
+  if(c.estado==="Mediación solicitada"||c.estado==="Mediación pendiente") c.estado="Audiencia fijada";
+  const yaTenia=a.calCreado;
+  logAction(c,"Audiencia de mediación guardada ("+fdate(a.fecha)+")");
+  EDIT_AUD=a.id;
+  await persistCaso(c);
+  if(!CLOUD){ try{ window.open(buildCalUrl(c,a),"_blank"); }catch(e){} a.calCreado=true; await persistCaso(c); EDIT_AUD=null; toast("Audiencia guardada · abriendo Google Calendar"); renderTab(); return; }
+  const fb=c.citarFacebook!==false;
+  const title=`Mediación - ${clienteFull(c)} c/ Meta Platforms Inc.${fb?' y Facebook Argentina S.R.L.':''}`;
+  const durMin=parseInt(a.duracion)||60;
+  const start=new Date((a.fecha)+"T"+(a.hora||"10:00")+":00"); const end=new Date(start.getTime()+durMin*60000);
+  const iso=d=>{const p=n=>String(n).padStart(2,"0");return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+"T"+p(d.getHours())+":"+p(d.getMinutes())+":00";};
+  const det=[`Mediador: ${DB.config.mediador}`,`Cliente: ${clienteFull(c)}`,`Requerida: META PLATFORMS INC${fb?' y FACEBOOK ARGENTINA S.R.L.':''}`,`Modalidad: ${a.modalidad||'-'}`,a.linkReunion?`Link reunión: ${a.linkReunion}`:'',c.drive&&c.drive.link?`Carpeta Drive: ${c.drive.link}`:'',`Expediente: ${c.id}`,a.obs?`Obs: ${a.obs}`:''].filter(Boolean).join("\n");
+  const location=a.modalidad==="Presencial"?(a.lugar||""):(a.linkReunion||"");
+  toast(yaTenia?"Guardando y actualizando en calendarios…":"Guardando y cargando en calendarios…");
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    const r=await fetch(FUNCTIONS_URL+"/calendar-insert",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({invitados:allInvitados(),title,startISO:iso(start),endISO:iso(end),details:det,location,eventos:a.eventos||{}})});
+    const j=await r.json();
+    if(j.error){ toast("Guardada en el panel, pero falló el calendario: "+j.error,"err"); renderTab(); return; }
+    a.eventos=Object.assign(a.eventos||{}, j.eventos||{}); a.calCreado=true;
+    const oks=(j.results||[]).filter(x=>x.ok).length; const fails=(j.results||[]).filter(x=>!x.ok);
+    logAction(c,"Audiencia "+(yaTenia?'actualizada':'cargada')+" en Google Calendar ("+oks+" agenda/s)");
+    await persistCaso(c); EDIT_AUD=null;
+    if(fails.length) toast("Guardada · "+oks+" agenda/s (sin Google en "+fails.length+")","err"); else toast("Guardada y sincronizada en "+oks+" agenda/s ✓");
+    renderTab();
+  }catch(e){ console.error(e); toast("Guardada en el panel; error al sincronizar el calendario","err"); renderTab(); }
 }
 function buildCalUrl(c,a){
   const fb=c.citarFacebook!==false;

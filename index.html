@@ -393,7 +393,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.14 · B52 número de caso atómico (evita que se pisen entre usuarios) + formulario del cliente sin ejemplos (campos en blanco)";
+const BUILD = "2026.07.14 · B53 sube a Drive automáticamente los archivos del cliente (backfill al abrir el caso + para todos los nuevos)";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -1097,7 +1097,7 @@ function go(route, arg){
   else if(route==="calendario"){ setActiveNav("calendario"); renderCalendario(); }
   else if(route==="tareas"){ setActiveNav("tareas"); renderTareas(); }
   else if(route==="presupuestos"){ setActiveNav("presupuestos"); renderPresupuestos(); }
-  else if(route==="caso"){ setActiveNav("casos"); CURRENT=DB.casos.find(c=>c.id===arg); ACTIVE_TAB="resumen"; EDIT_AUD=null; renderCaso(); }
+  else if(route==="caso"){ setActiveNav("casos"); CURRENT=DB.casos.find(c=>c.id===arg); ACTIVE_TAB="resumen"; EDIT_AUD=null; renderCaso(); autoSyncDrive(CURRENT); }
   else if(route==="finanzas"){ setActiveNav("finanzas"); renderFinanzasGlobal(); }
   else if(route==="operativa"){ setActiveNav("operativa"); renderCajaOperativa(); }
   else if(route==="config"){ setActiveNav("config"); renderConfig(); }
@@ -2106,6 +2106,30 @@ async function repushDrive(){
     else toast("No quedaban respaldos pendientes");
     renderCaso();
   }catch(e){ console.error(e); toast("Error al reintentar","err"); }
+}
+// B53: al abrir un caso, si hay archivos del cliente que aún no están en Drive (respaldo sin link)
+// o falta la carpeta, se sube todo automáticamente (crea carpeta + pasa respaldos). Silencioso.
+async function autoSyncDrive(c){
+  if(!CLOUD||!sb||!c||!c.formCompletado) return;
+  const pend=(c.adjuntos||[]).some(a=>a.respaldo && !a.link);
+  const faltaCarpeta=!c.drive || !c.drive.creada;
+  if(!pend && !faltaCarpeta) return;      // ya está todo en Drive
+  if(c._syncing) return; c._syncing=true;
+  try{
+    const {data:{session}}=await sb.auth.getSession(); if(!session) return;
+    const r=await fetch(FUNCTIONS_URL+"/drive-sync",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({casoId:c.id,action:"repush"})});
+    const j=await r.json().catch(()=>({}));
+    if(j && j.ok){
+      if((j.pushed||0)>0){
+        await cloudLoad(); if(CURRENT&&CURRENT.id===c.id) CURRENT=DB.casos.find(x=>x.id===c.id)||CURRENT;
+        if(ROUTE==="caso"&&CURRENT&&CURRENT.id===c.id) renderCaso();
+        toast(j.pushed+" archivo(s) sincronizado(s) a Drive ✓");
+      }
+    } else if(j && j.error==="drive-no-conectado"){
+      console.warn("autoSyncDrive: Drive no conectado —", j.detail||"");
+    }
+  }catch(e){ console.warn("autoSyncDrive",e); }
+  finally{ c._syncing=false; }
 }
 // Guarda un documento generado (PDF) en la carpeta de Drive del caso (usa la acción upload de drive-sync).
 async function guardarDocEnDrive(d, silent){

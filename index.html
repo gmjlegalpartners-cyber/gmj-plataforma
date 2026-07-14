@@ -393,7 +393,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.10 · B51 cambiar estado de la audiencia desde el calendario (menú rápido, sin entrar al caso)";
+const BUILD = "2026.07.14 · B52 número de caso atómico (evita que se pisen entre usuarios) + formulario del cliente sin ejemplos (campos en blanco)";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -1446,11 +1446,15 @@ function openNewCase(){
     </div>`,
     footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="createCase()">Crear caso</button>`});
 }
-function createCase(){
+// B52: número de caso atómico desde la base (evita que dos usuarios caigan en el mismo id y se pisen).
+async function reservarCasoId(){
+  if(CLOUD && sb){ try{ const {data,error}=await sb.rpc('siguiente_caso_num'); if(!error && data!=null){ const n=Number(data); if(n>(DB.counter||0)) DB.counter=n; return {n, id:"C-"+String(n).padStart(4,"0")}; } }catch(e){ console.warn("siguiente_caso_num",e); } }
+  DB.counter=(DB.counter||0)+1; return {n:DB.counter, id:"C-"+String(DB.counter).padStart(4,"0")};
+}
+async function createCase(){
   const ap=val("nc_ap").trim(), no=val("nc_no").trim();
   if(!ap||!no){ toast("Apellido y nombre son obligatorios","err"); return; }
-  DB.counter=(DB.counter||0)+1;
-  const id="C-"+String(DB.counter).padStart(4,"0");
+  const {id}=await reservarCasoId();
   const c=demoCase(); // base shape
   Object.assign(c,{
     id, estado:"Nuevo caso", fechaAlta:new Date().toISOString().slice(0,10),
@@ -3689,7 +3693,7 @@ function paintForm(token,c,submitFn){
           ${CK("cf_ck5",`Comprendo que el ESTUDIO asume una <b>obligación de medios y no de resultado</b>: actúa con diligencia profesional pero <b>no garantiza</b> la recuperación de la cuenta.`)}
         </div>
         <div class="frow fr2" style="margin-top:10px">
-          <div class="field"><label>Aclaración: nombre y apellido completo <span class="req">*</span></label><input id="cf_firmante" type="text" value="${esc(((cl.nombre||'')+' '+(cl.apellido||'')).trim())}" placeholder="Tal como figura en tu DNI"></div>
+          <div class="field"><label>Aclaración: nombre y apellido completo <span class="req">*</span></label><input id="cf_firmante" type="text" value="${esc(((cl.nombre||'')+' '+(cl.apellido||'')).trim())}" placeholder=""></div>
           <div class="field"><label>DNI de quien firma <span class="req">*</span></label><input id="cf_firmante_dni" type="text" value="${esc(cl.dni||'')}"></div>
         </div>
         <div class="field"><label>Firmá en el recuadro (con el dedo o el mouse) <span class="req">*</span></label>
@@ -3710,8 +3714,8 @@ function paintForm(token,c,submitFn){
         <p style="color:var(--muted);font-size:13px">GMJ Legal Partners · Rehabilitación de cuentas digitales</p></div>
       <div class="card"><div class="card-b">
         <div class="section-title">A. Cuenta principal afectada (la más importante a recuperar)</div>
-        <div class="frow fr2"><div class="field"><label>URL completa de la cuenta <span class="req">*</span></label><input id="cf_url" type="text" value="${esc(cu.url||'')}" placeholder="https://www.instagram.com/usuario"><div class="hint">Obligatorio. Pegá el link completo del perfil.</div></div>${selR("cf_plat","Plataforma",["Instagram","Facebook","Otra"],cu.plataforma||"Instagram")}</div>
-        <div class="frow fr2"><div class="field"><label>Cuenta (usuario con @) <span class="req">*</span></label><input id="cf_handle" type="text" value="${esc(cu.handle||'')}" placeholder="@usuario"><div class="hint">El nombre de usuario, siempre con arroba. Ej: @gong.om_argentina</div></div>${inpR("cf_em","Email vinculado a la cuenta",cu.emailVinc)}</div>
+        <div class="frow fr2"><div class="field"><label>URL completa de la cuenta <span class="req">*</span></label><input id="cf_url" type="text" value="${esc(cu.url||'')}" placeholder=""><div class="hint">Obligatorio.</div></div>${selR("cf_plat","Plataforma",["Instagram","Facebook","Otra"],cu.plataforma||"Instagram")}</div>
+        <div class="frow fr2"><div class="field"><label>Cuenta (usuario con @) <span class="req">*</span></label><input id="cf_handle" type="text" value="${esc(cu.handle||'')}" placeholder=""><div class="hint">El nombre de usuario, siempre con arroba.</div></div>${inpR("cf_em","Email vinculado a la cuenta",cu.emailVinc)}</div>
         <div class="frow fr2">${inp("cf_tel","Teléfono vinculado",cu.telVinc)}${sel("cf_tipo","Tipo de cuenta",["",...TIPO_CUENTA],cu.tipo)}</div>
         <div class="frow fr2">${chk("cf_pauta","Tenía pauta publicitaria activa",cu.pautaActiva)}${chk("cf_saldo","Había saldo retenido / fondos de anuncios",cu.saldoRetenido)}</div>
         <div class="frow fr2">${chk("cf_bm","Vinculada a Meta Business Manager",cu.businessManager)}${chk("cf_camp","Tenía campañas activas al bloqueo",cu.campanasActivas)}</div>
@@ -3747,7 +3751,7 @@ function paintForm(token,c,submitFn){
         <div class="field"><label>Otros documentos / pruebas adicionales</label>
           <input type="file" id="cf_f_otros" accept="image/*,.pdf" multiple style="display:none" onchange="formOtrosAdd()">
           <div><button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('cf_f_otros').click()">＋ Agregar archivo</button></div>
-          <div class="hint">Sumá los archivos <b>de a uno</b> (o varios a la vez). Cada uno necesita una <b>descripción</b>. Podés seguir agregando sin perder los anteriores. Ej: capturas de la suspensión, correos de Meta, apelaciones, comprobantes, conversaciones.</div>
+          <div class="hint">Sumá los archivos <b>de a uno</b> (o varios a la vez). Cada uno necesita una <b>descripción</b>. Podés seguir agregando sin perder los anteriores.</div>
         </div>
         <div id="cf_otros_list"></div>
 
@@ -3781,7 +3785,7 @@ function cuentasListHtml(){
     </div>
     <div class="frow fr3">
       <div class="field"><label>Plataforma</label><select onchange="FORM_CUENTAS[${i}].plataforma=this.value"><option ${q.plataforma==='Instagram'?'selected':''}>Instagram</option><option ${q.plataforma==='Facebook'?'selected':''}>Facebook</option></select></div>
-      <div class="field"><label>URL de la cuenta</label><input type="text" value="${esc(q.url||'')}" oninput="FORM_CUENTAS[${i}].url=this.value" placeholder="https://..."></div>
+      <div class="field"><label>URL de la cuenta</label><input type="text" value="${esc(q.url||'')}" oninput="FORM_CUENTAS[${i}].url=this.value" placeholder=""></div>
       <div class="field"><label>Mail vinculado</label><input type="text" value="${esc(q.emailVinc||'')}" oninput="FORM_CUENTAS[${i}].emailVinc=this.value"></div>
     </div>
   </div></div>`).join("");
@@ -3806,7 +3810,7 @@ function formOtrosRender(){
      <div style="font-size:20px;flex-shrink:0">${/\.pdf$/i.test(o.file.name)?'📄':'🖼'}</div>
      <div style="flex:1;min-width:0">
        <div style="font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(o.file.name)}</div>
-       <input type="text" value="${esc(o.desc||'')}" oninput="FORM_OTROS[${i}].desc=this.value" placeholder="Descripción (ej: Captura de la suspensión) *" style="margin-top:4px;width:100%">
+       <input type="text" value="${esc(o.desc||'')}" oninput="FORM_OTROS[${i}].desc=this.value" placeholder="Descripción *" style="margin-top:4px;width:100%">
      </div>
      <button type="button" class="btn btn-ghost btn-sm" onclick="formOtrosDel(${i})" title="Quitar" style="flex-shrink:0">✕</button>
    </div></div>`).join("");
@@ -5425,8 +5429,7 @@ async function generarCasoDesdePresupuesto(id){
   const p=presupuestosPool().find(x=>x.id===id); if(!p) return;
   if(p.casoId){ go("caso",p.casoId); return; }
   if(!confirm("Se va a crear un caso nuevo a partir de este presupuesto, con el cliente y las condiciones económicas ya cargadas (monto, cuotas y reintegro). ¿Continuar?")) return;
-  DB.counter=(DB.counter||0)+1;
-  const idc="C-"+String(DB.counter).padStart(4,"0");
+  const {id:idc}=await reservarCasoId();
   const c=demoCase();
   const adelanto=Number((p.cuotas[0]&&p.cuotas[0].importe)||0);
   const saldo=Math.max(Number(p.montoTotal||0)-adelanto,0);

@@ -393,7 +393,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.14 · B53 sube a Drive automáticamente los archivos del cliente (backfill al abrir el caso + para todos los nuevos)";
+const BUILD = "2026.07.14 · B54 casos nuevos arrancan sin cuentas de ejemplo (form del cliente en blanco)";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -1466,7 +1466,7 @@ async function createCase(){
     finanzas:{moneda:"USD",montoTotal:"",adelanto:"",saldo:"",fechaAdelanto:"",fechaSaldo:"",devolucion:"",estadoPago:"pendiente",medioPago:"",obs:"",...finEstadosDefault(),hist:[]},
     pagos:[],
     gastos:GASTOS_DEFAULT.map(n=>({id:uid("g"),nombre:n,estado:"pendiente",importe:"",moneda:"ARS",fecha:"",medio:"",obs:"",adjunto:""})),
-    docs:[], tareas:[], adjuntos:[], drive:{link:"",creada:false}, objeto:DB.config.objeto, citarFacebook:true, audiencia:null, avance:{},
+    docs:[], tareas:[], adjuntos:[], cuentasAfectadas:[], drive:{link:"",creada:false}, objeto:DB.config.objeto, citarFacebook:true, audiencia:null, avance:{},
     historial:[], formToken:null, observaciones:""
   });
   logAction(c,"Caso creado");

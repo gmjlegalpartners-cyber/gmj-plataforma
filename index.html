@@ -393,7 +393,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.14 · B54 casos nuevos arrancan sin cuentas de ejemplo (form del cliente en blanco)";
+const BUILD = "2026.07.15 · B55 finanzas: bolsa 'queda por repartir', filtro de fechas, reintegro claro, reembolsos e ingresos en movimientos + fix cambio de pantalla";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -455,7 +455,7 @@ const TC_TEXT_DEFAULT = `TÉRMINOS Y CONDICIONES · CONSENTIMIENTO, CONTRATO DE 
 
 Al marcar la casilla de aceptación y firmar, usted declara haber leído, comprendido y aceptado estos Términos y Condiciones en su totalidad.`;
 // Categorías de la Caja operativa (gastos mensuales del estudio)
-const GG_CATS=[["operativo","Gastos operativos"],["empleados","Empleados / sueldos"],["licencias","Licencias / software"],["adelanto_socio","Adelanto entre socios"],["otros","Otros"]];
+const GG_CATS=[["operativo","Gastos operativos"],["empleados","Empleados / sueldos"],["licencias","Licencias / software"],["adelanto_socio","Adelanto entre socios"],["ingreso","Ingreso extra (suma a la caja)"],["otros","Otros"]];
 function ggCatLabel(k){ const f=GG_CATS.find(x=>x[0]===k); return f?f[1]:(k||"Otros"); }
 // --- Normalización de ítems de gastos (renombres + ítem nuevo). Idempotente. ---
 // Corrige casos viejos: "Mediación"→"Notificación", "Honorarios del mediador"→"Honorarios
@@ -983,8 +983,9 @@ function cloudRefresh(){
   if(_refreshTimer) clearTimeout(_refreshTimer);
   _refreshTimer=setTimeout(async function run(){
     if(_refreshBusy() || ROUTE==="caso"){ _refreshTimer=setTimeout(run, 1500); return; } // no refrescar mientras editás NI estando dentro de un caso (para no sacarte de donde estás)
-    const curId = CURRENT ? CURRENT.id : null; const tab = ACTIVE_TAB;
+    const curId = CURRENT ? CURRENT.id : null; const tab = ACTIVE_TAB; const myNav = NAV_TOKEN;
     try{ await cloudLoad(); }catch(e){ console.warn("cloudRefresh/cloudLoad falló, reintento", e); _refreshTimer=setTimeout(run, 3000); return; }
+    if(NAV_TOKEN!==myNav) return; // navegaste mientras cargaba: no repintar (evita cambio de pantalla)
     if(ROUTE==="caso" && curId){ CURRENT=DB.casos.find(c=>c.id===curId)||null; ACTIVE_TAB=tab; if(CURRENT) renderCaso(); else go("casos"); }
     else if(ROUTE) go(ROUTE);
     renderBell();
@@ -1056,6 +1057,10 @@ async function logout(){ if(CLOUD&&sb){ await sb.auth.signOut(); } SESSION=null;
    NAV + ROUTER
    ============================================================ */
 let ROUTE="dashboard";
+// Token de navegación: se incrementa en cada go(). Cualquier callback asíncrono (carga de
+// datos, sync de Drive, refresco realtime) captura el token al arrancar y solo repinta si el
+// token sigue igual al terminar. Evita que una carga tardía te cambie a una pantalla anterior.
+let NAV_TOKEN=0;
 function initApp(){
   document.getElementById("uav").textContent = SESSION.nombre.split(" ").map(s=>s[0]).slice(0,2).join("");
   document.getElementById("unm").textContent = SESSION.nombre;
@@ -1091,7 +1096,7 @@ function setCrumb(t, sub){ document.getElementById("crumb").innerHTML = (sub?`${
 function topActions(html){ document.getElementById("topActions").innerHTML=html||""; }
 
 function go(route, arg){
-  ROUTE=route; topActions(""); closeSidebar();
+  ROUTE=route; NAV_TOKEN++; topActions(""); closeSidebar();
   if(route==="dashboard"){ setActiveNav("dashboard"); renderDashboard(); }
   else if(route==="casos"){ setActiveNav("casos"); renderCasos(); }
   else if(route==="calendario"){ setActiveNav("calendario"); renderCalendario(); }
@@ -1262,7 +1267,7 @@ function renderDashboard(){
       <div class="stat green"><div class="lab">Facturación pactada (ARS)</div><div class="val">${money(totalARS,"ARS")}</div><div class="sub">Cobrado: ${money(cobradoARS,"ARS")}</div></div>`;
     // gastos generales del estudio (suma de todos los casos)
     let gPendARS=0,gAbonARS=0,gPendUSD=0,gAbonUSD=0;
-    const sumarGasto=g=>{ if(g.categoria==="adelanto_socio")return; const imp=Number(g.importe||0); if(!imp||g.estado==="no corresponde")return; const usd=g.moneda==="USD"; const ab=g.estado==="abonado"; if(usd){ ab?gAbonUSD+=imp:gPendUSD+=imp; } else { ab?gAbonARS+=imp:gPendARS+=imp; } };
+    const sumarGasto=g=>{ if(g.categoria==="adelanto_socio"||g.categoria==="ingreso")return; const imp=Number(g.importe||0); if(!imp||g.estado==="no corresponde")return; const usd=g.moneda==="USD"; const ab=g.estado==="abonado"; if(usd){ ab?gAbonUSD+=imp:gPendUSD+=imp; } else { ab?gAbonARS+=imp:gPendARS+=imp; } };
     cs.forEach(c=>(c.gastos||[]).forEach(sumarGasto));
     (DB.gastosGen||[]).forEach(sumarGasto);
     gastosRow=`<div class="grid g4" style="margin-bottom:18px">
@@ -2115,6 +2120,7 @@ async function autoSyncDrive(c){
   const faltaCarpeta=!c.drive || !c.drive.creada;
   if(!pend && !faltaCarpeta) return;      // ya está todo en Drive
   if(c._syncing) return; c._syncing=true;
+  const myNav=NAV_TOKEN;                   // caso desde el que se disparó; si navegás, no repinta
   try{
     const {data:{session}}=await sb.auth.getSession(); if(!session) return;
     const r=await fetch(FUNCTIONS_URL+"/drive-sync",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({casoId:c.id,action:"repush"})});
@@ -2122,7 +2128,7 @@ async function autoSyncDrive(c){
     if(j && j.ok){
       if((j.pushed||0)>0){
         await cloudLoad(); if(CURRENT&&CURRENT.id===c.id) CURRENT=DB.casos.find(x=>x.id===c.id)||CURRENT;
-        if(ROUTE==="caso"&&CURRENT&&CURRENT.id===c.id) renderCaso();
+        if(NAV_TOKEN===myNav && ROUTE==="caso"&&CURRENT&&CURRENT.id===c.id) renderCaso();
         toast(j.pushed+" archivo(s) sincronizado(s) a Drive ✓");
       }
     } else if(j && j.error==="drive-no-conectado"){
@@ -4196,10 +4202,12 @@ async function standByReembolsado(casoId){
   const c=DB.casos.find(x=>x.id===casoId); if(!c) return;
   const f=c.finanzas||(c.finanzas={}); const dev=Number(f.devolucion||0);
   if(!confirm(`Marcar como REEMBOLSADO el caso de ${clienteFull(c)}.\n\nLa devolución de ${money(dev,f.moneda)} se registra como realizada: sale del stand by y se descuenta de la caja del estudio.\n\n¿Confirmás?`)) return;
-  f.estadoDevolucion='realizada_dev';
+  f.estadoDevolucion='realizada_dev'; f.fechaDevolucion=new Date().toISOString().slice(0,10);
   finLog(c,"Stand by resuelto: REEMBOLSADO (devolución realizada)",`se devolvió ${money(dev,f.moneda)} al cliente`);
   await persistCaso(c); toast("Reembolso registrado ✓ · descontado de la caja"); renderFinanzasGlobal();
 }
+// Fecha en que se realizó la devolución/reembolso al cliente (para ubicarlo en los movimientos del mes).
+function fechaReembolso(c){ const f=c.finanzas||{}; if(f.fechaDevolucion) return f.fechaDevolucion; const h=(f.hist||[]).find(x=>/reembols|devoluci[oó]n realizada/i.test(x.accion||'')); return h?(h.fecha||'').slice(0,10):''; }
 // lista unificada de TODOS los gastos (de casos + generales) para analizar en un solo lugar
 function allGastos(){
   const out=[];
@@ -4210,7 +4218,7 @@ function allGastos(){
 }
 function calcFinanzasGlobal(){
   const z=()=>({USD:0,ARS:0}); const cur=m=>(m==="ARS"?"ARS":"USD");
-  const a={pendCobro:z(),dejadoPercibir:z(),pendDev:z(),pendGasto:z(),cobrado:z(),cobradoReal:z(),gastosPag:z(),devRealizada:z(),fxOut:z(),fxIn:z(),adelantosSocios:z(),reservaDev:z()};
+  const a={pendCobro:z(),dejadoPercibir:z(),pendDev:z(),pendGasto:z(),cobrado:z(),cobradoReal:z(),gastosPag:z(),devRealizada:z(),fxOut:z(),fxIn:z(),adelantosSocios:z(),reservaDev:z(),ingresos:z()};
   casosActivos().forEach(c=>{
     const f=c.finanzas||{}; const m=cur(f.moneda); const cob=cobradoDe(c); const dev=Number(f.devolucion||0);
     a.cobrado[m]+=cob; // cobrado medido en la moneda PACTADA (para facturación)
@@ -4236,13 +4244,14 @@ function calcFinanzasGlobal(){
   // Los "adelantos entre socios" NO son gasto operativo: cuentan como liquidación a socios.
   (DB.gastosGen||[]).forEach(g=>{ const gm=cur(g.moneda); const imp=Number(g.importe||0); if(!imp)return;
     if(g.categoria==='adelanto_socio'){ if(g.estado!=='pendiente') a.adelantosSocios[gm]+=imp; return; }
+    if(g.categoria==='ingreso'){ if(g.estado!=='pendiente') a.ingresos[gm]+=imp; return; }  // ingreso extra: SUMA a la caja
     if(g.estado==='pendiente') a.pendGasto[gm]+=imp; else a.gastosPag[gm]+=imp;
   });
   (DB.cambios||[]).forEach(x=>{ const mo=cur(x.moneda_origen), md=cur(x.moneda_destino); a.fxOut[mo]+=Number(x.monto_origen||0); a.fxIn[md]+=Number(x.monto_destino||0); });
   // caja bruta (toda la plata REAL que entró menos lo que salió, por moneda efectiva)
   a.cajaBruta={
-    USD: a.cobradoReal.USD - a.gastosPag.USD - a.adelantosSocios.USD - a.devRealizada.USD - a.fxOut.USD + a.fxIn.USD,
-    ARS: a.cobradoReal.ARS - a.gastosPag.ARS - a.adelantosSocios.ARS - a.devRealizada.ARS - a.fxOut.ARS + a.fxIn.ARS
+    USD: a.cobradoReal.USD + a.ingresos.USD - a.gastosPag.USD - a.adelantosSocios.USD - a.devRealizada.USD - a.fxOut.USD + a.fxIn.USD,
+    ARS: a.cobradoReal.ARS + a.ingresos.ARS - a.gastosPag.ARS - a.adelantosSocios.ARS - a.devRealizada.ARS - a.fxOut.ARS + a.fxIn.ARS
   };
   // caja DISPONIBLE real del estudio = bruta menos lo reservado por posibles devoluciones (stand by)
   a.caja={ USD: a.cajaBruta.USD - a.reservaDev.USD, ARS: a.cajaBruta.ARS - a.reservaDev.ARS };
@@ -4271,7 +4280,7 @@ function liquidacionesSocios(a){
   return {list, distrib, share, nSoc};
 }
 // Bloque visual de la liquidación entre socios: bolsa, la mitad de cada uno, retirado y cuánto falta para emparejar.
-function liqSociosBlockHtml(liqSoc){
+function liqSociosBlockHtml(liqSoc, a){
   const reales = liqSoc.list.filter(s=>s.nombre!=='(sin asignar)');
   const sinAsig = liqSoc.list.find(s=>s.nombre==='(sin asignar)');
   if(!reales.length) return '<div class="empty">No hay socios cargados.</div>';
@@ -4297,7 +4306,11 @@ function liqSociosBlockHtml(liqSoc){
       ${cell("ARS")}${cell("USD")}
     </div>`;
   }).join("");
-  const bolsa = `<div class="hint" style="margin-bottom:8px">Bolsa repartible: <b>${money(liqSoc.distrib.ARS,"ARS")}</b> · <b>${money(liqSoc.distrib.USD,"USD")}</b> — a cada socio le corresponde <b>${money(liqSoc.share.ARS,"ARS")}</b> · <b>${money(liqSoc.share.USD,"USD")}</b>.</div>`;
+  const adel = (a&&a.adelantosSocios)||{ARS:0,USD:0};
+  const queda = { ARS: Math.round((liqSoc.distrib.ARS-(adel.ARS||0))*100)/100, USD: Math.round((liqSoc.distrib.USD-(adel.USD||0))*100)/100 };
+  const bolsa = `<div class="hint" style="margin-bottom:8px">
+      <b>Queda por repartir ahora:</b> <b style="color:#1c7a40">${money(queda.ARS,"ARS")}</b> · <b style="color:#1c7a40">${money(queda.USD,"USD")}</b> — a cada socio le corresponde <b>${money(liqSoc.share.ARS,"ARS")}</b> · <b>${money(liqSoc.share.USD,"USD")}</b> del total.
+      <br><span style="color:var(--muted)">Total a repartir (histórico) ${money(liqSoc.distrib.ARS,"ARS")} · ${money(liqSoc.distrib.USD,"USD")} − ya retirado por socios ${money(adel.ARS,"ARS")} · ${money(adel.USD,"USD")} = lo que queda arriba.</span></div>`;
   const compen = `<div class="alert alert-info" style="margin-top:8px"><span>⚖️</span><div>${compenLinea("ARS")}<br>${compenLinea("USD")}</div></div>`;
   const aviso = (sinAsig && (sinAsig.ARS||sinAsig.USD)) ? `<div class="alert alert-warn" style="margin-top:8px"><span>⚠</span><div>Hay adelantos <b>sin socio asignado</b> (${money(sinAsig.ARS,"ARS")} · ${money(sinAsig.USD,"USD")}). Asignales el socio en Caja operativa para que la compensación sea exacta.</div></div>` : "";
   return `${bolsa}<div class="grid g2">${cards}</div>${compen}${aviso}`;
@@ -4395,10 +4408,15 @@ function gastoGenModal(id){
     <div class="frow fr2">${sel("gg_est","Estado",["abonado","pendiente"],g.estado||"abonado")}${inp("gg_medio","Medio de pago",g.medio||"")}</div>
     ${cambioSel}
     <div class="field"><label>Observaciones</label><textarea id="gg_obs" rows="2">${esc(g.obs||'')}</textarea></div>
-    <div class="alert alert-info"><span>🏢</span><div>Movimiento del estudio no asociado a un caso. Si está <b>abonado</b>, se descuenta de la caja disponible.</div></div>`,
+    <div class="alert alert-info" id="gg_hintBox"><span id="gg_hintIco">🏢</span><div id="gg_hintTxt">Movimiento del estudio no asociado a un caso. Si está <b>abonado</b>, se descuenta de la caja disponible.</div></div>`,
     footer:`${editing?`<button class="btn btn-danger" onclick="gastoGenDeleteConfirm('${id}')">Eliminar</button>`:''}<div style="flex:1"></div><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveGastoGen('${id||''}')">Guardar</button>`});
 }
-function ggCatToggle(){ const box=document.getElementById("gg_socioBox"); if(box) box.style.display = (val("gg_cat")==="adelanto_socio")?"":"none"; }
+function ggCatToggle(){ const box=document.getElementById("gg_socioBox"); if(box) box.style.display = (val("gg_cat")==="adelanto_socio")?"":"none";
+  const esIng=val("gg_cat")==="ingreso"; const ico=document.getElementById("gg_hintIco"), txt=document.getElementById("gg_hintTxt");
+  if(ico) ico.textContent = esIng?"➕":"🏢";
+  if(txt) txt.innerHTML = esIng
+    ? "<b>Ingreso extra</b> (regalo, reintegro, etc.). Si está <b>abonado</b>, <b>suma</b> a la caja disponible en la moneda elegida. Poné el concepto que quieras."
+    : "Movimiento del estudio no asociado a un caso. Si está <b>abonado</b>, se descuenta de la caja disponible."; }
 async function saveGastoGen(id){
   const conc=val("gg_concepto").trim(); if(!conc){ toast("Cargá el concepto","err"); return; }
   const isNew=!id;
@@ -4450,6 +4468,17 @@ function cambioDeleteConfirm(id){ if(!confirm("¿Eliminar este cambio de divisa?
 let FINFILTER={q:"",cobro:"",res:"",dev:"",liq:"",mon:"",liqSocio:""};
 let FINTAB="resumen";
 function setFinTab(t){ FINTAB=t; renderFinanzasGlobal(); }
+// Filtro por rango de fechas para la facturación cobrada (Resumen).
+let FINRANGE={desde:"",hasta:""};
+function setFinRange(k,v){ FINRANGE[k]=v; renderFinanzasGlobal(); }
+function finRangeClear(){ FINRANGE={desde:"",hasta:""}; renderFinanzasGlobal(); }
+function finRangeMonth(delta){ const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()+delta); const y=d.getFullYear(), m=d.getMonth(); const p=n=>String(n).padStart(2,"0"); const last=new Date(y,m+1,0).getDate(); FINRANGE={desde:`${y}-${p(m+1)}-01`,hasta:`${y}-${p(m+1)}-${p(last)}`}; renderFinanzasGlobal(); }
+// Suma los cobros (pagos) dentro del rango elegido: efectivo real (por moneda pagada) y facturación (moneda pactada).
+function facturacionRango(){
+  const d=FINRANGE.desde, h=FINRANGE.hasta; const real={USD:0,ARS:0}, pactada={USD:0,ARS:0}; let n=0;
+  casosActivos().forEach(c=>{ const f=c.finanzas||{}; (c.pagos||[]).forEach(p=>{ const fe=(p.fecha||"").slice(0,10); if(!fe)return; if(d&&fe<d)return; if(h&&fe>h)return; const imp=Number(p.importe||0); if(!imp)return; real[p.moneda==='USD'?'USD':'ARS']+=imp; pactada[f.moneda==='USD'?'USD':'ARS']+=pagoEnMonedaCaso(p,f.moneda); n++; }); });
+  return {real,pactada,n};
+}
 function liqHistorialRows(filtroSocio){
   const rows=[];
   (DB.liquidaciones||[]).forEach(l=>{ const caso=l.caso_id?DB.casos.find(c=>c.id===l.caso_id):null;
@@ -4467,7 +4496,7 @@ function renderFinanzasGlobal(){
   setCrumb("Finanzas global"); topActions("");
   const a=calcFinanzasGlobal();
   const liqSoc=liquidacionesSocios(a);
-  const socioLiqCards = liqSociosBlockHtml(liqSoc);
+  const socioLiqCards = liqSociosBlockHtml(liqSoc, a);
   const todos=casosActivos();
   const activos=todos.filter(c=>!casoEsHistorial(c));
   const histo=todos.filter(c=>casoEsHistorial(c));
@@ -4481,13 +4510,17 @@ function renderFinanzasGlobal(){
   if(F.liq) act=act.filter(c=>(c.finanzas||{}).estadoLiquidacion===F.liq);
   if(F.mon) act=act.filter(c=>(c.finanzas||{}).moneda===F.mon);
   const fila=(c,hist)=>{ const f=c.finanzas||{}; const cob=cobradoDe(c); const pend=Math.max(Number(f.montoTotal||0)-cob,0);
+    const dev=Number(f.devolucion||0);
+    const devCell = dev>0
+      ? `<b>${money(dev,f.moneda)}</b><br><span class="badge ${f.estadoResultado==='favorable'?'b-green':(['realizada_dev','cancelada_dev'].includes(f.estadoDevolucion)?(FIN_COLOR[f.estadoDevolucion]||'b-grey'):'b-amber')}" style="font-size:10px">${f.estadoResultado==='favorable'?'no se devuelve':(['realizada_dev','cancelada_dev'].includes(f.estadoDevolucion)?finLabel(f.estadoDevolucion):'en stand by')}</span>`
+      : `<span style="color:var(--muted)">No aplica</span>`;
     return `<tr class="clickable" onclick="go('caso','${c.id}')">
       <td><b>${esc(clienteFull(c))}</b><br><small style="color:var(--muted)">${esc(c.id)}</small></td>
       <td>${esc(f.moneda||'—')}</td><td>${money(f.montoTotal,f.moneda)}</td><td>${money(cob,f.moneda)}</td>
       ${hist?'':`<td>${money(pend,f.moneda)}</td>`}
       <td><span class="badge ${FIN_COLOR[f.estadoCobro]||'b-grey'}">${finLabel(f.estadoCobro)}</span></td>
       <td><span class="badge ${FIN_COLOR[f.estadoResultado]||'b-grey'}">${finLabel(f.estadoResultado)}</span></td>
-      <td><span class="badge ${FIN_COLOR[f.estadoDevolucion]||'b-grey'}">${finLabel(f.estadoDevolucion)}</span></td>
+      <td>${devCell}</td>
       <td><span class="badge ${FIN_COLOR[f.estadoLiquidacion]||'b-grey'}">${finLabel(f.estadoLiquidacion)}</span></td>
     </tr>`; };
   const actRows=act.length?act.map(c=>fila(c,false)).join(""):`<tr><td colspan="10" class="empty">Sin casos que requieran acción</td></tr>`;
@@ -4499,7 +4532,7 @@ function renderFinanzasGlobal(){
     return `<tr class="clickable" onclick="cambioModal('${x.id}')"><td>${fdate(x.fecha)}</td><td>${money(x.monto_origen,x.moneda_origen)} → ${money(x.monto_destino,x.moneda_destino)}</td><td>TC ${esc(String(x.tipo_cambio||'—'))}</td><td>${esc(x.motivo||'—')}</td><td>${caso?esc(clienteFull(caso)):'—'}</td><td>${esc(userName(x.usuario))}</td></tr>`;
   }).join(""):`<tr><td colspan="6" class="empty">Sin cambios de divisa registrados</td></tr>`;
   // gastos unificados (de casos + generales). Los adelantos a socios NO son gasto (van a liquidaciones).
-  const gastos=allGastos().filter(g=>g.categoria!=='adelanto_socio');
+  const gastos=allGastos().filter(g=>g.categoria!=='adelanto_socio' && g.categoria!=='ingreso');
   const gAb={USD:0,ARS:0}, gPe={USD:0,ARS:0};
   gastos.forEach(g=>{ const m=g.moneda==='ARS'?'ARS':'USD'; if(g.estado==='no corresponde')return; if(g.estado==='abonado')gAb[m]+=g.importe; else gPe[m]+=g.importe; });
   const gxRows=gastos.length?gastos.map(g=>{ const cx=g.cambioId?(DB.cambios||[]).find(c=>c.id===g.cambioId):null;
@@ -4509,12 +4542,13 @@ function renderFinanzasGlobal(){
   // movimientos de caja (cobros, gastos, cambios)
   const movs=[];
   casosActivos().forEach(c=>{ (c.pagos||[]).forEach(p=>movs.push({fecha:p.fecha,tipo:"Cobro",detalle:clienteFull(c),monto:Number(p.importe||0),moneda:p.moneda,signo:1}));
-    (c.gastos||[]).forEach(g=>{ if(g.estado==='abonado'&&Number(g.importe||0)) movs.push({fecha:g.fecha,tipo:"Gasto",detalle:g.nombre+" · "+clienteFull(c),monto:Number(g.importe||0),moneda:g.moneda,signo:-1}); }); });
+    (c.gastos||[]).forEach(g=>{ if(g.estado==='abonado'&&Number(g.importe||0)) movs.push({fecha:g.fecha,tipo:"Gasto",detalle:g.nombre+" · "+clienteFull(c),monto:Number(g.importe||0),moneda:g.moneda,signo:-1}); });
+    const f=c.finanzas||{}; const dev=Number(f.devolucion||0); if(f.estadoDevolucion==='realizada_dev'&&dev>0) movs.push({fecha:fechaReembolso(c),tipo:"Reembolso",detalle:"Devolución al cliente · "+clienteFull(c),monto:dev,moneda:f.moneda,signo:-1}); });
   (DB.cambios||[]).forEach(x=>movs.push({fecha:x.fecha,tipo:"Cambio",detalle:`${money(x.monto_origen,x.moneda_origen)} → ${money(x.monto_destino,x.moneda_destino)}${x.motivo?' · '+x.motivo:''}`,fx:true,signo:0}));
   (DB.liquidaciones||[]).forEach(l=>{ const caso=l.caso_id?DB.casos.find(c=>c.id===l.caso_id):null; movs.push({fecha:l.fecha,tipo:"Liquidación",detalle:`${caso?clienteFull(caso):'—'} · ${(l.reparto||[]).map(r=>r.nombre+' '+money(r.monto,l.moneda)).join(', ')}`,monto:(l.reparto||[]).reduce((s,r)=>s+Number(r.monto||0),0),moneda:l.moneda,signo:-1}); });
-  (DB.gastosGen||[]).forEach(g=>{ if(g.estado!=='pendiente'&&Number(g.importe||0)) movs.push({fecha:g.fecha,tipo:"Gasto",detalle:(g.concepto||'Gasto general')+" · (general)",monto:Number(g.importe||0),moneda:g.moneda,signo:-1}); });
+  (DB.gastosGen||[]).forEach(g=>{ if(g.estado==='pendiente'||!Number(g.importe||0))return; const esIngreso=g.categoria==='ingreso'; movs.push({fecha:g.fecha,tipo:esIngreso?"Ingreso":"Gasto",detalle:(g.concepto||(esIngreso?'Ingreso':'Gasto general'))+" · (general)",monto:Number(g.importe||0),moneda:g.moneda,signo:esIngreso?1:-1}); });
   movs.sort((a,b)=>(b.fecha||"").localeCompare(a.fecha||""));
-  const movBadge=t=>t==='Cobro'?'b-green':t==='Gasto'?'b-red':t==='Liquidación'?'b-gold':'b-blue';
+  const movBadge=t=>(t==='Cobro'||t==='Ingreso')?'b-green':(t==='Gasto'||t==='Reembolso')?'b-red':t==='Liquidación'?'b-gold':'b-blue';
   const movRows=movs.length?movs.slice(0,80).map(m=>`<tr><td>${fdate(m.fecha)}</td><td><span class="badge ${movBadge(m.tipo)}">${m.tipo}</span></td><td>${esc(m.detalle)}</td><td style="text-align:right;font-weight:600;color:${m.signo>0?'#1c7a40':m.signo<0?'#c0392b':'var(--muted)'}">${m.fx?'—':(m.signo>0?'+ ':'− ')+money(m.monto,m.moneda)}</td></tr>`).join(""):`<tr><td colspan="4" class="empty">Sin movimientos</td></tr>`;
   // ---- pestañas ----
   const TABS=[["resumen","Resumen"],["casos","Casos"],["gastos","Gastos"],["cambios","Cambios de divisa"],["movimientos","Movimientos"]];
@@ -4549,7 +4583,23 @@ function renderFinanzasGlobal(){
          <tfoot><tr style="border-top:2px solid var(--line2);font-weight:700"><td>Total en stand by</td><td></td><td></td><td style="text-align:right;color:#b07d1a">${dosMon(sbTotal)}</td><td></td></tr></tfoot>
        </table></div>
        <div class="card-b"><div class="hint"><b>Cobrado</b> = el caso salió favorable, el estudio se queda la devolución → pasa a la caja disponible. <b>Reembolsado</b> = se devolvió al cliente → se descuenta de la caja.<br>El monto “En stand by” se respalda con lo cobrado del <b>saldo/2ª cuota</b>. En los casos de <b>pago único</b> (cobrado todo junto, sin saldo) se aparta el <b>total del reembolso</b>. Si un caso no pagó el 100%, la parte sin cobrar aún no se reserva.</div></div></div>`;
-  if(FINTAB==="resumen"){ cont=`
+  if(FINTAB==="resumen"){ const fr=facturacionRango(); const rangoAct=!!(FINRANGE.desde||FINRANGE.hasta); cont=`
+    <div class="card" style="margin-bottom:12px;border-left:4px solid var(--gold)"><div class="card-b">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+        <b style="color:var(--navy)">📅 Facturación cobrada por período</b>
+        <input type="date" value="${FINRANGE.desde}" onchange="setFinRange('desde',this.value)" style="padding:6px 8px;border:1px solid var(--line2);border-radius:6px">
+        <span style="color:var(--muted)">a</span>
+        <input type="date" value="${FINRANGE.hasta}" onchange="setFinRange('hasta',this.value)" style="padding:6px 8px;border:1px solid var(--line2);border-radius:6px">
+        <button class="btn btn-ghost btn-sm" onclick="finRangeMonth(0)">Este mes</button>
+        <button class="btn btn-ghost btn-sm" onclick="finRangeMonth(-1)">Mes pasado</button>
+        ${rangoAct?`<button class="btn btn-ghost btn-sm" onclick="finRangeClear()">Limpiar</button>`:''}
+      </div>
+      <div class="grid g2">
+        <div class="stat green"><div class="lab">💵 Efectivo recibido en el período</div><div class="val" style="font-size:17px">${dosMon(fr.real)}</div><div class="sub">la plata como entró</div></div>
+        <div class="stat"><div class="lab">Facturación (moneda pactada)</div><div class="val" style="font-size:17px">${dosMon(fr.pactada)}</div><div class="sub">medida en el precio del caso</div></div>
+      </div>
+      <div class="hint" style="margin-top:6px">${fr.n} cobro(s) ${rangoAct?'en el rango elegido':'en total — elegí un rango o un mes para acotar'}.</div>
+    </div></div>
     <div class="grid g4" style="margin-bottom:8px">
       <div class="stat"><div class="lab">Pendiente de cobro</div><div class="val" style="font-size:17px">${dosMon(a.pendCobro)}</div></div>
       <div class="stat" style="border-left:4px solid #b45309"><div class="lab">Dejado de percibir</div><div class="val" style="font-size:17px">${dosMon(a.dejadoPercibir)}</div><div class="hint" style="margin-top:2px">saldos de casos resueltos sin cobro</div></div>
@@ -4588,9 +4638,9 @@ function renderFinanzasGlobal(){
       <select onchange="FINFILTER.liq=this.value;renderFinanzasGlobal()"><option value="">Liquidación</option>${opt(FIN_LIQUIDACION,F.liq)}</select>
     </div>
     <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 8px">Casos que requieren acción</div>
-    <div class="card" style="margin-bottom:24px;overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Mon.</th><th>Total</th><th>Cobrado</th><th>Pend.</th><th>Cobro</th><th>Resultado</th><th>Devolución</th><th>Liquidación</th></tr></thead><tbody>${actRows}</tbody></table></div>
+    <div class="card" style="margin-bottom:24px;overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Mon.</th><th>Total</th><th>Cobrado</th><th>Pend.</th><th>Cobro</th><th>Resultado</th><th>Reintegro</th><th>Liquidación</th></tr></thead><tbody>${actRows}</tbody></table></div>
     <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 8px">Historial (cerrados y liquidados)</div>
-    <div class="card" style="overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Mon.</th><th>Total</th><th>Cobrado</th><th>Cobro</th><th>Resultado</th><th>Devolución</th><th>Liquidación</th></tr></thead><tbody>${histRows}</tbody></table></div>`;
+    <div class="card" style="overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Mon.</th><th>Total</th><th>Cobrado</th><th>Cobro</th><th>Resultado</th><th>Reintegro</th><th>Liquidación</th></tr></thead><tbody>${histRows}</tbody></table></div>`;
   } else if(FINTAB==="gastos"){ cont=`
     <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 10px"><div class="sec-title" style="font-weight:700;color:var(--navy)">Gastos del estudio (casos + generales)</div><button class="btn btn-primary btn-sm" onclick="gastoGenModal()">＋ Gasto general</button></div>
     <div class="grid g3" style="margin-bottom:10px">
@@ -4637,6 +4687,10 @@ function movimientosCajaMes(ym){
     const gm=(g.fecha||"").slice(0,7); const enMes = gm ? (gm===ym) : (ym===curMonth);
     if(!enMes) return;
     out.push({id:g.id,source:'caso',fecha:g.fecha||'',categoria:'caso',concepto:g.nombre||'Gasto',importe:imp,moneda:g.moneda==='USD'?'USD':'ARS',estado:'abonado',medio:g.medio||'',socio:'',casoId:c.id,casoLabel:clienteFull(c)+' ('+c.id+')',sinFecha:!gm}); }); });
+  // Reembolsos al cliente (devolución realizada): salen de la caja, se muestran en el mes en que se hicieron.
+  (DB.casos||[]).forEach(c=>{ const f=c.finanzas||{}; const dev=Number(f.devolucion||0); if(f.estadoDevolucion!=='realizada_dev'||dev<=0)return;
+    const fr=fechaReembolso(c); const fm=(fr||"").slice(0,7); const enMes = fm ? (fm===ym) : (ym===curMonth); if(!enMes) return;
+    out.push({id:'dev-'+c.id,source:'dev',fecha:fr||'',categoria:'reembolso',concepto:'Reembolso al cliente',importe:dev,moneda:f.moneda==='USD'?'USD':'ARS',estado:'abonado',medio:'',socio:'',casoId:c.id,casoLabel:clienteFull(c)+' ('+c.id+')',sinFecha:!fm}); });
   return out;
 }
 function renderCajaOperativa(){
@@ -4645,12 +4699,13 @@ function renderCajaOperativa(){
   const z=()=>({USD:0,ARS:0});
   const movMes=movimientosCajaMes(FINMONTH);
   // totales del mes
-  const abon=z(), pend=z(); const porCat={};
+  const abon=z(), pend=z(), ingr=z(); const porCat={};
   GG_CATS.forEach(([k])=>porCat[k]=z()); porCat['caso']=z();
   movMes.forEach(m=>{ const mo=m.moneda; const imp=m.importe; if(!imp)return; const cat=m.categoria||"otros"; if(!porCat[cat])porCat[cat]=z();
+    if(cat==='ingreso'){ if(m.estado!=='pendiente') ingr[mo]+=imp; return; }   // ingreso: suma aparte, no es gasto
     if(m.estado==="pendiente"){ pend[mo]+=imp; } else { abon[mo]+=imp; porCat[cat][mo]+=imp; } });
   // tabla del mes
-  const catBadge=k=>`<span class="badge ${k==='empleados'?'b-blue':k==='licencias'?'b-gold':k==='adelanto_socio'?'b-red':k==='caso'?'b-blue':k==='operativo'?'b-grey':'b-grey'}">${k==='caso'?'Gasto de caso':esc(ggCatLabel(k))}</span>`;
+  const catBadge=k=>`<span class="badge ${k==='empleados'?'b-blue':k==='licencias'?'b-gold':k==='adelanto_socio'?'b-red':k==='reembolso'?'b-red':k==='ingreso'?'b-green':k==='caso'?'b-blue':k==='operativo'?'b-grey':'b-grey'}">${k==='caso'?'Gasto de caso':k==='reembolso'?'Reembolso':esc(ggCatLabel(k))}</span>`;
   const rows=movMes.length?movMes.slice().sort((x,y)=>(y.fecha||"").localeCompare(x.fecha||"")).map(m=>`
     <tr class="clickable" onclick="${m.source==='caso'?`go('caso','${m.casoId}')`:`gastoGenModal('${m.id}')`}">
       <td>${m.sinFecha?'<span style="color:var(--muted)">sin fecha</span>':fdate(m.fecha)}</td>
@@ -4661,10 +4716,10 @@ function renderCajaOperativa(){
       <td>${esc(m.medio||'—')}</td>
     </tr>`).join(""):`<tr><td colspan="6" class="empty">Sin movimientos en ${finMonthName(FINMONTH)}</td></tr>`;
   // desglose por categoría (solo abonado) — incluye gastos de casos
-  const catRows=GG_CATS.concat([['caso','Gasto de caso']]).map(([k,t])=>{ const v=porCat[k]||z(); if(!v.USD&&!v.ARS&&(k==='otros'||k==='caso'))return ''; return `<tr><td>${catBadge(k)}</td><td style="text-align:right">${money(v.ARS,"ARS")}</td><td style="text-align:right">${money(v.USD,"USD")}</td></tr>`; }).join("");
+  const catRows=GG_CATS.concat([['caso','Gasto de caso']]).map(([k,t])=>{ if(k==='ingreso')return ''; const v=porCat[k]||z(); if(!v.USD&&!v.ARS&&(k==='otros'||k==='caso'))return ''; return `<tr><td>${catBadge(k)}</td><td style="text-align:right">${money(v.ARS,"ARS")}</td><td style="text-align:right">${money(v.USD,"USD")}</td></tr>`; }).join("");
   // historial mes a mes (últimos 6 meses, abonado) — gastos del estudio + gastos de casos
   const meses=[]; { const [y,m]=FINMONTH.split("-").map(Number); for(let i=0;i<6;i++){ const d=new Date(y,(m-1)-i,1); meses.push(d.toISOString().slice(0,7)); } }
-  const histMes=meses.map(ym=>{ const t=z(); movimientosCajaMes(ym).forEach(m=>{ if(m.estado==="pendiente")return; t[m.moneda]+=m.importe; }); return {ym,t}; });
+  const histMes=meses.map(ym=>{ const t=z(); movimientosCajaMes(ym).forEach(m=>{ if(m.estado==="pendiente"||m.categoria==='ingreso')return; t[m.moneda]+=m.importe; }); return {ym,t}; });
   const histRows=histMes.map(({ym,t})=>`<tr class="clickable" onclick="setFinMonth('${ym}')" ${ym===FINMONTH?'style="background:var(--grey-bg);font-weight:600"':''}><td>${finMonthName(ym)}</td><td style="text-align:right">${money(t.ARS,"ARS")}</td><td style="text-align:right">${money(t.USD,"USD")}</td></tr>`).join("");
 
   document.getElementById("view").innerHTML=`
@@ -4684,7 +4739,8 @@ function renderCajaOperativa(){
         <input type="month" value="${FINMONTH}" onchange="setFinMonth(this.value)" style="padding:6px 8px;border:1px solid var(--line2);border-radius:6px">
       </div>
       <div style="display:flex;gap:18px;flex-wrap:wrap">
-        <div><div style="font-size:11px;color:var(--muted)">Abonado del mes</div><div style="font-weight:700;color:#c0392b">${dosMon(abon)}</div></div>
+        <div><div style="font-size:11px;color:var(--muted)">Gastos abonados del mes</div><div style="font-weight:700;color:#c0392b">${dosMon(abon)}</div></div>
+        ${(ingr.USD||ingr.ARS)?`<div><div style="font-size:11px;color:var(--muted)">Ingresos del mes</div><div style="font-weight:700;color:#1c7a40">${dosMon(ingr)}</div></div>`:''}
         <div><div style="font-size:11px;color:var(--muted)">Pendiente del mes</div><div style="font-weight:700;color:#b07d1a">${dosMon(pend)}</div></div>
       </div>
     </div></div>

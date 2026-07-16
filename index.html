@@ -409,6 +409,7 @@ td .badge{vertical-align:middle}
       </div>
       <div style="display:flex;align-items:center;gap:14px">
         <div id="topActions"></div>
+        <button class="bell-btn" id="refreshBtn" onclick="refrescarAhora()" title="Actualizar datos">⟳</button>
         <button class="bell-btn" id="themeToggle" onclick="toggleTheme()" title="Modo claro / oscuro">🌙</button>
         <div id="notifBell" style="position:relative"></div>
       </div>
@@ -440,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.16 · B59 tabla de casos en Finanzas: botones de stand by, columna 'Reintegro' separada de 'Stand by apartado' (dos datos distintos), y se quitó la columna Liquidación";
+const BUILD = "2026.07.16 · B60 estabilidad: se quitó el realtime pesado (casos/finanzas) que saturaba la base; ahora se refresca cada 60s y con el botón ⟳ Actualizar. Realtime en vivo solo para tareas y notificaciones";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -886,15 +887,11 @@ async function cloudInsertCase(c){
 }
 function bindRealtime(){
   if(!sb || RT_BOUND) return; RT_BOUND=true;
-  sb.channel("gmj-db")
-    .on("postgres_changes",{event:"*",schema:"public",table:"casos"}, cloudRefresh)
-    .on("postgres_changes",{event:"*",schema:"public",table:"case_finance"}, cloudRefresh)
-    .on("postgres_changes",{event:"*",schema:"public",table:"settings"}, cloudRefresh)
-    .on("postgres_changes",{event:"*",schema:"public",table:"cambios_divisa"}, cloudRefresh)
-    .on("postgres_changes",{event:"*",schema:"public",table:"liquidaciones"}, cloudRefresh)
-    .on("postgres_changes",{event:"*",schema:"public",table:"gastos_generales"}, cloudRefresh)
-    .subscribe();
-  // canal propio para tareas (refresco liviano, no interrumpe)
+  // B60: se QUITÓ la suscripción realtime al canal "gmj-db" (casos, case_finance, settings,
+  // cambios_divisa, liquidaciones, gastos_generales). La replicación en vivo de esas tablas
+  // —que guardan JSON grande— saturaba la base (list_changes de 10-13s + statement timeouts),
+  // dejando el panel sin cargar. Ahora esas tablas se refrescan con un poll suave cada 60s y
+  // al tocar "Actualizar". El realtime instantáneo queda solo para tareas y notificaciones (livianas).
   sb.channel("gmj-tareas")
     .on("postgres_changes",{event:"*",schema:"public",table:"tareas"}, onTareaChange)
     .subscribe();
@@ -903,6 +900,20 @@ function bindRealtime(){
     .on("postgres_changes",{event:"INSERT",schema:"public",table:"notificaciones",filter:"user_id=eq."+SESSION.id}, onNotifInsert)
     .subscribe();
   startLivePolling();
+  startCasosPolling();
+}
+// Poll suave de casos/finanzas: reemplaza al realtime pesado. cloudRefresh ya está protegido
+// (no repinta mientras editás, ni dentro de un caso, ni con un modal abierto).
+let _casosPollTimer=null;
+function startCasosPolling(){ if(_casosPollTimer||!CLOUD) return; _casosPollTimer=setInterval(()=>{ if(!document.hidden) cloudRefresh(); }, 60000); }
+// Actualización manual inmediata (botón de la barra superior).
+async function refrescarAhora(){
+  if(!CLOUD||!sb){ toast("Disponible solo en la versión nube","err"); return; }
+  toast("Actualizando…");
+  try{ await cloudLoad(); }catch(e){ console.warn(e); toast("No se pudo actualizar","err"); return; }
+  if(ROUTE==="caso" && CURRENT){ CURRENT=DB.casos.find(c=>c.id===CURRENT.id)||CURRENT; renderCaso(); }
+  else if(ROUTE) go(ROUTE);
+  renderBell(); toast("Datos actualizados ✓");
 }
 let _tareaRefreshTimer=null;
 function onTareaChange(){ if(_tareaRefreshTimer)clearTimeout(_tareaRefreshTimer); _tareaRefreshTimer=setTimeout(refreshTareasLive,150); }

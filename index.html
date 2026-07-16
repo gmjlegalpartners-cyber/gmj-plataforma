@@ -440,7 +440,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.16 · B58 refresco visual (tipografía Inter, tarjetas/tablas/botones, sidebar), mobile pulido, y stand by con modal + botón 'Cuenta recuperada' en la ficha del caso";
+const BUILD = "2026.07.16 · B59 tabla de casos en Finanzas: botones de stand by, columna 'Reintegro' separada de 'Stand by apartado' (dos datos distintos), y se quitó la columna Liquidación";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -4664,17 +4664,37 @@ function renderFinanzasGlobal(){
   if(F.mon) act=act.filter(c=>(c.finanzas||{}).moneda===F.mon);
   const fila=(c,hist)=>{ const f=c.finanzas||{}; const cob=cobradoDe(c); const pend=Math.max(Number(f.montoTotal||0)-cob,0);
     const dev=Number(f.devolucion||0);
-    const devCell = dev>0
-      ? `<b>${money(dev,f.moneda)}</b><br><span class="badge ${f.estadoResultado==='favorable'?'b-green':(['realizada_dev','cancelada_dev'].includes(f.estadoDevolucion)?(FIN_COLOR[f.estadoDevolucion]||'b-grey'):'b-amber')}" style="font-size:10px">${f.estadoResultado==='favorable'?'no se devuelve':(['realizada_dev','cancelada_dev'].includes(f.estadoDevolucion)?finLabel(f.estadoDevolucion):'en stand by')}</span>`
-      : `<span style="color:var(--muted)">No aplica</span>`;
+    const devEnStandBy = dev>0 && f.estadoResultado!=='favorable' && !['realizada_dev','cancelada_dev'].includes(f.estadoDevolucion);
+    const reserva = devEnStandBy ? Math.min(dev, baseReservaStandBy(c)) : 0;
+    // (1) ¿Tiene reintegro pactado? — dato del contrato, independiente de si ya se apartó plata.
+    const reintegroCell = dev>0
+      ? `<b>${money(dev,f.moneda)}</b><br><span class="badge b-blue" style="font-size:10px">con reintegro</span>`
+      : `<span style="color:var(--muted)">Sin reintegro</span>`;
+    // (2) ¿Ya se apartó plata en stand by? — depende de lo cobrado del saldo/2ª cuota.
+    let sbCell;
+    if(dev<=0) sbCell=`<span style="color:var(--muted)">—</span>`;
+    else if(f.estadoResultado==='favorable') sbCell=`<span class="badge b-green" style="font-size:10px">liberado · recuperada</span>`;
+    else if(f.estadoDevolucion==='realizada_dev') sbCell=`<span class="badge b-grey" style="font-size:10px">reembolsado</span>`;
+    else if(f.estadoDevolucion==='cancelada_dev') sbCell=`<span class="badge b-grey" style="font-size:10px">cancelado</span>`;
+    else if(reserva<=0) sbCell=`<span class="badge b-amber" style="font-size:10px">sin apartar aún</span><br><small style="color:var(--muted)">falta cobrar saldo</small>`;
+    else if(reserva>=dev) sbCell=`<b style="color:#b07d1a">${money(reserva,f.moneda)}</b><br><span class="badge b-amber" style="font-size:10px">apartado</span>`;
+    else sbCell=`<b style="color:#b07d1a">${money(reserva,f.moneda)}</b> / ${money(dev,f.moneda)}<br><span class="badge b-amber" style="font-size:10px">apartado parcial</span>`;
+    // (3) Acciones: solo para socios y casos con reintegro en stand by sin resolver.
+    const accionesCell = hist ? '' : ((isSocio() && devEnStandBy)
+      ? `<td onclick="event.stopPropagation()" style="white-space:nowrap">
+           <button class="btn btn-sm" style="background:#e8f7ee;color:#1c7a40;border:1px solid #bfe6cd;padding:5px 8px" onclick="standByCobrado('${c.id}')" title="Se recuperó la cuenta: la reserva pasa a caja disponible">✓ Recuperada</button>
+           <button class="btn btn-sm" style="background:#fdeeee;color:#c0392b;border:1px solid #f2c9c9;padding:5px 8px;margin-left:4px" onclick="standByReembolsado('${c.id}')" title="Se devolvió la plata al cliente">↩ Reembolso</button>
+         </td>`
+      : `<td style="text-align:center;color:var(--muted)">—</td>`);
     return `<tr class="clickable" onclick="go('caso','${c.id}')">
       <td><b>${esc(clienteFull(c))}</b><br><small style="color:var(--muted)">${esc(c.id)}</small></td>
       <td>${esc(f.moneda||'—')}</td><td>${money(f.montoTotal,f.moneda)}</td><td>${money(cob,f.moneda)}</td>
       ${hist?'':`<td>${money(pend,f.moneda)}</td>`}
       <td><span class="badge ${FIN_COLOR[f.estadoCobro]||'b-grey'}">${finLabel(f.estadoCobro)}</span></td>
       <td><span class="badge ${FIN_COLOR[f.estadoResultado]||'b-grey'}">${finLabel(f.estadoResultado)}</span></td>
-      <td>${devCell}</td>
-      <td><span class="badge ${FIN_COLOR[f.estadoLiquidacion]||'b-grey'}">${finLabel(f.estadoLiquidacion)}</span></td>
+      <td>${reintegroCell}</td>
+      <td>${sbCell}</td>
+      ${accionesCell}
     </tr>`; };
   const actRows=act.length?act.map(c=>fila(c,false)).join(""):`<tr><td colspan="10" class="empty">Sin casos que requieran acción</td></tr>`;
   const histRows=histo.length?histo.map(c=>fila(c,true)).join(""):`<tr><td colspan="8" class="empty">Sin casos en el historial</td></tr>`;
@@ -4788,12 +4808,11 @@ function renderFinanzasGlobal(){
       <select onchange="FINFILTER.cobro=this.value;renderFinanzasGlobal()"><option value="">Cobro</option>${opt(FIN_COBRO,F.cobro)}</select>
       <select onchange="FINFILTER.res=this.value;renderFinanzasGlobal()"><option value="">Resultado</option>${opt(FIN_RESULTADO,F.res)}</select>
       <select onchange="FINFILTER.dev=this.value;renderFinanzasGlobal()"><option value="">Devolución</option>${opt(FIN_DEVOLUCION,F.dev)}</select>
-      <select onchange="FINFILTER.liq=this.value;renderFinanzasGlobal()"><option value="">Liquidación</option>${opt(FIN_LIQUIDACION,F.liq)}</select>
     </div>
     <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 8px">Casos que requieren acción</div>
-    <div class="card" style="margin-bottom:24px;overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Mon.</th><th>Total</th><th>Cobrado</th><th>Pend.</th><th>Cobro</th><th>Resultado</th><th>Reintegro</th><th>Liquidación</th></tr></thead><tbody>${actRows}</tbody></table></div>
+    <div class="card" style="margin-bottom:24px;overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Mon.</th><th>Total</th><th>Cobrado</th><th>Pend.</th><th>Cobro</th><th>Resultado</th><th>Reintegro</th><th>Stand by</th><th>Acciones</th></tr></thead><tbody>${actRows}</tbody></table></div>
     <div class="sec-title" style="font-weight:700;color:var(--navy);margin:4px 0 8px">Historial (cerrados y liquidados)</div>
-    <div class="card" style="overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Mon.</th><th>Total</th><th>Cobrado</th><th>Cobro</th><th>Resultado</th><th>Reintegro</th><th>Liquidación</th></tr></thead><tbody>${histRows}</tbody></table></div>`;
+    <div class="card" style="overflow-x:auto"><table><thead><tr><th>Cliente</th><th>Mon.</th><th>Total</th><th>Cobrado</th><th>Cobro</th><th>Resultado</th><th>Reintegro</th><th>Stand by</th></tr></thead><tbody>${histRows}</tbody></table></div>`;
   } else if(FINTAB==="gastos"){ cont=`
     <div style="display:flex;align-items:center;justify-content:space-between;margin:0 0 10px"><div class="sec-title" style="font-weight:700;color:var(--navy)">Gastos del estudio (casos + generales)</div><button class="btn btn-primary btn-sm" onclick="gastoGenModal()">＋ Gasto general</button></div>
     <div class="grid g3" style="margin-bottom:10px">

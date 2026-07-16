@@ -12,6 +12,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/l10n/es.js"></script>
 <meta name="googlebot" content="noindex, nofollow">
 <title>GMJ Legal Partners — Plataforma de Gestión</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
@@ -78,7 +81,8 @@
 @media(max-width:860px){.cal-grid{gap:3px}.cal-cell{min-height:64px;padding:3px}.cal-chip{font-size:9px;padding:2px 3px}.cal-dow{font-size:9px}}
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+body{font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+.stat .val,.money,td.num,.tabular{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
 button{font-family:inherit;cursor:pointer;border:none;background:none}
 input,select,textarea{font-family:inherit;font-size:14px}
 a{color:var(--primary);text-decoration:none}
@@ -306,6 +310,43 @@ tr.clickable:hover{background:var(--grey-bg)}
 .docview p{margin-bottom:11px;text-align:justify;font-size:13px}
 .docview .sig{margin-top:50px;display:flex;justify-content:space-around;text-align:center;font-size:12.5px}
 
+/* ===== REFRESCO VISUAL (B58) — pulido de tipografía, tarjetas, tablas, botones ===== */
+.content{max-width:1440px;margin:0 auto}
+h1,h2,h3,h4,.pagehead h2,.stat .val{letter-spacing:-.01em}
+.pagehead h2{font-weight:700}
+/* Tarjetas y stats: sombra más suave + leve elevación al pasar */
+.card,.stat,.av-block{transition:box-shadow .16s ease,transform .16s ease,border-color .16s ease}
+.stat{position:relative;overflow:hidden}
+.stat:hover{box-shadow:var(--shadow-lg);transform:translateY(-2px)}
+.stat.clickable:hover,.stat[onclick]:hover{border-color:var(--line2)}
+.stat .val{line-height:1.1}
+/* Botones: sombra sutil en primarios + feedback al presionar */
+.btn-primary,.btn-gold{box-shadow:0 1px 2px rgba(15,31,61,.14),0 2px 6px rgba(31,78,140,.16)}
+.btn:active{transform:translateY(1px)}
+.btn-primary:focus-visible,.btn-gold:focus-visible,.btn-ghost:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(31,78,140,.28)}
+/* Tablas: zebra suave + hover de fila + números tabulares */
+tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--grey-bg) 45%,transparent)}
+tbody tr:hover td{background:var(--grey-bg)}
+td .badge{vertical-align:middle}
+/* Barra superior con sombra sutil en vez de sólo línea */
+.topbar{box-shadow:0 1px 0 var(--line),0 4px 14px rgba(15,31,61,.04)}
+.topbar .crumb b{letter-spacing:-.01em}
+/* Sidebar: item activo con acento lateral y degradé */
+.nav a{position:relative}
+.nav a.active{background:linear-gradient(90deg,var(--primary),var(--primary-d))}
+.nav a.active::before{content:"";position:absolute;left:0;top:6px;bottom:6px;width:3px;border-radius:0 3px 3px 0;background:var(--gold)}
+/* Inputs un poco más redondeados y foco consistente */
+.field input,.field select,.field textarea,.filters input,.filters select{border-radius:10px}
+/* Chips/badges un pelín más contrastados */
+.badge{box-shadow:inset 0 0 0 1px rgba(0,0,0,.03)}
+/* Modales: encabezado con leve fondo */
+.modal-h{background:linear-gradient(180deg,color-mix(in srgb,var(--grey-bg) 40%,transparent),transparent)}
+/* Scrollbar más discreta (webkit) */
+*::-webkit-scrollbar{width:11px;height:11px}
+*::-webkit-scrollbar-thumb{background:var(--line2);border-radius:8px;border:3px solid transparent;background-clip:padding-box}
+*::-webkit-scrollbar-thumb:hover{background:var(--muted);background-clip:padding-box}
+*::-webkit-scrollbar-track{background:transparent}
+
 /* ===== RESPONSIVE celular / tablet (B47) ===== */
 #hamb{display:none;width:38px;height:38px;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--text);cursor:pointer;font-size:19px;align-items:center;justify-content:center;margin-right:4px;flex-shrink:0}
 #navOverlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:110;display:none}
@@ -317,11 +358,17 @@ tr.clickable:hover{background:var(--grey-bg)}
   #hamb{display:inline-flex}
   #navOverlay.show{display:block}
   .topbar{padding:0 12px}
-  .content{padding:18px 14px 60px}
+  .content{padding:16px 14px calc(60px + env(safe-area-inset-bottom))}
   table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
   .modal{width:100vw!important;max-width:100vw!important;min-height:100vh;border-radius:0}
   .modal-b{max-height:calc(100vh - 130px)}
+  .btn{padding:11px 16px;min-height:42px}
+  .btn-sm{min-height:34px}
+  .stat .val{font-size:24px}
+  .pagehead h2{font-size:18px}
+  .stat:hover{transform:none}
 }
+@media(hover:none){.stat:hover,.card:hover{transform:none}}
 </style>
 </head>
 <body>
@@ -393,7 +440,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.16 · B57 QA: routing por URL, fechas locales+flatpickr, validación email, login form, docs (jurisdicción/dirección), plan de pagos, modal de borrado";
+const BUILD = "2026.07.16 · B58 refresco visual (tipografía Inter, tarjetas/tablas/botones, sidebar), mobile pulido, y stand by con modal + botón 'Cuenta recuperada' en la ficha del caso";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -2842,6 +2889,15 @@ function tabFinanzas(c){
     <div class="stat amber"><div class="lab">Pendiente</div><div class="val">${money(pend,f.moneda)}</div></div>
     <div class="stat accent"><div class="lab">Devolución pactada</div><div class="val">${money(f.devolucion,f.moneda)}</div><div class="sub">${Number(f.devolucion||0)>0?(f.estadoResultado==='favorable'?'no se devuelve (favorable)':['realizada_dev','cancelada_dev'].includes(f.estadoDevolucion)?finLabel(f.estadoDevolucion):'⏸️ en stand by hasta resolver'):'—'}</div></div>
   </div>
+  ${(isSocio() && Number(f.devolucion||0)>0 && f.estadoResultado!=='favorable' && !['realizada_dev','cancelada_dev'].includes(f.estadoDevolucion)) ? `
+  <div class="card" style="margin-bottom:18px;border-left:4px solid var(--amber)"><div class="card-b" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+    <div style="flex:1;min-width:220px"><div style="font-weight:700;color:var(--navy);font-size:14px">⏸️ Devolución congelada en stand by: ${money(Math.min(Number(f.devolucion||0),baseReservaStandBy(c)),f.moneda)}</div>
+      <div style="font-size:12.5px;color:var(--muted);margin-top:3px">Esta plata queda apartada por si hay que devolverla. Cuando se <b>recupere la cuenta del cliente</b>, liberá el stand by para que pase a la caja disponible del estudio.</div></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-sm" style="background:#e8f7ee;color:#1c7a40;border:1px solid #bfe6cd" onclick="standByCobrado('${c.id}')" title="Se recuperó la cuenta: la reserva pasa a caja disponible">✓ Cuenta recuperada</button>
+      <button class="btn btn-sm" style="background:#fdeeee;color:#c0392b;border:1px solid #f2c9c9" onclick="standByReembolsado('${c.id}')" title="Se devolvió la plata al cliente">↩ Reembolsado</button>
+    </div>
+  </div></div>` : ''}
   <div class="grid g2">
     <div class="card"><div class="card-h"><h3>Condiciones económicas</h3></div><div class="card-b">
       <div class="frow fr2"><div class="field"><label>Moneda del precio</label><select id="fi_mon" onchange="finAdelRecalc()"><option ${f.moneda==="USD"?"selected":""}>USD</option><option ${f.moneda==="ARS"?"selected":""}>ARS</option></select><div class="hint">Moneda en la que se cerró el precio</div></div><div class="field"><label>Estado de cobro (automático)</label><div style="padding:9px 12px;border:1px solid var(--line2);border-radius:8px;background:var(--grey-bg)"><span class="badge ${FIN_COLOR[f.estadoCobro]||'b-grey'}">${finLabel(f.estadoCobro)}</span></div><div class="hint">Se calcula con los pagos del Plan de pagos</div></div></div>
@@ -4265,25 +4321,43 @@ function standByDetalle(){
   out.sort((a,b)=> (b.reserva-a.reserva) || (b.dev-a.dev));
   return out;
 }
-// "Cobrado": el caso se resolvió FAVORABLE → el estudio se queda la plata reservada.
+// Tras resolver un stand by, refresca la pantalla donde estás (ficha del caso o Finanzas global).
+function standByRefresh(){ if(ROUTE==='caso' && CURRENT){ renderCaso(); } else { renderFinanzasGlobal(); } }
+// "Cuenta recuperada": el caso se resolvió FAVORABLE → el estudio se queda la plata reservada.
 // Sale del stand by y pasa a la caja disponible (ya estaba en la caja bruta).
-async function standByCobrado(casoId){
+function standByCobrado(casoId){
   const c=DB.casos.find(x=>x.id===casoId); if(!c) return;
+  const f=c.finanzas||{}; const dev=Number(f.devolucion||0);
+  modal({title:"Cuenta recuperada — liberar stand by", size:"sm", body:`
+    <div class="alert alert-ok" style="margin-bottom:12px"><span>✓</span><div>Se recuperó la cuenta de <b>${esc(clienteFull(c))}</b>. El resultado pasa a <b>favorable</b>: ya no existe el riesgo de tener que devolver.</div></div>
+    <p style="font-size:13.5px;color:var(--text);margin:0">La reserva de <b>${money(dev,f.moneda)}</b> que estaba <b>congelada en stand by</b> se libera y pasa a la <b>caja disponible</b> del estudio, quedando disponible para repartir entre socios.</p>`,
+    footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="standByCobradoConfirm('${casoId}')">✓ Liberar stand by</button>`});
+}
+async function standByCobradoConfirm(casoId){
+  const c=DB.casos.find(x=>x.id===casoId); if(!c){ closeModal(); return; }
   const f=c.finanzas||(c.finanzas={}); const dev=Number(f.devolucion||0);
-  if(!confirm(`Marcar como COBRADO el caso de ${clienteFull(c)}.\n\nEl resultado pasa a FAVORABLE: la devolución pactada de ${money(dev,f.moneda)} deja de estar en stand by y se suma a la caja disponible del estudio.\n\n¿Confirmás?`)) return;
+  closeModal();
   f.estadoResultado='favorable';
-  finLog(c,"Stand by resuelto: COBRADO (favorable)",`la devolución pactada de ${money(dev,f.moneda)} pasa a caja disponible`);
-  await persistCaso(c); toast("Caso cobrado ✓ · pasa a caja disponible"); renderFinanzasGlobal();
+  finLog(c,"Stand by liberado: cuenta recuperada (favorable)",`la devolución pactada de ${money(dev,f.moneda)} pasa a caja disponible`);
+  await persistCaso(c); toast("Cuenta recuperada ✓ · la reserva pasa a caja disponible"); standByRefresh();
 }
 // "Reembolsado": se devolvió la plata al cliente → sale de la caja.
 // Marca la devolución como realizada (devRealizada), que descuenta la caja bruta.
-async function standByReembolsado(casoId){
+function standByReembolsado(casoId){
   const c=DB.casos.find(x=>x.id===casoId); if(!c) return;
+  const f=c.finanzas||{}; const dev=Number(f.devolucion||0);
+  modal({title:"Reembolso al cliente", size:"sm", body:`
+    <div class="alert alert-warn" style="margin-bottom:12px"><span>↩</span><div>Se le devolvió la plata a <b>${esc(clienteFull(c))}</b> (resultado no favorable).</div></div>
+    <p style="font-size:13.5px;color:var(--text);margin:0">La devolución de <b>${money(dev,f.moneda)}</b> se registra como <b>realizada</b>: sale del stand by y se <b>descuenta de la caja</b> del estudio.</p>`,
+    footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-danger" onclick="standByReembolsadoConfirm('${casoId}')">↩ Registrar reembolso</button>`});
+}
+async function standByReembolsadoConfirm(casoId){
+  const c=DB.casos.find(x=>x.id===casoId); if(!c){ closeModal(); return; }
   const f=c.finanzas||(c.finanzas={}); const dev=Number(f.devolucion||0);
-  if(!confirm(`Marcar como REEMBOLSADO el caso de ${clienteFull(c)}.\n\nLa devolución de ${money(dev,f.moneda)} se registra como realizada: sale del stand by y se descuenta de la caja del estudio.\n\n¿Confirmás?`)) return;
+  closeModal();
   f.estadoDevolucion='realizada_dev'; f.fechaDevolucion=todayISO();
   finLog(c,"Stand by resuelto: REEMBOLSADO (devolución realizada)",`se devolvió ${money(dev,f.moneda)} al cliente`);
-  await persistCaso(c); toast("Reembolso registrado ✓ · descontado de la caja"); renderFinanzasGlobal();
+  await persistCaso(c); toast("Reembolso registrado ✓ · descontado de la caja"); standByRefresh();
 }
 // Fecha en que se realizó la devolución/reembolso al cliente (para ubicarlo en los movimientos del mes).
 function fechaReembolso(c){ const f=c.finanzas||{}; if(f.fechaDevolucion) return f.fechaDevolucion; const h=(f.hist||[]).find(x=>/reembols|devoluci[oó]n realizada/i.test(x.accion||'')); return h?(h.fecha||'').slice(0,10):''; }
@@ -4655,7 +4729,7 @@ function renderFinanzasGlobal(){
              <td style="text-align:right">${money(d.saldoCobrado,d.moneda)}</td>
              <td style="text-align:right;font-weight:700;color:#b07d1a">${money(d.reserva,d.moneda)}</td>
              <td style="text-align:center;white-space:nowrap">
-               <button class="btn btn-sm" style="background:#e8f7ee;color:#1c7a40;border:1px solid #bfe6cd" onclick="standByCobrado('${c.id}')" title="El caso salió favorable: el estudio se queda la plata (pasa a caja)">✓ Cobrado</button>
+               <button class="btn btn-sm" style="background:#e8f7ee;color:#1c7a40;border:1px solid #bfe6cd" onclick="standByCobrado('${c.id}')" title="Se recuperó la cuenta: el estudio se queda la plata reservada (pasa a caja disponible)">✓ Cuenta recuperada</button>
                <button class="btn btn-sm" style="background:#fdeeee;color:#c0392b;border:1px solid #f2c9c9;margin-left:4px" onclick="standByReembolsado('${c.id}')" title="Se devolvió la plata al cliente (sale de la caja)">↩ Reembolsado</button>
              </td></tr>`;
          }).join("")}</tbody>

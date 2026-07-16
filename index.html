@@ -393,7 +393,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.15 · B56 cláusula de pago del contrato adaptada a pago único (saldo 0) o dos cuotas, según finanzas";
+const BUILD = "2026.07.16 · B57 QA: routing por URL, fechas locales+flatpickr, validación email, login form, docs (jurisdicción/dirección), plan de pagos, modal de borrado";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -698,8 +698,8 @@ function syncAdelanto(c){
   const aTc  = enOtra ? Number(f.tcAdelanto) : undefined;
   let p=c.pagos.find(x=>x.esAdelanto);
   if(ade>0){
-    if(p){ p.importe=aImp; p.moneda=aMon; p.tc=aTc; p.fecha=f.fechaAdelanto||p.fecha||new Date().toISOString().slice(0,10); p.medio=f.medioPago||p.medio; }
-    else { c.pagos.push({id:uid("p"),importe:aImp,moneda:aMon,tc:aTc,fecha:f.fechaAdelanto||new Date().toISOString().slice(0,10),medio:f.medioPago,obs:"Adelanto inicial",esAdelanto:true}); }
+    if(p){ p.importe=aImp; p.moneda=aMon; p.tc=aTc; p.fecha=f.fechaAdelanto||p.fecha||todayISO(); p.medio=f.medioPago||p.medio; }
+    else { c.pagos.push({id:uid("p"),importe:aImp,moneda:aMon,tc:aTc,fecha:f.fechaAdelanto||todayISO(),medio:f.medioPago,obs:"Adelanto inicial",esAdelanto:true}); }
   } else if(p){ c.pagos=c.pagos.filter(x=>!x.esAdelanto); }
 }
 function saldoDe(c){ const f=c.finanzas; return Math.max(Number(f.montoTotal||0)-Number(f.adelanto||0),0); }
@@ -712,8 +712,8 @@ function syncSaldo(c){
   const sTc  = enOtra ? Number(f.tcSaldo) : undefined;
   let p=c.pagos.find(x=>x.esSaldo);
   if(f.saldoPagado && saldo>0){
-    if(p){ p.importe=sImp; p.moneda=sMon; p.tc=sTc; p.fecha=f.fechaSaldoPago||p.fecha||new Date().toISOString().slice(0,10); p.medio=f.medioSaldo||f.medioPago||p.medio; }
-    else { c.pagos.push({id:uid("p"),importe:sImp,moneda:sMon,tc:sTc,fecha:f.fechaSaldoPago||new Date().toISOString().slice(0,10),medio:f.medioSaldo||f.medioPago,obs:"Saldo / diferencia",esSaldo:true}); }
+    if(p){ p.importe=sImp; p.moneda=sMon; p.tc=sTc; p.fecha=f.fechaSaldoPago||p.fecha||todayISO(); p.medio=f.medioSaldo||f.medioPago||p.medio; }
+    else { c.pagos.push({id:uid("p"),importe:sImp,moneda:sMon,tc:sTc,fecha:f.fechaSaldoPago||todayISO(),medio:f.medioSaldo||f.medioPago,obs:"Saldo / diferencia",esSaldo:true}); }
   } else if(p){ c.pagos=c.pagos.filter(x=>!x.esSaldo); }
 }
 function recalcEstadoPago(c){ const f=c.finanzas; const cob=cobradoDe(c); const tot=Number(f.montoTotal||0);
@@ -911,7 +911,7 @@ function tareaVisible(t){ // por las dudas (RLS ya filtra en nube)
   return t.creado_por===SESSION.id || (t.asignados||[]).includes(SESSION.id) || (t.privacidad!=="privada" && t.caso_id);
 }
 function tareaEfEstado(t){ // marca vencidas automáticamente para mostrar
-  if(t.estado==="pendiente" && t.vence && t.vence < new Date().toISOString().slice(0,10)) return "vencida";
+  if(t.estado==="pendiente" && t.vence && t.vence < todayISO()) return "vencida";
   return t.estado;
 }
 /* ---------- NOTIFICACIONES INTERNAS ---------- */
@@ -1001,6 +1001,11 @@ function logAction(c, accion){ if(!c) return; c.historial=c.historial||[]; c.his
 function esc(s){ return (s==null?"":String(s)).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m])); }
 function money(n,m){ if(n==null||n==="") return "—"; const sym=m==="USD"?"USD ":"$ "; return sym+Number(n).toLocaleString("es-AR"); }
 function fdate(s){ if(!s) return "—"; const p=s.split("-"); return p.length===3?`${p[2]}/${p[1]}/${p[0]}`:s; }
+// Fecha de HOY en zona horaria local (Argentina) como YYYY-MM-DD. Evita el desfasaje de un día
+// que provoca new Date().toISOString() al calcular en UTC (de noche, UTC ya está en el día siguiente).
+function todayISO(){ const d=new Date(); const p=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
+// Email válido (o vacío: el campo es opcional, pero si se carga debe tener formato correcto).
+function emailOk(e){ e=(e||"").trim(); return !e || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
 function toast(msg, type){ const r=document.getElementById("toastRoot"); const t=document.createElement("div"); t.className="toast "+(type||"ok"); t.innerHTML=`<span class="i">${type==="err"?"⚠":"✓"}</span>${esc(msg)}`; r.appendChild(t); setTimeout(()=>t.remove(),2800); }
 function clienteFull(c){ return ((c.cliente.apellido||"")+" "+(c.cliente.nombre||"")).trim()||"Sin nombre"; }
 function driveFolderName(c){ const ap=(c.cliente.apellido||"APELLIDO").toUpperCase(); const no=c.cliente.nombre||"Nombre"; const plat=c.cuenta.plataforma||"Instagram"; return `${ap}, ${no} - Cuenta ${plat} - Reclamo Meta`; }
@@ -1025,17 +1030,33 @@ function renderLogin(){
 }
 function renderCloudLogin(){
   document.getElementById("roleList").innerHTML=`
-    <div class="field" style="text-align:left"><label>Email</label><input id="lg_email" type="email" placeholder="tu@correo.com" autocomplete="username"></div>
-    <div class="field" style="text-align:left"><label>Contraseña</label><input id="lg_pass" type="password" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter')cloudSignIn()"></div>
-    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="cloudSignIn()">Ingresar</button>
-    <div id="lg_msg" style="color:var(--red);font-size:12.5px;margin-top:10px;min-height:16px"></div>`;
+    <form id="lg_form" autocomplete="on" onsubmit="event.preventDefault(); cloudSignIn(); return false;">
+      <div class="field" style="text-align:left"><label>Email</label><input id="lg_email" type="email" placeholder="tu@correo.com" autocomplete="username"></div>
+      <div class="field" style="text-align:left"><label>Contraseña</label><input id="lg_pass" type="password" placeholder="••••••••" autocomplete="current-password"></div>
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;padding:11px">Ingresar</button>
+      <div id="lg_msg" style="color:var(--red);font-size:12.5px;margin-top:10px;min-height:16px"></div>
+    </form>`;
   setLogos();
+}
+// Traduce los errores de Supabase Auth a mensajes en español.
+function authErrorEs(error){
+  const m=((error&&error.message)||"").toLowerCase();
+  if(m.includes("invalid login")||m.includes("invalid credentials")) return "Email o contraseña incorrectos.";
+  if(m.includes("email not confirmed")) return "Tu email todavía no fue confirmado. Revisá tu casilla.";
+  if(m.includes("invalid email")||m.includes("unable to validate email")) return "El email no tiene un formato válido.";
+  if(m.includes("rate limit")||m.includes("too many")) return "Demasiados intentos. Esperá un momento y volvé a probar.";
+  if(m.includes("network")||m.includes("failed to fetch")) return "No se pudo conectar. Revisá tu conexión a internet.";
+  if(m.includes("user not found")) return "No encontramos una cuenta con ese email.";
+  return "No pudimos ingresar. Revisá tu email y contraseña e intentá de nuevo.";
 }
 async function cloudSignIn(){
   const email=val("lg_email").trim(), pass=val("lg_pass");
-  const msg=document.getElementById("lg_msg"); msg.textContent="Ingresando…";
+  const msg=document.getElementById("lg_msg");
+  if(!email||!pass){ msg.textContent="Completá tu email y contraseña."; return; }
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ msg.textContent="El email no tiene un formato válido."; return; }
+  msg.textContent="Ingresando…";
   const {data,error}=await sb.auth.signInWithPassword({email,password:pass});
-  if(error){ msg.textContent="No pudimos ingresar: "+error.message; return; }
+  if(error){ msg.textContent=authErrorEs(error); return; }
   await afterAuth();
 }
 async function afterAuth(){
@@ -1061,11 +1082,35 @@ let ROUTE="dashboard";
 // datos, sync de Drive, refresco realtime) captura el token al arrancar y solo repinta si el
 // token sigue igual al terminar. Evita que una carga tardía te cambie a una pantalla anterior.
 let NAV_TOKEN=0;
+// ---- Routing por URL (hash) ----
+// El hash refleja la pantalla actual (#casos, #caso=C-0001, #finanzas…) para que F5 te devuelva
+// donde estabas y puedas compartir el link a un caso. No interfiere con el formulario del cliente (#form=).
+let _suppressHash=false;
+const HASH_ROUTES=["dashboard","casos","calendario","tareas","presupuestos","finanzas","operativa","config","usuarios"];
+function routeFromHash(){
+  const h=(location.hash||"").replace(/^#/,"");
+  if(!h || h.startsWith("form=") || h.startsWith("google=")) return null;
+  if(h.startsWith("caso=")){ const id=h.slice(5); return DB.casos&&DB.casos.some(c=>c.id===id)?{route:"caso",arg:id}:{route:"casos"}; }
+  return HASH_ROUTES.includes(h)?{route:h}:null;
+}
+function syncHash(route,arg){
+  if(route==="form") return;
+  const h = route==="caso" ? ("caso="+(arg||"")) : route;
+  if((location.hash||"").replace(/^#/,"")!==h){ _suppressHash=true; try{ location.hash=h; }catch(e){} }
+}
+window.addEventListener("hashchange",function(){
+  if(_suppressHash){ _suppressHash=false; return; }
+  if((location.hash||"").startsWith("#form=")) return;
+  if(!SESSION) return;
+  const r=routeFromHash(); if(r) go(r.route, r.arg);
+});
 function initApp(){
   document.getElementById("uav").textContent = SESSION.nombre.split(" ").map(s=>s[0]).slice(0,2).join("");
   document.getElementById("unm").textContent = SESSION.nombre;
   document.getElementById("url").textContent = isSocio()?"Socio / Administrador":"Colaborador";
-  setLogos(); buildNav(); renderBell(); go("dashboard"); loadPresupuestosCloud();
+  setLogos(); buildNav(); renderBell();
+  const _r=routeFromHash(); if(_r){ go(_r.route, _r.arg); } else { go("dashboard"); }
+  loadPresupuestosCloud(); startDatePickers();
   const bt=document.getElementById("buildTag"); if(bt)bt.textContent="Versión "+BUILD;
 }
 function buildNav(){
@@ -1108,6 +1153,7 @@ function go(route, arg){
   else if(route==="config"){ setActiveNav("config"); renderConfig(); }
   else if(route==="usuarios"){ setActiveNav("usuarios"); renderUsuarios(); }
   else if(route==="form"){ renderClientForm(arg); }
+  syncHash(route,arg);
   window.scrollTo(0,0);
 }
 
@@ -1121,7 +1167,7 @@ function _ordFem(n){ return n+'ª'; }
 function audEventos(){ const evs=[]; casosActivos().forEach(c=>audsOf(c).forEach(a=>{ if(a.fecha) evs.push({c,a,n:audOrdN(c,a)}); })); return evs; }
 // Agenda de próximas audiencias (lista cronológica, agrupada por día).
 function calAgendaHtml(){
-  const hoy=new Date().toISOString().slice(0,10);
+  const hoy=todayISO();
   const man=new Date(Date.now()+864e5).toISOString().slice(0,10);
   const fut=audEventos().filter(e=>!e.a.realizada && e.a.fecha>=hoy).sort((x,y)=>((x.a.fecha)+(x.a.hora||'')).localeCompare((y.a.fecha)+(y.a.hora||''))).slice(0,15);
   if(!fut.length) return `<div class="card" style="padding:16px;margin-bottom:16px"><div class="card-h" style="padding:0 0 6px 0"><h3>⏭️ Próximas audiencias</h3></div><div class="empty" style="padding:16px">No hay audiencias próximas.</div></div>`;
@@ -1145,7 +1191,7 @@ function renderCalendario(){
   const byDay={}; evs.forEach(e=>{ (byDay[e.a.fecha]=byDay[e.a.fecha]||[]).push(e); });
   Object.values(byDay).forEach(arr=>arr.sort((x,y)=>(x.a.hora||'').localeCompare(y.a.hora||'')));
   const startDow=(new Date(Y,M-1,1).getDay()+6)%7, dim=new Date(Y,M,0).getDate();
-  const hoy=new Date().toISOString().slice(0,10);
+  const hoy=todayISO();
   const mesNom=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][M-1];
   const dowNames=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
   let cells='';
@@ -1213,6 +1259,14 @@ function calExportar(){
 function calCopiar(){ const t=document.getElementById("cal_txt"); if(!t)return; t.select(); try{ navigator.clipboard.writeText(t.value); }catch(e){ try{document.execCommand('copy');}catch(_){} } toast("Copiado al portapapeles ✓"); }
 function calDescargar(){ const t=document.getElementById("cal_txt"); if(!t)return; const blob=new Blob([t.value],{type:"text/plain;charset=utf-8"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="audiencias.txt"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1500); }
 function initCalPickers(){ if(typeof flatpickr==='undefined')return; try{ ['cal_desde','cal_hasta'].forEach(id=>{ var el=document.getElementById(id); if(el && !el._flatpickr) flatpickr(el,{dateFormat:"Y-m-d",altInput:true,altFormat:"j M Y",locale:(flatpickr.l10ns&&flatpickr.l10ns.es)?"es":"default"}); }); }catch(e){} }
+// Unifica TODOS los selectores de fecha del portal: flatpickr en español, dd/mm/aaaa.
+// (Los input[type=month] quedan nativos porque flatpickr requeriría un plugin extra.)
+function fpDate(el){ if(!el||el._flatpickr) return; try{ flatpickr(el,{dateFormat:"Y-m-d",altInput:true,altFormat:"d/m/Y",allowInput:true,locale:(flatpickr.l10ns&&flatpickr.l10ns.es)?"es":"default"}); }catch(e){} }
+function initDatePickers(root){ if(typeof flatpickr==='undefined')return; (root||document).querySelectorAll('input[type="date"]:not([data-fp])').forEach(el=>{ el.setAttribute('data-fp','1'); fpDate(el); }); }
+let _dpStarted=false;
+function startDatePickers(){ if(_dpStarted||typeof flatpickr==='undefined')return; _dpStarted=true; initDatePickers(document);
+  if(typeof MutationObserver==='undefined')return; let _q=false;
+  new MutationObserver(()=>{ if(_q)return; _q=true; requestAnimationFrame(()=>{ _q=false; initDatePickers(document); }); }).observe(document.body,{childList:true,subtree:true}); }
 // Menú rápido desde el calendario/agenda: ver y cambiar el estado de la audiencia sin entrar al caso.
 function calAudMenu(cid,aid){
   const c=DB.casos.find(x=>x.id===cid); if(!c) return;
@@ -1253,7 +1307,7 @@ function renderDashboard(){
   const rehab=cs.filter(c=>c.estado==="Cuenta rehabilitada").length;
   const pendDoc=cs.filter(c=>c.estado==="Documentación pendiente").length;
   // próximas acciones
-  const today=new Date().toISOString().slice(0,10);
+  const today=todayISO();
   const venc=cs.filter(c=>c.fechaLimite).sort((a,b)=>a.fechaLimite.localeCompare(b.fechaLimite));
   let finCards="", gastosRow="";
   if(isSocio()){
@@ -1367,13 +1421,13 @@ function renderCasos(){
       <td>${esc(c.cuenta.handle||"—")}<br><small style="color:var(--muted)">${esc(c.cuenta.plataforma||"")}</small></td>
       <td style="max-width:220px">${ets.length?ets.map(n=>`<span class="badge ${etiquetaColor(n)}" style="margin:1px 2px;font-size:11px">${esc(n)}</span>`).join(""):'<span class="badge b-grey">—</span>'}</td>
       <td style="text-align:center;white-space:nowrap;font-size:11px;line-height:1.7">
-        ${tieneMed?`<span class="badge ${(!px.realizada && px.fecha>=new Date().toISOString().slice(0,10))?'b-green':'b-grey'}" title="Próxima audiencia: ${fdate(px.fecha)}${px.realizada?' (realizada)':''}">📅 ${fdate(px.fecha)} · ${audOrdN(c,px)}ª</span>`:`<span class="badge b-grey">sin fecha</span>`}
+        ${tieneMed?`<span class="badge ${(!px.realizada && px.fecha>=todayISO())?'b-green':'b-grey'}" title="Próxima audiencia: ${fdate(px.fecha)}${px.realizada?' (realizada)':''}">📅 ${fdate(px.fecha)} · ${audOrdN(c,px)}ª</span>`:`<span class="badge b-grey">sin fecha</span>`}
         <span class="badge ${solic?'b-gold':'b-grey'}" title="${solic?'Solicitud enviada al mediador':'Aún no se solicitó al mediador'}">📨 ${solic?'sí':'—'}</span><br>
         ${chk(ck.notif,'Notif',ck.notif?'Notificación paga':'Notificación pendiente')}${chk(ck.honIni,'H.ini',ck.honIni?'Honorarios iniciales pagos':'Honorarios iniciales pendientes')}${chk(ck.honFin,'H.fin',ck.honFin?'Honorarios finales pagos':'Honorarios finales pendientes')}
       </td>
       <td>${esc(abLabel(c.abogadoPatrocinante))}</td>
       <td style="width:130px"><div style="font-size:11px;color:var(--muted)">${prog}% completo</div><div class="progress"><i style="width:${prog}%"></i></div></td>
-      <td>${FILTER.arch?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();archivarCaso('${c.id}',false)">↩ Restaurar</button>`:(c.fechaLimite?`<span class="badge ${c.fechaLimite<new Date().toISOString().slice(0,10)?'b-red':'b-grey'}">${fdate(c.fechaLimite)}</span>`:'—')}</td>
+      <td>${FILTER.arch?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();archivarCaso('${c.id}',false)">↩ Restaurar</button>`:(c.fechaLimite?`<span class="badge ${c.fechaLimite<todayISO()?'b-red':'b-grey'}">${fdate(c.fechaLimite)}</span>`:'—')}</td>
     </tr>`;
   }).join("");
   document.getElementById("view").innerHTML=`
@@ -1402,10 +1456,17 @@ async function archivarCaso(id, arch){
   toast(arch?"Caso archivado":"Caso restaurado");
   if(arch && ROUTE==="caso"){ go("casos"); } else if(ROUTE==="caso"){ renderCaso(); } else { renderCasos(); }
 }
-async function eliminarCasoDef(id){
+function eliminarCasoDef(id){
   if(!isSocio()){ toast("Solo los socios pueden eliminar definitivamente","err"); return; }
-  if(!confirm("¿Eliminar este caso DEFINITIVAMENTE? Esta acción NO se puede deshacer.")) return;
-  const motivo = prompt("Motivo de la eliminación (opcional):")||"";
+  const c=DB.casos.find(x=>x.id===id);
+  modal({title:"Eliminar caso definitivamente", size:"sm", body:`
+    <div class="alert alert-warn" style="margin-bottom:12px"><span>⚠</span><div>Vas a eliminar <b>${esc(c?clienteFull(c):id)}</b> (${esc(id)}) de forma <b>definitiva</b>. Esta acción <b>no se puede deshacer</b>.</div></div>
+    <div class="field" style="margin:0"><label>Motivo de la eliminación (opcional)</label><textarea id="del_motivo" rows="2" placeholder="Ej: caso duplicado, cargado por error…"></textarea></div>`,
+    footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-danger" onclick="eliminarCasoConfirmado('${id}')">🗑 Eliminar definitivamente</button>`});
+}
+async function eliminarCasoConfirmado(id){
+  const motivo=(document.getElementById("del_motivo")||{}).value||"";
+  closeModal();
   if(CLOUD){
     try{
       await sb.from("audit_log").insert({accion:"Caso eliminado definitivamente", caso_id:id, detalle:motivo, usuario:SESSION.id});
@@ -1459,10 +1520,11 @@ async function reservarCasoId(){
 async function createCase(){
   const ap=val("nc_ap").trim(), no=val("nc_no").trim();
   if(!ap||!no){ toast("Apellido y nombre son obligatorios","err"); return; }
+  if(!emailOk(val("nc_email"))){ toast("El email no tiene un formato válido (ej: nombre@correo.com)","err"); return; }
   const {id}=await reservarCasoId();
   const c=demoCase(); // base shape
   Object.assign(c,{
-    id, estado:"Nuevo caso", fechaAlta:new Date().toISOString().slice(0,10),
+    id, estado:"Nuevo caso", fechaAlta:todayISO(),
     responsable:val("nc_resp"), abogadoPatrocinante:val("nc_ab"),
     proximaAccion:"Enviar formulario al cliente", fechaLimite:"",
     cliente:{apellido:ap.toUpperCase(), nombre:no, dni:"", cuit:"", nacionalidad:"Argentina", fechaNac:"", estadoCivil:"", conyuge:"", domicilio:"", localidad:"", provincia:"", cp:"", tel:val("nc_tel"), email:val("nc_email")},
@@ -1691,6 +1753,7 @@ function tabCliente(c){
   ], "saveCliente()");
 }
 function saveCliente(){
+  if(!emailOk(val("cl_email"))){ toast("El email no tiene un formato válido (ej: nombre@correo.com)","err"); return; }
   const f=CURRENT.cliente;
   f.apellido=val("cl_ap").toUpperCase(); f.nombre=val("cl_no"); f.dni=val("cl_dni"); f.cuit=val("cl_cuit");
   f.nacionalidad=val("cl_nac"); f.fechaNac=val("cl_fnac"); f.estadoCivil=val("cl_ec"); f.conyuge=val("cl_con");
@@ -1729,6 +1792,7 @@ function tabCuenta(c){
   </div></div>`;
 }
 function saveCuenta(){
+  if(!emailOk(val("cu_em"))){ toast("El email vinculado no tiene un formato válido (ej: nombre@correo.com)","err"); return; }
   const f=CURRENT.cuenta;
   f.plataforma=val("cu_plat"); f.handle=val("cu_handle"); f.url=val("cu_url"); f.emailVinc=val("cu_em"); f.telVinc=val("cu_tel");
   f.tipo=val("cu_tipo"); f.cuentasVinc=val("cu_vinc");
@@ -2067,7 +2131,7 @@ async function addAdj(){
     }catch(e){ console.error(e); toast("Error al subir","err"); }
     return;
   }
-  const nom=val("adj_nom").trim()||tipo.toLowerCase().replace(/ /g,"_")+".pdf"; CURRENT.adjuntos.push({tipo,nombre:nom,fecha:new Date().toISOString().slice(0,10)}); logAction(CURRENT,"Documento adjuntado: "+tipo); save(); closeModal(); toast("Documento agregado"); renderCaso();
+  const nom=val("adj_nom").trim()||tipo.toLowerCase().replace(/ /g,"_")+".pdf"; CURRENT.adjuntos.push({tipo,nombre:nom,fecha:todayISO()}); logAction(CURRENT,"Documento adjuntado: "+tipo); save(); closeModal(); toast("Documento agregado"); renderCaso();
 }
 function delAdj(i){ CURRENT.adjuntos.splice(i,1); save(); renderCaso(); }
 function fileIcon(n){ n=(n||"").toLowerCase(); if(/\.(jpg|jpeg|png|gif|webp)$/.test(n))return"🖼️"; if(/\.pdf$/.test(n))return"📕"; if(/\.(doc|docx)$/.test(n))return"📘"; return"📄"; }
@@ -2563,7 +2627,7 @@ function tabMediacion(c){
     <div class="section-title">Mediador</div>
     <div class="field"><input id="md_med" value="${esc(DB.config.mediador)}"></div>
     <div class="check" style="background:var(--grey-bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:6px">
-      <input type="checkbox" id="md_solic" ${c.medSolicitada?'checked':''} onchange="CURRENT.medSolicitada=this.checked; CURRENT.medSolicitadaFecha=this.checked?(new Date().toISOString().slice(0,10)):null; save(); toast(this.checked?'Marcada como solicitada al mediador':'Desmarcada'); renderTab()">
+      <input type="checkbox" id="md_solic" ${c.medSolicitada?'checked':''} onchange="CURRENT.medSolicitada=this.checked; CURRENT.medSolicitadaFecha=this.checked?(todayISO()):null; save(); toast(this.checked?'Marcada como solicitada al mediador':'Desmarcada'); renderTab()">
       <label for="md_solic" style="margin:0;font-weight:600">Solicitud ya enviada al mediador${c.medSolicitada&&c.medSolicitadaFecha?` <span style="font-weight:400;color:var(--muted)">· ${fdate(c.medSolicitadaFecha)}</span>`:''}</label>
     </div>
     <div style="display:flex;gap:10px;margin-top:8px">
@@ -2579,7 +2643,7 @@ function saveMediacion(){ CURRENT.objeto=val("md_obj"); DB.config.mediador=val("
 let EDIT_AUD=null;
 function audsOf(c){ if(c.audiencias) return c.audiencias; if(c.audiencia&&c.audiencia.fecha) return [Object.assign({id:'a0'},c.audiencia)]; return []; }
 // Próxima audiencia a realizarse: la más cercana pendiente (fecha >= hoy y no realizada). Si no hay futuras, la más reciente.
-function proxAud(c){ const A=(audsOf(c)||[]).filter(a=>a.fecha); if(!A.length) return null; const hoy=new Date().toISOString().slice(0,10); const key=a=>(a.fecha||'')+(a.hora||''); const fut=A.filter(a=>!a.realizada && a.fecha>=hoy).sort((x,y)=>key(x).localeCompare(key(y))); return fut.length?fut[0]:A.slice().sort((x,y)=>key(y).localeCompare(key(x)))[0]; }
+function proxAud(c){ const A=(audsOf(c)||[]).filter(a=>a.fecha); if(!A.length) return null; const hoy=todayISO(); const key=a=>(a.fecha||'')+(a.hora||''); const fut=A.filter(a=>!a.realizada && a.fecha>=hoy).sort((x,y)=>key(x).localeCompare(key(y))); return fut.length?fut[0]:A.slice().sort((x,y)=>key(y).localeCompare(key(x)))[0]; }
 // Selector de fecha/hora amigable (flatpickr) para el editor de audiencias. En celular usa el nativo.
 function initAudPickers(){
   if(typeof flatpickr==='undefined') return;
@@ -2705,7 +2769,7 @@ function buildCalUrl(c,a){
   const fb=c.citarFacebook!==false;
   const title=`Mediación - ${clienteFull(c)} c/ Meta Platforms Inc.${fb?' y Facebook Argentina S.R.L.':''}`;
   const durMin=parseInt(a.duracion)||60;
-  const startD=new Date((a.fecha||new Date().toISOString().slice(0,10))+"T"+(a.hora||"10:00")+":00");
+  const startD=new Date((a.fecha||todayISO())+"T"+(a.hora||"10:00")+":00");
   const endD=new Date(startD.getTime()+durMin*60000);
   const fmt=d=>d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")+"T"+String(d.getHours()).padStart(2,"0")+String(d.getMinutes()).padStart(2,"0")+"00";
   const det=[`Mediador: ${DB.config.mediador}`,`Cliente: ${clienteFull(c)}`,`Modalidad: ${a.modalidad||'-'}`].join("\n");
@@ -2731,7 +2795,7 @@ function tabGastos(c){
     <div class="card-b" style="padding-bottom:6px"><div class="alert alert-info"><span>ℹ️</span><div>Cada caso incluye por defecto <b>Notificación</b>, <b>Honorarios iniciales del mediador</b> y <b>Honorarios finales del mediador</b> como checklist de control. Al marcarlos <b>abonado</b> se encienden los checks del panel de casos.</div></div></div>
     <table><thead><tr><th>Gasto</th><th>Estado</th><th>Importe</th><th>Fecha pago</th><th>Medio</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
-function setGasto(id,k,v){ const g=CURRENT.gastos.find(x=>x.id===id); g[k]=v; if(k==="estado"&&v==="abonado"){ if(!g.fecha) g.fecha=new Date().toISOString().slice(0,10); logAction(CURRENT,"Gasto abonado: "+g.nombre); } save(); if(ROUTE==="caso")renderCaso(); }
+function setGasto(id,k,v){ const g=CURRENT.gastos.find(x=>x.id===id); g[k]=v; if(k==="estado"&&v==="abonado"){ if(!g.fecha) g.fecha=todayISO(); logAction(CURRENT,"Gasto abonado: "+g.nombre); } save(); if(ROUTE==="caso")renderCaso(); }
 function addGasto(){ CURRENT.gastos.push({id:uid("g"),nombre:"Nuevo gasto",estado:"pendiente",importe:"",moneda:"ARS",fecha:"",medio:"",obs:"",adjunto:""}); save(); const last=CURRENT.gastos[CURRENT.gastos.length-1]; editGasto(last.id); }
 function editGasto(id){
   const g=CURRENT.gastos.find(x=>x.id===id);
@@ -2820,7 +2884,7 @@ function finEstadoBlock(c){
   </div></div>`;
 }
 function toggleIncobrable(on){ const c=CURRENT,f=c.finanzas; f.saldoIncobrable=!!on;
-  if(on&&!f.fechaIncobrable) f.fechaIncobrable=new Date().toISOString().slice(0,10);
+  if(on&&!f.fechaIncobrable) f.fechaIncobrable=todayISO();
   const saldoAbierto=Math.max(Number(f.montoTotal||0)-cobradoDe(c),0);
   finLog(c, on?"Saldo marcado como incobrable (dejado de percibir)":"Saldo incobrable desmarcado", on?money(saldoAbierto,f.moneda):"");
   save(); renderCaso();
@@ -2839,7 +2903,8 @@ function finPlanPagos(c){
      <div style="width:26px;height:26px;border-radius:50%;background:${pagado?'#e8f7ee':'#fff5e6'};color:${pagado?'#1c7a40':'#b07d1a'};display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">${pagado?'✓':num}</div>
      <div style="flex:1"><b>${titulo}</b> · ${money(monto,f.moneda)}<br><small style="color:var(--muted)">${pagado?('Pagado'+(fecha?' el '+fdate(fecha):'')+(medio?' · '+esc(medio):'')):'Pendiente de pago'}</small></div>
      <div>${accion||(pagado?'<span class="badge b-green">Pagado</span>':'<span class="badge b-amber">Pendiente</span>')}</div></div>`;
-  return `<div class="card" style="margin-top:18px"><div class="card-h"><h3>Plan de pagos</h3><span class="badge ${saldoPagado&&adePagado?'b-green':'b-amber'}">${adePagado&&saldoPagado?'Cobrado completo':adePagado?'Falta el saldo':'Sin pagos'}</span></div><div class="card-b" style="padding:6px 8px">
+  const _cobradoTotal = adePagado && (saldoPagado || saldo<=0);
+  return `<div class="card" style="margin-top:18px"><div class="card-h"><h3>Plan de pagos</h3><span class="badge ${_cobradoTotal?'b-green':adePagado?'b-amber':'b-grey'}">${_cobradoTotal?'Cobrado completo':adePagado?'Falta el saldo':'Sin pagos'}</span></div><div class="card-b" style="padding:6px 8px">
     ${fila('1','Adelanto',ade,adePagado,f.fechaAdelanto,f.medioPago, adePagado?'<span class="badge b-green">Pagado</span>':'<span class="badge b-grey">Cargá el adelanto arriba</span>')}
     ${saldo>0?fila('2','Saldo / diferencia',saldo,saldoPagado,f.fechaSaldoPago,f.medioSaldo, saldoPagado?`<button class="btn btn-ghost btn-sm" onclick="desmarcarSaldo()">Deshacer</button>`:`<button class="btn btn-primary btn-sm" onclick="marcarSaldoPagado()">✓ Registrar pago del saldo</button>`):'<div class="empty" style="padding:10px">Sin saldo: el adelanto cubre el total.</div>'}
   </div></div>`;
@@ -2851,7 +2916,7 @@ function marcarSaldoPagado(){ const c=CURRENT,f=c.finanzas; const saldo=saldoDe(
     <div id="sp_tcbox" style="display:none">
       <div class="frow fr2">${inp("sp_tc",`Tipo de cambio (ARS por 1 USD)`,"","number")}<div class="field"><label>Equivale a recibir</label><div id="sp_equiv" style="padding:9px 12px;border:1px solid var(--line2);border-radius:8px;background:var(--grey-bg);font-weight:600">—</div></div></div>
     </div>
-    <div class="frow fr2">${inp("sp_fec","Fecha del pago",new Date().toISOString().slice(0,10),"date")}${inp("sp_med","Medio de pago",f.medioPago||"")}</div>
+    <div class="frow fr2">${inp("sp_fec","Fecha del pago",todayISO(),"date")}${inp("sp_med","Medio de pago",f.medioPago||"")}</div>
     ${inp("sp_obs","Observaciones (opcional)","")}`,
     footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="confirmSaldoPagado()">Confirmar pago del saldo</button>`});
   const rec=()=>{ const mon=val("sp_mon"), box=document.getElementById("sp_tcbox");
@@ -2910,7 +2975,7 @@ function addPago(){
       <div class="frow fr2">${inp("pa_tc","Tipo de cambio (ARS por 1 USD)","","number")}<div class="field"><label>Equivale a</label><div id="pa_equiv" style="padding:9px 12px;border:1px solid var(--line2);border-radius:8px;background:var(--grey-bg);font-weight:600">—</div></div></div>
       <div class="hint" style="margin:-4px 0 8px">El precio del caso está en <b>${fm}</b>. Cargá el TC del día y el sistema imputa el equivalente al total pactado.</div>
     </div>
-    <div class="frow fr2">${inp("pa_fec","Fecha",new Date().toISOString().slice(0,10),"date")}${inp("pa_med","Medio de pago",CURRENT.finanzas.medioPago)}</div>
+    <div class="frow fr2">${inp("pa_fec","Fecha",todayISO(),"date")}${inp("pa_med","Medio de pago",CURRENT.finanzas.medioPago)}</div>
     ${inp("pa_obs","Observaciones","")}`,
     footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="savePago()">Registrar</button>`});
   const recompute=()=>{
@@ -3105,7 +3170,7 @@ function setDocEstadoSilent(d){ /* placeholder for download log */ logAction(CUR
 const DEFAULT_PLANTILLAS={
 contrato:`<h1>CONTRATO DE PRESTACIÓN DE SERVICIOS PROFESIONALES</h1>
 <h2>REHABILITACIÓN DE CUENTA DIGITAL</h2>
-<p>En la Ciudad de {{jurisdiccion}} a los {{fecha_larga}} entre <b>{{estudio_nombre}}</b>, representado por {{estudio_repr}}, en adelante "EL ESTUDIO", y por la otra parte el/la Sr./Sra. <b>{{nombre_cliente}}</b>, con domicilio en {{domicilio_cliente}}, correo electrónico {{email_cliente}} y teléfono {{tel_cliente}}, en adelante "EL CLIENTE", convienen celebrar el presente contrato sujeto a las siguientes cláusulas:</p>
+<p>En la {{jurisdiccion}} a los {{fecha_larga}} entre <b>{{estudio_nombre}}</b>, representado por {{estudio_repr}}, en adelante "EL ESTUDIO", y por la otra parte el/la Sr./Sra. <b>{{nombre_cliente}}</b>, con domicilio en {{domicilio_cliente}}, correo electrónico {{email_cliente}} y teléfono {{tel_cliente}}, en adelante "EL CLIENTE", convienen celebrar el presente contrato sujeto a las siguientes cláusulas:</p>
 <p><b>Cuenta objeto de la gestión:</b> {{cuenta}}</p>
 <p><b>PRIMERA: OBJETO Y ALCANCE.</b> EL CLIENTE contrata a EL ESTUDIO para realizar gestiones profesionales, legales, administrativas y/o prejudiciales tendientes a procurar la rehabilitación, recuperación o reactivación de la cuenta digital indicada. El servicio podrá comprender análisis del caso, revisión de documentación, preparación de reclamos, comunicaciones, intimaciones, presentaciones, seguimiento del trámite e intervención en instancia de audiencia o comunicación formal con Meta, Instagram, sus representantes, apoderados o áreas correspondientes, conforme la estrategia profesional definida por EL ESTUDIO.</p>
 <p><b>SEGUNDA: NATURALEZA DEL SERVICIO.</b> EL ESTUDIO actuará con diligencia profesional, buena fe y criterio técnico-jurídico. EL CLIENTE declara comprender que Meta, Instagram y/o sus empresas vinculadas poseen políticas internas, sistemas de revisión, canales administrativos y criterios de decisión propios, ajenos al control directo de EL ESTUDIO. En consecuencia, el servicio no implica garantía absoluta de resultado, sin perjuicio del régimen de reintegro expresamente pactado para el supuesto de resultado negativo.</p>
@@ -3123,7 +3188,7 @@ contrato:`<h1>CONTRATO DE PRESTACIÓN DE SERVICIOS PROFESIONALES</h1>
   <div><br><br>_______________________<br><b>EL CLIENTE</b><br>Aclaración: {{nombre_cliente}}<br>DNI/CUIT: {{dni_o_cuit}}</div>
 </div>`,
 carta_poder:`<h1>LETTER OF ATTORNEY / CARTA PODER</h1>
-<p><b>{{nombre_cliente}}</b><br>{{domicilio_cliente}}<br>ZIP Code {{cp_cliente}}, {{localidad_cliente}} {{provincia_cliente}}, {{nacionalidad_cliente}}<br>{{email_cliente}}</p>
+<p><b>{{nombre_cliente}}</b><br>{{direccion_bloque}}<br>{{email_cliente}}</p>
 <p>{{fecha_en}} / {{fecha_es}}</p>
 <p><b>{{abogado1}}</b><br>{{abogado1_domicilio}}<br>{{abogado1_tel}}<br>{{abogado1_mail}}</p>
 <p><b>{{abogado2}}</b><br>{{abogado2_domicilio}}<br>{{abogado2_tel}}<br>{{abogado2_mail}}</p>
@@ -3175,7 +3240,7 @@ const DOC_VARS=[
   ["fecha_larga","Fecha (texto largo)"],["fecha_es","Fecha (español)"],["fecha_en","Fecha (inglés)"],
   ["sintesis","Síntesis del hecho"],["requeridos_bloque","Bloque de requeridos (auto)"]
 ];
-const DOC_RAW_KEYS=new Set(["sintesis","requeridos_bloque","clausula_pago"]);
+const DOC_RAW_KEYS=new Set(["sintesis","requeridos_bloque","clausula_pago","direccion_bloque"]);
 function docVars(c){
   const cl=c.cliente||{}, f=c.finanzas||{}, E=DB.config.estudio||{}, cu=c.cuenta||{}, m=f.moneda;
   const ab=DB.abogados||[], a1=ab[0]||{}, a2=ab[1]||{};
@@ -3192,8 +3257,12 @@ function docVars(c){
   const clausula_pago = _pagoUnico
     ? `Por el servicio contratado, EL CLIENTE abonará a EL ESTUDIO la suma total de <b>${_mt}</b>, que se abona en un único pago al momento de contratar, quedando de tal modo íntegramente cancelados los honorarios profesionales convenidos por la gestión objeto del presente. Las partes dejan expresamente convenido que dichos honorarios se devengan y resultan exigibles por la prestación profesional contratada, con independencia del momento en que la cuenta sea rehabilitada, reactivada o recuperada. En consecuencia, habiéndose abonado la totalidad de los honorarios al momento de contratar, EL CLIENTE nada adeuda por este concepto, sin que el eventual adelantamiento del resultado favorable ni las demoras ajenas a EL ESTUDIO alteren el carácter ya devengado de la retribución percibida.`
     : `Por el servicio contratado, EL CLIENTE abonará a EL ESTUDIO la suma total de <b>${_mt}</b>. Dicho importe será abonado en dos partes: a) adelanto inicial de <b>${_ad}</b> al momento de contratar; y b) saldo restante de <b>${_sd}</b>, que deberá estar íntegramente cancelado con anterioridad o, como máximo, al momento de celebrarse la audiencia, comunicación formal o gestión prejudicial con Meta, Instagram, sus representantes o apoderados. Las partes dejan expresamente convenido que el saldo se devenga y resulta exigible por la prestación profesional contratada con independencia del momento en que la cuenta sea rehabilitada, reactivada o recuperada. En consecuencia, si la rehabilitación, reactivación o recuperación de la cuenta se produjera antes de la fecha fijada para la audiencia, comunicación formal o gestión prejudicial —o en cualquier otro momento anterior a la cancelación del saldo—, EL CLIENTE deberá igualmente abonar la totalidad del saldo adeudado dentro de las cuarenta y ocho (48) horas de verificada la recuperación, sin que el adelantamiento del resultado favorable lo libere ni reduzca su obligación de pago. La falta de pago del saldo en los plazos indicados facultará a EL ESTUDIO a suspender las gestiones pendientes hasta su regularización y a reclamar su cobro por las vías que correspondan, sin que ello configure incumplimiento de EL ESTUDIO.`;
+  // Bloque de dirección para documentos: arma domicilio + localidad/provincia + C.P. + país,
+  // omitiendo los campos vacíos (evita "ZIP Code , , Argentina").
+  const _ciudadLinea=[ [cl.localidad,cl.provincia].filter(Boolean).join(", "), cl.cp?("C.P. "+cl.cp):"" ].filter(Boolean).join(" - ");
+  const direccion_bloque=[ cl.domicilio, _ciudadLinea, cl.nacionalidad||"Argentina" ].map(s=>(s||"").trim()).filter(Boolean).map(esc).join("<br>");
   return {
-    clausula_pago,
+    clausula_pago, direccion_bloque,
     nombre_cliente:`${cl.nombre||''} ${cl.apellido||''}`.trim(), dni_cliente:cl.dni||'', cuit_cliente:cl.cuit||'', dni_o_cuit:cl.dni||cl.cuit||'',
     domicilio_cliente:cl.domicilio||'', localidad_cliente:cl.localidad||'', provincia_cliente:cl.provincia||'', cp_cliente:cl.cp||'', email_cliente:cl.email||'', tel_cliente:cl.tel||'', nacionalidad_cliente:cl.nacionalidad||'Argentina',
     cuenta:cu.handle||cu.url||'—', cuenta_url:cu.url||'', cuenta_handle:cu.handle||'', cuenta_email:cu.emailVinc||'', plataforma:cu.plataforma||'', cuentas_afectadas:`Instagram: ${cu.handle||"—"}${fb?` - Facebook: ${fb}`:""}`,
@@ -3475,7 +3544,7 @@ function DEFAULT_CONTRATO(hayReintegro){
   return `<div style="text-align:center;border-bottom:2px solid #16294d;padding-bottom:7pt;margin-bottom:14pt"><div style="font-family:Georgia,'Times New Roman',serif;font-weight:700;letter-spacing:3px;color:#16294d;font-size:16pt">GMJ LEGAL PARTNERS</div><div style="font-size:8.5pt;color:#555">CABA - contacto@gmj-abogados.com.ar</div></div>
 <h1>CONTRATO DE PRESTACIÓN DE SERVICIOS PROFESIONALES</h1>
 <h2>REHABILITACIÓN DE CUENTA DIGITAL</h2>
-<p>En la Ciudad de {{jurisdiccion}} a los {{fecha_larga}} entre <b>{{estudio_nombre}}</b>, representado por Ivo Julián y Nazareno Gómez Melé, en adelante "EL ESTUDIO", y por la otra parte el/la Sr./Sra. <b>{{nombre_cliente}}</b>, con domicilio en {{domicilio_cliente}}, correo electrónico {{email_cliente}} y teléfono {{tel_cliente}}, en adelante "EL CLIENTE", convienen celebrar el presente contrato sujeto a las siguientes cláusulas:</p>
+<p>En la {{jurisdiccion}} a los {{fecha_larga}} entre <b>{{estudio_nombre}}</b>, representado por Ivo Julián y Nazareno Gómez Melé, en adelante "EL ESTUDIO", y por la otra parte el/la Sr./Sra. <b>{{nombre_cliente}}</b>, con domicilio en {{domicilio_cliente}}, correo electrónico {{email_cliente}} y teléfono {{tel_cliente}}, en adelante "EL CLIENTE", convienen celebrar el presente contrato sujeto a las siguientes cláusulas:</p>
 <p><b>Cuenta objeto de la gestión:</b> {{cuenta}}</p>
 `+cuerpo;
 }
@@ -3510,7 +3579,7 @@ function tplCartaPoder(c){
   const cuentas=`Instagram: ${ig}${fb?` - Facebook: ${fb}`:""}`;
   return docHead(true)+`
 <h1>LETTER OF ATTORNEY / CARTA PODER</h1>
-<p><b>${esc(nombre)}</b><br>${esc(cl.domicilio)}<br>ZIP Code ${esc(cl.cp||"—")}, ${esc(cl.localidad||"")} ${esc(cl.provincia||"")}, ${esc(cl.nacionalidad||"Argentina")}<br>${esc(cl.email)}</p>
+<p><b>${esc(nombre)}</b><br>${[esc(cl.domicilio||""),[ [cl.localidad,cl.provincia].filter(Boolean).join(", "), cl.cp?("C.P. "+cl.cp):"" ].filter(Boolean).join(" - "),esc(cl.nacionalidad||"Argentina")].map(s=>(s||"").trim()).filter(Boolean).join("<br>")}<br>${esc(cl.email)}</p>
 <p>${fEn} / ${fEs}</p>
 <p><b>${esc(ab1.nombre)}</b><br>${esc(ab1.domicilio)}<br>${esc(ab1.tel)}<br>${esc(ab1.mail)}</p>
 <p><b>${esc(ab2.nombre)}</b><br>${esc(ab2.domicilio)}<br>${esc(ab2.tel)}<br>${esc(ab2.mail)}</p>
@@ -4027,7 +4096,7 @@ function submitClientForm(token){
   cl.estadoCivil=val("cf_ec"); cl.conyuge=val("cf_con"); cl.domicilio=val("cf_dom"); cl.localidad=val("cf_loc"); cl.provincia=val("cf_prov"); cl.cp=val("cf_cp"); cl.tel=val("cf_celular"); cl.email=val("cf_email");
   re.fechaSusp=val("cf_fs"); re.tipoSusp=val("cf_ts"); re.mensaje=val("cf_msg"); re.apelo=chkVal("cf_apelo"); re.recibioResp=chkVal("cf_resp"); re.hackeo=chkVal("cf_hack"); re.volvioSusp=chkVal("cf_volvio"); re.original=val("cf_orig");
   // adjuntos por archivo (obligatorios DNI frente/dorso + comprobante de pago)
-  const hoy=new Date().toISOString().slice(0,10);
+  const hoy=todayISO();
   const fileEl=id=>document.getElementById(id);
   const fDniF=fileEl("cf_f_dnif"), fDniD=fileEl("cf_f_dnid"), fPago=fileEl("cf_f_pago"), fOtros=fileEl("cf_f_otros");
   const tiene=el=>el&&el.files&&el.files.length>0;
@@ -4063,6 +4132,8 @@ function backToApp(){ location.hash=""; document.getElementById("formRoot").clas
 function formSuccess(){ document.getElementById("formRoot").innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--grey-bg)"><div class="card" style="max-width:460px;text-align:center"><div class="card-b" style="padding:46px"><div style="font-size:48px">✅</div><h2 style="color:var(--navy);margin:14px 0 8px">¡Formulario enviado!</h2><p style="color:var(--muted)">Gracias. El estudio ya recibió tus datos y documentación. Nos pondremos en contacto a la brevedad.</p></div></div></div>`; }
 async function submitClientFormCloud(token){
   const miss=formMissing(FORM_REQ); if(miss.length){ formFocusMissing(miss); return; }
+  if(!emailOk(val("cf_email"))){ toast("El email de contacto no tiene un formato válido (ej: nombre@correo.com)","err"); return; }
+  if(!emailOk(val("cf_em"))){ toast("El email vinculado a la cuenta no tiene un formato válido","err"); return; }
   const cliente={apellido:val("cf_ap").toUpperCase(),nombre:val("cf_no"),dni:val("cf_dni"),cuit:val("cf_cuit"),nacionalidad:val("cf_nac"),fechaNac:val("cf_fnac"),estadoCivil:val("cf_ec"),conyuge:val("cf_con"),domicilio:val("cf_dom"),localidad:val("cf_loc"),provincia:val("cf_prov"),cp:val("cf_cp"),tel:val("cf_celular"),email:val("cf_email")};
   const cuenta={url:val("cf_url"),plataforma:val("cf_plat"),handle:normHandle(val("cf_handle")),emailVinc:val("cf_em"),telVinc:val("cf_tel"),tipo:val("cf_tipo"),pautaActiva:chkVal("cf_pauta"),saldoRetenido:chkVal("cf_saldo"),businessManager:chkVal("cf_bm"),campanasActivas:chkVal("cf_camp")};
   const cuentasAfectadas=formCuentasLimpias();
@@ -4210,7 +4281,7 @@ async function standByReembolsado(casoId){
   const c=DB.casos.find(x=>x.id===casoId); if(!c) return;
   const f=c.finanzas||(c.finanzas={}); const dev=Number(f.devolucion||0);
   if(!confirm(`Marcar como REEMBOLSADO el caso de ${clienteFull(c)}.\n\nLa devolución de ${money(dev,f.moneda)} se registra como realizada: sale del stand by y se descuenta de la caja del estudio.\n\n¿Confirmás?`)) return;
-  f.estadoDevolucion='realizada_dev'; f.fechaDevolucion=new Date().toISOString().slice(0,10);
+  f.estadoDevolucion='realizada_dev'; f.fechaDevolucion=todayISO();
   finLog(c,"Stand by resuelto: REEMBOLSADO (devolución realizada)",`se devolvió ${money(dev,f.moneda)} al cliente`);
   await persistCaso(c); toast("Reembolso registrado ✓ · descontado de la caja"); renderFinanzasGlobal();
 }
@@ -4353,7 +4424,7 @@ function liqModal(casoId, id){
   let l = editing ? (DB.liquidaciones||[]).find(x=>x.id===id) : null;
   if(!editing){
     const cob = c?cobradoDe(c):0; const each = soc.length? Math.round((cob/soc.length)*100)/100 : 0;
-    l = { caso_id:casoId, fecha:new Date().toISOString().slice(0,10), moneda:(c&&c.finanzas&&c.finanzas.moneda)||"USD", monto_total:cob, gastos_descontados:0, devolucion_cliente:0, estado:"pendiente", obs:"", reparto: soc.map(s=>({socio_id:s.id, nombre:s.nombre, monto:each})) };
+    l = { caso_id:casoId, fecha:todayISO(), moneda:(c&&c.finanzas&&c.finanzas.moneda)||"USD", monto_total:cob, gastos_descontados:0, devolucion_cliente:0, estado:"pendiente", obs:"", reparto: soc.map(s=>({socio_id:s.id, nombre:s.nombre, monto:each})) };
   }
   if(!l){ toast("Liquidación no encontrada","err"); return; }
   const reparto = (l.reparto&&l.reparto.length)?l.reparto:soc.map(s=>({socio_id:s.id,nombre:s.nombre,monto:0}));
@@ -4404,7 +4475,7 @@ async function gastoGenUpsert(g,isNew){
 }
 async function gastoGenDelete(id){ if(CLOUD){ const {error}=await sb.from("gastos_generales").delete().eq("id",id); if(error){toast("Error al eliminar: "+error.message,"err");return false;} } DB.gastosGen=(DB.gastosGen||[]).filter(x=>x.id!==id); if(!CLOUD)saveLocal(); return true; }
 function gastoGenModal(id){
-  const editing=!!id; const g=editing?(DB.gastosGen||[]).find(x=>x.id===id):{fecha:new Date().toISOString().slice(0,10),moneda:"ARS",estado:"abonado",usuario:SESSION.id};
+  const editing=!!id; const g=editing?(DB.gastosGen||[]).find(x=>x.id===id):{fecha:todayISO(),moneda:"ARS",estado:"abonado",usuario:SESSION.id};
   if(!g){ toast("Gasto no encontrado","err"); return; }
   const cambioSel=(DB.cambios&&DB.cambios.length)?`<div class="field"><label>Financiado por un cambio de divisa (opcional)</label><select id="gg_cambio"><option value="">— Ninguno —</option>${DB.cambios.map(x=>`<option value="${x.id}" ${g.cambio_id===x.id?'selected':''}>${fdate(x.fecha)} · ${money(x.monto_origen,x.moneda_origen)}→${money(x.monto_destino,x.moneda_destino)}${x.motivo?' · '+esc(x.motivo):''}</option>`).join("")}</select></div>`:'';
   const catSel=`<div class="field"><label>Categoría</label><select id="gg_cat" onchange="ggCatToggle()">${GG_CATS.map(([k,t])=>`<option value="${k}" ${(g.categoria||'operativo')===k?'selected':''}>${t}</option>`).join("")}</select></div>`;
@@ -4448,7 +4519,7 @@ async function cambioUpsert(x, isNew){
 }
 async function cambioDelete(id){ if(CLOUD){ const {error}=await sb.from("cambios_divisa").delete().eq("id",id); if(error){ toast("Error al eliminar: "+error.message,"err"); return false; } } DB.cambios=(DB.cambios||[]).filter(c=>c.id!==id); if(!CLOUD)saveLocal(); return true; }
 function cambioModal(id){
-  const editing=!!id; const x=editing?(DB.cambios||[]).find(c=>c.id===id):{moneda_origen:"USD",moneda_destino:"ARS",fecha:new Date().toISOString().slice(0,10),usuario:SESSION.id};
+  const editing=!!id; const x=editing?(DB.cambios||[]).find(c=>c.id===id):{moneda_origen:"USD",moneda_destino:"ARS",fecha:todayISO(),usuario:SESSION.id};
   if(!x){ toast("Cambio no encontrado","err"); return; }
   const casoOpts=`<option value="">— Sin caso —</option>`+casosActivos().map(c=>`<option value="${c.id}" ${x.caso_id===c.id?'selected':''}>${esc(clienteFull(c))}</option>`).join("");
   modal({title:editing?"Editar cambio de divisa":"Registrar cambio de divisa", size:"", body:`
@@ -5035,7 +5106,7 @@ function renderTareas(){
   if(TFILTER.fu) list=list.filter(t=>(t.asignados||[]).includes(TFILTER.fu));
   if(TFILTER.festado) list=list.filter(t=>tareaEfEstado(t)===TFILTER.festado);
   if(TFILTER.fprio) list=list.filter(t=>t.prioridad===TFILTER.fprio);
-  const today=new Date().toISOString().slice(0,10);
+  const today=todayISO();
   const activas=list.filter(t=>!["realizada","cancelada"].includes(t.estado));
   const venc=activas.filter(t=>t.vence&&t.vence<today);
   const hoy=activas.filter(t=>t.vence===today);
@@ -5135,7 +5206,7 @@ async function saveQuickTarea(id, patch){
 async function saveQuickReasignar(id){
   const t=(DB.tareas||[]).find(x=>x.id===id); if(!t)return;
   const prev=(t.asignados||[]).slice();
-  t.asignados=Array.from(document.querySelectorAll(".qr_a:checked")).map(x=>x.value);
+  t.asignados=Array.from(new Set(Array.from(document.querySelectorAll(".qr_a:checked")).map(x=>x.value)));
   await tareaUpsert(t); syncTareaCalendar(t);
   t.asignados.filter(u=>!prev.includes(u)).forEach(u=>notifCreate(u,"tarea_asignada","Te asignaron: "+t.titulo,(t.vence?("Vence "+fdate(t.vence)):"Sin fecha"),t.id,t.caso_id));
   closeModal(); toast("Tarea reasignada");
@@ -5223,7 +5294,7 @@ function tareaModal(id){
 }
 async function saveTareaForm(id){
   const tit=val("tk_tit").trim(); if(!tit){ toast("El título es obligatorio","err"); return; }
-  const asignados=Array.from(document.querySelectorAll(".tk_asg:checked")).map(x=>x.value);
+  const asignados=Array.from(new Set(Array.from(document.querySelectorAll(".tk_asg:checked")).map(x=>x.value)));
   const casoId=val("tk_caso")||null;
   const caso=casoId?DB.casos.find(c=>c.id===casoId):null;
   let t = id ? (DB.tareas||[]).find(x=>x.id===id) : null;
@@ -5340,7 +5411,7 @@ function docVarsPresu(p){
   return { fecha:presuFechaLarga(p.fecha), nombre_cliente:nombre, cuenta_url:(p.cuenta&&p.cuenta.url)||"—", honorarios_total:M(p.montoTotal), forma_pago:forma, bloque_reintegro:reint };
 }
 function renderPresuPlantilla(html,p){ const v=docVarsPresu(p); return (html||"").replace(/\{\{\s*(\w+)\s*\}\}/g,(mm,k)=>(k in v)?(PRESU_RAW.has(k)?v[k]:esc(v[k])):mm); }
-function PRESU_SAMPLE(){ return {fecha:new Date().toISOString().slice(0,10),cliente:{nombre:"Juan",apellido:"PÉREZ"},cuenta:{url:"https://www.instagram.com/usuario"},moneda:"USD",montoTotal:700,cuotas:[{label:"Al momento de confirmar el servicio",importe:350},{label:"Antes de la audiencia con META",importe:350}],reintegro:{aplica:true,importe:200}}; }
+function PRESU_SAMPLE(){ return {fecha:todayISO(),cliente:{nombre:"Juan",apellido:"PÉREZ"},cuenta:{url:"https://www.instagram.com/usuario"},moneda:"USD",montoTotal:700,cuotas:[{label:"Al momento de confirmar el servicio",importe:350},{label:"Antes de la audiencia con META",importe:350}],reintegro:{aplica:true,importe:200}}; }
 // Texto base del presupuesto (editable desde Configuración > Modelos de documentos)
 function DEFAULT_PRESUPUESTO(){
   return `
@@ -5447,7 +5518,7 @@ function presuGenerar(){
   if(!cuotas.length){ toast("Cargá al menos una cuota con importe","err"); return; }
   const reintOn=document.getElementById("pr_reint_ck").checked, reintImp=Number(val("pr_reint")||0);
   const p={
-    id:uid("pre"), fecha:new Date().toISOString().slice(0,10),
+    id:uid("pre"), fecha:todayISO(),
     cliente:{apellido:ap.toUpperCase(), nombre:no}, cuenta:{url},
     moneda, montoTotal:total, cuotas,
     reintegro:{aplica:reintOn&&reintImp>0, importe:reintOn?reintImp:0},
@@ -5522,7 +5593,7 @@ async function generarCasoDesdePresupuesto(id){
   const adelanto=Number((p.cuotas[0]&&p.cuotas[0].importe)||0);
   const saldo=Math.max(Number(p.montoTotal||0)-adelanto,0);
   Object.assign(c,{
-    id:idc, estado:"Nuevo caso", fechaAlta:new Date().toISOString().slice(0,10),
+    id:idc, estado:"Nuevo caso", fechaAlta:todayISO(),
     responsable:SESSION?SESSION.id:"", abogadoPatrocinante:(DB.abogados[0]&&DB.abogados[0].id)||"",
     proximaAccion:"Enviar formulario al cliente", fechaLimite:"",
     cliente:{apellido:p.cliente.apellido||"", nombre:p.cliente.nombre||"", dni:"", cuit:"", nacionalidad:"Argentina", fechaNac:"", estadoCivil:"", conyuge:"", domicilio:"", localidad:"", provincia:"", cp:"", tel:"", email:""},

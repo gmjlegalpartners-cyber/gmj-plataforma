@@ -441,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.16 · B60 estabilidad: se quitó el realtime pesado (casos/finanzas) que saturaba la base; ahora se refresca cada 60s y con el botón ⟳ Actualizar. Realtime en vivo solo para tareas y notificaciones";
+const BUILD = "2026.07.16 · B61 sincronización casi en vivo sin saturar: chequeo de 'firma' cada 8s (consulta minúscula) que recarga solo si algo cambió; respaldo cada 120s; botón ⟳ Actualizar";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -900,12 +900,30 @@ function bindRealtime(){
     .on("postgres_changes",{event:"INSERT",schema:"public",table:"notificaciones",filter:"user_id=eq."+SESSION.id}, onNotifInsert)
     .subscribe();
   startLivePolling();
+  startLiveSync();
   startCasosPolling();
 }
-// Poll suave de casos/finanzas: reemplaza al realtime pesado. cloudRefresh ya está protegido
-// (no repinta mientras editás, ni dentro de un caso, ni con un modal abierto).
+// SINCRONIZACIÓN CASI EN VIVO SIN SATURAR (B61):
+// En vez de descargar todos los datos seguido, cada 8s pedimos una "firma" minúscula
+// (un string con los últimos updated_at y las cantidades de filas, vía la función gmj_data_sig).
+// Solo si esa firma cambió respecto a la última, recargamos de verdad (cloudRefresh). Así el panel
+// se actualiza solo, en segundos, cuando otro socio toca algo — pero si nadie cambió nada, no se
+// baja ni un dato. Es liviano para la base (una consulta de agregados, no el JSON de los casos).
+let _sigLast=null, _sigTimer=null;
+function startLiveSync(){ if(_sigTimer||!CLOUD||!sb) return; _sigTimer=setInterval(pollSig, 8000); }
+async function pollSig(){
+  if(document.hidden || !CLOUD || !sb) return;
+  try{
+    const {data,error}=await sb.rpc('gmj_data_sig');
+    if(error || data==null) return;
+    if(_sigLast===null){ _sigLast=data; return; }   // primera lectura: solo guardar la referencia
+    if(data!==_sigLast){ _sigLast=data; cloudRefresh(); }
+  }catch(e){ /* silencioso: reintenta en el próximo ciclo */ }
+}
+// Poll de respaldo (más espaciado): cubre ediciones a tablas sin updated_at (cambios/liquidaciones/gastos).
+// cloudRefresh está protegido (no repinta mientras editás, ni dentro de un caso, ni con un modal abierto).
 let _casosPollTimer=null;
-function startCasosPolling(){ if(_casosPollTimer||!CLOUD) return; _casosPollTimer=setInterval(()=>{ if(!document.hidden) cloudRefresh(); }, 60000); }
+function startCasosPolling(){ if(_casosPollTimer||!CLOUD) return; _casosPollTimer=setInterval(()=>{ if(!document.hidden) cloudRefresh(); }, 120000); }
 // Actualización manual inmediata (botón de la barra superior).
 async function refrescarAhora(){
   if(!CLOUD||!sb){ toast("Disponible solo en la versión nube","err"); return; }
@@ -913,7 +931,7 @@ async function refrescarAhora(){
   try{ await cloudLoad(); }catch(e){ console.warn(e); toast("No se pudo actualizar","err"); return; }
   if(ROUTE==="caso" && CURRENT){ CURRENT=DB.casos.find(c=>c.id===CURRENT.id)||CURRENT; renderCaso(); }
   else if(ROUTE) go(ROUTE);
-  renderBell(); toast("Datos actualizados ✓");
+  renderBell(); _sigLast=null; toast("Datos actualizados ✓");
 }
 let _tareaRefreshTimer=null;
 function onTareaChange(){ if(_tareaRefreshTimer)clearTimeout(_tareaRefreshTimer); _tareaRefreshTimer=setTimeout(refreshTareasLive,150); }
@@ -1047,6 +1065,7 @@ function cloudRefresh(){
     if(ROUTE==="caso" && curId){ CURRENT=DB.casos.find(c=>c.id===curId)||null; ACTIVE_TAB=tab; if(CURRENT) renderCaso(); else go("casos"); }
     else if(ROUTE) go(ROUTE);
     renderBell();
+    _sigLast=null; // re-basar la firma tras recargar (evita un refresco redundante en el próximo ciclo)
   }, 250);
 }
 function isSocio(){ return SESSION && SESSION.rol==="socio"; }

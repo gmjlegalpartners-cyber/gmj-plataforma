@@ -441,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.16 · B62 fix: contrato y carta poder firmados por el cliente ya salen con nombre y datos (se capturaba el formulario después de mostrar el spinner y venían en blanco)";
+const BUILD = "2026.07.16 · B63 cuotas flexibles: plan de pagos con más de 2 cuotas (por monto o %, con plazo en días), plan de pagos y contrato adaptados; la cláusula de 3+ cuotas se genera automática. Casos de 1 o 2 pagos siguen igual";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -737,7 +737,46 @@ function baseReservaStandBy(c){
   const saldoPactado = saldoDe(c);
   return saldoPactado > 0 ? cobradoSaldoDe(c) : cobradoDe(c);
 }
+/* ====== PLAN DE CUOTAS FLEXIBLE (B63) ======
+   f.cuotas = [{id, imp, pct, plazo, base:'contratar'|'dias'|'audiencia', pagada, fechaPago, medio, moneda, tc}]
+   - imp = monto en la moneda del caso; o pct = % del total (se usa imp si está cargado).
+   - Si el caso usa cuotas, el adelanto/saldo se DERIVAN de la 1ª cuota y del resto, para que
+     toda la lógica existente (stand-by, saldoDe, estado de cobro) siga funcionando igual.
+   - Los casos viejos (sin f.cuotas) no cambian en nada. */
+function usaCuotas(f){ return f && Array.isArray(f.cuotas) && f.cuotas.length>0; }
+function cuotaImporte(f, q){
+  if(!q) return 0;
+  const total=Number(f.montoTotal||0);
+  if(q.imp!=="" && q.imp!=null && !isNaN(Number(q.imp))) return Number(q.imp||0);
+  if(q.pct!=="" && q.pct!=null && !isNaN(Number(q.pct))) return Math.round(total*Number(q.pct||0))/100;
+  return 0;
+}
+function cuotasTotal(f){ return (f.cuotas||[]).reduce((s,q)=>s+cuotaImporte(f,q),0); }
+// Etiqueta del plazo de una cuota (para plan de pagos y contrato).
+function cuotaPlazoTexto(q, i, n){
+  if(q.base==='contratar' || i===0) return 'al momento de contratar';
+  if(q.base==='audiencia' || i===n-1) return 'antes de la audiencia / gestión con Meta';
+  return 'dentro de los '+(q.plazo||'—')+' días de la firma';
+}
+// Sincroniza las cuotas pagadas con c.pagos y deriva adelanto/saldo para la lógica legacy.
+function syncCuotas(c){
+  const f=c.finanzas; if(!usaCuotas(f)) return;
+  // limpiar pagos sintéticos (de cuotas o del esquema viejo adelanto/saldo); conservar pagos manuales
+  c.pagos=(c.pagos||[]).filter(p=>!p.cuotaId && !p.esAdelanto && !p.esSaldo);
+  (f.cuotas||[]).forEach((q,i)=>{
+    if(!q.pagada) return;
+    const imp=cuotaImporte(f,q);
+    const enOtra = q.moneda && q.moneda!==f.moneda && Number(q.tc)>0;
+    const mon = enOtra ? q.moneda : f.moneda;
+    const impPago = enOtra ? (f.moneda==="USD" ? imp*Number(q.tc) : imp/Number(q.tc)) : imp;
+    c.pagos.push({ id:uid("p"), cuotaId:q.id, importe:impPago, moneda:mon, tc:enOtra?Number(q.tc):undefined, fecha:q.fechaPago||todayISO(), medio:q.medio||f.medioPago, obs:"Cuota "+(i+1), esAdelanto:i===0 });
+  });
+  // adelanto/saldo derivados (para stand-by, saldoDe, contrato de 1 o 2 pagos)
+  f.adelanto = cuotaImporte(f, f.cuotas[0]||{});
+  f.saldo = Math.max(Number(f.montoTotal||0)-Number(f.adelanto||0),0);
+}
 function syncAdelanto(c){
+  if(usaCuotas(c.finanzas)) return; // en modo cuotas, los pagos los maneja syncCuotas
   const f=c.finanzas; const ade=Number(f.adelanto||0); c.pagos=c.pagos||[];
   // Si el adelanto se cobró en otra moneda, lo guardamos con su TC.
   const enOtra = f.monedaAdelanto && f.monedaAdelanto!==f.moneda && Number(f.tcAdelanto)>0;
@@ -752,6 +791,7 @@ function syncAdelanto(c){
 }
 function saldoDe(c){ const f=c.finanzas; return Math.max(Number(f.montoTotal||0)-Number(f.adelanto||0),0); }
 function syncSaldo(c){
+  if(usaCuotas(c.finanzas)) return; // en modo cuotas, los pagos los maneja syncCuotas
   const f=c.finanzas; c.pagos=c.pagos||[]; const saldo=saldoDe(c);
   // Si el saldo se cobró en otra moneda, lo guardamos con su TC; si no, en la moneda del caso.
   const enOtra = f.monedaSaldo && f.monedaSaldo!==f.moneda && Number(f.tcSaldo)>0;
@@ -2931,10 +2971,14 @@ function tabFinanzas(c){
   <div class="grid g2">
     <div class="card"><div class="card-h"><h3>Condiciones económicas</h3></div><div class="card-b">
       <div class="frow fr2"><div class="field"><label>Moneda del precio</label><select id="fi_mon" onchange="finAdelRecalc()"><option ${f.moneda==="USD"?"selected":""}>USD</option><option ${f.moneda==="ARS"?"selected":""}>ARS</option></select><div class="hint">Moneda en la que se cerró el precio</div></div><div class="field"><label>Estado de cobro (automático)</label><div style="padding:9px 12px;border:1px solid var(--line2);border-radius:8px;background:var(--grey-bg)"><span class="badge ${FIN_COLOR[f.estadoCobro]||'b-grey'}">${finLabel(f.estadoCobro)}</span></div><div class="hint">Se calcula con los pagos del Plan de pagos</div></div></div>
-      <div class="frow fr2">${inp("fi_total","Monto total pactado",f.montoTotal,"number")}<div class="field"><label>Adelanto abonado</label><input id="fi_adel" type="number" value="${esc(f.adelanto)}" oninput="finAdelRecalc()"><div class="hint">En la moneda del precio. Si se cobró en pesos, indicá la moneda y el TC abajo.</div></div></div>
+      <div class="frow fr2">${inp("fi_total","Monto total pactado",f.montoTotal,"number")}${inp("fi_dev","Devolución (resultado negativo)",f.devolucion,"number")}</div>
+      ${usaCuotas(f) ? cuotasEditorHtml(f) : `
+      <div class="frow fr2"><div class="field"><label>Adelanto abonado</label><input id="fi_adel" type="number" value="${esc(f.adelanto)}" oninput="finAdelRecalc()"><div class="hint">En la moneda del precio. Si se cobró en pesos, indicá la moneda y el TC abajo.</div></div><div class="field"><label>Saldo pendiente (automático)</label><input id="fi_saldo" value="${esc(f.saldo)}" disabled style="background:var(--grey-bg);color:var(--muted)"><div class="hint">Monto total − adelanto. Para marcarlo pagado usá el <b>Plan de pagos</b> abajo.</div></div></div>
       <div class="frow fr2"><div class="field"><label>Moneda en que se cobró el adelanto</label><select id="fi_adelMon" onchange="finAdelRecalc()"><option ${aMon==="USD"?"selected":""}>USD</option><option ${aMon==="ARS"?"selected":""}>ARS</option></select></div><div class="field" id="fi_adelTcBox" style="${aDistinta?'':'display:none'}"><label>Tipo de cambio (ARS por 1 USD)</label><input id="fi_adelTc" type="number" value="${esc(aTc)}" oninput="finAdelRecalc()"><div class="hint">Se cobró ≈ <b id="fi_adelEquiv">${aEquivIni}</b></div></div></div>
-      <div class="frow fr2"><div class="field"><label>Saldo pendiente (automático)</label><input id="fi_saldo" value="${esc(f.saldo)}" disabled style="background:var(--grey-bg);color:var(--muted)"><div class="hint">Monto total − adelanto. Para marcarlo pagado usá el <b>Plan de pagos</b> abajo.</div></div>${inp("fi_dev","Devolución (resultado negativo)",f.devolucion,"number")}</div>
-      <div class="frow fr2">${inp("fi_fadel","Fecha pago adelanto",f.fechaAdelanto,"date")}${inp("fi_fsaldo","Fecha prevista saldo",f.fechaSaldo,"date")}</div>
+      <div class="frow fr2">${inp("fi_fadel","Fecha pago adelanto",f.fechaAdelanto,"date")}${inp("fi_fsaldo","Fecha prevista saldo",f.fechaSaldo,"date")}</div>`}
+      <div style="margin:2px 0 12px">${usaCuotas(f)
+        ? `<button type="button" class="btn btn-ghost btn-sm" onclick="toggleModoCuotas(false)">← Volver a adelanto + saldo (2 pagos)</button>`
+        : `<button type="button" class="btn btn-ghost btn-sm" onclick="toggleModoCuotas(true)">➕ Usar plan de cuotas (3 o más pagos)</button>`}</div>
       ${inp("fi_medio","Medio de pago",f.medioPago)}
       <div class="field"><label>Observaciones financieras</label><textarea id="fi_obs" rows="2">${esc(f.obs)}</textarea></div>
       <div class="alert alert-info"><span>🔗</span><div>Estos montos se usan automáticamente al generar el contrato.</div></div>
@@ -2982,7 +3026,18 @@ function finHistCard(c){
   return `<div class="card" style="margin-top:18px"><div class="card-h"><h3>Historial financiero del caso</h3></div><div class="card-b"><div class="timeline">${rows}</div></div></div>`;
 }
 function finPlanPagos(c){
-  const f=c.finanzas; const ade=Number(f.adelanto||0); const saldo=saldoDe(c);
+  const f=c.finanzas;
+  if(usaCuotas(f)){
+    const n=f.cuotas.length; const pag=f.cuotas.filter(q=>q.pagada).length; const compl=n>0&&pag>=n;
+    const filas=f.cuotas.map((q,i)=>{ const imp=cuotaImporte(f,q); const done=!!q.pagada;
+      return `<div class="driveitem" style="border-bottom:1px solid var(--line);align-items:center;gap:10px">
+        <div style="width:26px;height:26px;border-radius:50%;background:${done?'#e8f7ee':'#fff5e6'};color:${done?'#1c7a40':'#b07d1a'};display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">${done?'✓':(i+1)}</div>
+        <div style="flex:1"><b>Cuota ${i+1}</b> · ${money(imp,f.moneda)} <small style="color:var(--muted)">· ${cuotaPlazoTexto(q,i,n)}</small><br><small style="color:var(--muted)">${done?('Pagada'+(q.fechaPago?' el '+fdate(q.fechaPago):'')+(q.medio?' · '+esc(q.medio):'')):'Pendiente de pago'}</small></div>
+        <div>${done?'<span class="badge b-green">Pagada</span>':'<span class="badge b-amber">Pendiente</span>'}</div></div>`;
+    }).join("");
+    return `<div class="card" style="margin-top:18px"><div class="card-h"><h3>Plan de pagos (cuotas)</h3><span class="badge ${compl?'b-green':pag>0?'b-amber':'b-grey'}">${compl?'Cobrado completo':pag>0?`${pag} de ${n} cuotas`:'Sin pagos'}</span></div><div class="card-b" style="padding:6px 8px">${filas}<div class="hint" style="padding:8px 10px">Para registrar el pago de una cuota, tildá <b>“Cuota pagada”</b> en el editor de arriba y tocá <b>Guardar finanzas</b>.</div></div></div>`;
+  }
+  const ade=Number(f.adelanto||0); const saldo=saldoDe(c);
   const adePagado = ade>0;
   const saldoPagado = !!f.saldoPagado;
   const fila=(num,titulo,monto,pagado,fecha,medio,accion)=>`<div class="driveitem" style="border-bottom:1px solid var(--line);align-items:center;gap:10px">
@@ -3042,9 +3097,82 @@ function finAdelRecalc(){
     const el=document.getElementById("fi_adelEquiv"); if(el) el.textContent=rec;
   } else { box.style.display="none"; }
 }
+/* ---- Editor de cuotas flexibles (B63) ---- */
+function cuotaBlankId(){ return "q"+Math.random().toString(36).slice(2,8); }
+function cuotasEditorHtml(f){
+  const m=f.moneda; const total=Number(f.montoTotal||0); const suma=cuotasTotal(f); const dif=total-suma; const n=(f.cuotas||[]).length;
+  const rows=(f.cuotas||[]).map((q,i)=>`<div style="border:1px solid var(--line);border-radius:9px;padding:10px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b style="color:var(--navy)">Cuota ${i+1}</b>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="cuotaDel('${q.id}')" title="Quitar cuota" ${n<=1?'disabled':''}>✕</button></div>
+      <div class="frow fr3">
+        <div class="field" style="margin:0"><label>Importe (${m})</label><input id="cu_imp_${q.id}" type="number" value="${esc(q.imp)}" placeholder="monto" oninput="var p=document.getElementById('cu_pct_${q.id}');if(p)p.value='';cuotasCheckTotal()"></div>
+        <div class="field" style="margin:0"><label>o % del total</label><input id="cu_pct_${q.id}" type="number" value="${esc(q.pct)}" placeholder="%" oninput="var e=document.getElementById('cu_imp_${q.id}');if(e)e.value='';cuotasCheckTotal()"></div>
+        <div class="field" style="margin:0"><label>Vencimiento</label><select id="cu_base_${q.id}" onchange="cuotaOnChange()">
+          <option value="contratar" ${q.base==='contratar'?'selected':''}>Al contratar</option>
+          <option value="dias" ${q.base==='dias'?'selected':''}>Dentro de X días</option>
+          <option value="audiencia" ${q.base==='audiencia'?'selected':''}>Antes de la audiencia</option></select></div>
+      </div>
+      ${q.base==='dias'?`<div class="field" style="margin:8px 0 0;max-width:240px"><label>Días desde la firma</label><input id="cu_plazo_${q.id}" type="number" value="${esc(q.plazo)}" placeholder="ej: 15"></div>`:''}
+      <label class="check" style="margin:8px 0 0"><input type="checkbox" id="cu_pag_${q.id}" ${q.pagada?'checked':''} onchange="cuotaOnChange()"> Cuota pagada</label>
+      ${q.pagada?`<div class="frow fr3" style="margin-top:4px">
+        <div class="field" style="margin:0"><label>Fecha de pago</label><input id="cu_fec_${q.id}" type="date" value="${esc(q.fechaPago||todayISO())}"></div>
+        <div class="field" style="margin:0"><label>Moneda cobrada</label><select id="cu_mon_${q.id}" onchange="cuotaOnChange()"><option value="" ${(!q.moneda||q.moneda===m)?'selected':''}>${m} (misma)</option><option value="ARS" ${q.moneda==='ARS'?'selected':''}>ARS</option><option value="USD" ${q.moneda==='USD'?'selected':''}>USD</option></select></div>
+        ${(q.moneda&&q.moneda!==m)?`<div class="field" style="margin:0"><label>TC (ARS por 1 USD)</label><input id="cu_tc_${q.id}" type="number" value="${esc(q.tc)}"></div>`:`<div class="field" style="margin:0"><label>Medio</label><input id="cu_med_${q.id}" value="${esc(q.medio||'')}"></div>`}
+      </div>${(q.moneda&&q.moneda!==m)?`<div class="field" style="margin:6px 0 0;max-width:240px"><label>Medio de pago</label><input id="cu_med_${q.id}" value="${esc(q.medio||'')}"></div>`:''}`:''}
+    </div>`).join("");
+  const difTxt = Math.abs(dif)<0.5 ? `<span style="color:#1c7a40">✓ suman el total</span>` : (dif>0?`<span style="color:#b07d1a">faltan ${money(dif,m)}</span>`:`<span style="color:#c0392b">se pasan ${money(-dif,m)}</span>`);
+  return `<div class="alert alert-info" style="margin:2px 0 10px"><span>🧾</span><div>Cargá cada cuota por <b>monto</b> o por <b>%</b>. La 1ª suele ser "al contratar" y la última "antes de la audiencia". El contrato usa la redacción de varias cuotas automáticamente cuando hay 3 o más.</div></div>
+    ${rows}
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 0 10px">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="cuotaAdd()">＋ Agregar cuota</button>
+      <div class="hint" id="cu_totalhint" style="margin:0">Suma: <b>${money(suma,m)}</b> / ${money(total,m)} — ${difTxt}</div>
+    </div>`;
+}
+function cuotasReadDom(f){
+  (f.cuotas||[]).forEach(q=>{ const g=id=>document.getElementById(id);
+    const imp=g("cu_imp_"+q.id), pct=g("cu_pct_"+q.id), base=g("cu_base_"+q.id), plazo=g("cu_plazo_"+q.id), pag=g("cu_pag_"+q.id), fec=g("cu_fec_"+q.id), med=g("cu_med_"+q.id), mon=g("cu_mon_"+q.id), tc=g("cu_tc_"+q.id);
+    if(imp) q.imp=imp.value; if(pct) q.pct=pct.value;
+    if(base) q.base=base.value; if(plazo) q.plazo=plazo.value; else if(q.base!=='dias') q.plazo="";
+    if(pag) q.pagada=pag.checked;
+    if(fec) q.fechaPago=fec.value; if(med) q.medio=med.value;
+    if(mon) q.moneda=mon.value; if(tc) q.tc=tc.value;
+    if(!q.moneda||q.moneda===f.moneda){ q.moneda=""; q.tc=""; }
+  });
+}
+function cuotasCheckTotal(){ const c=CURRENT; if(!c) return; const f=c.finanzas; cuotasReadDom(f);
+  const m=f.moneda, total=Number(val("fi_total")||f.montoTotal||0), suma=cuotasTotal(f), dif=total-suma;
+  const el=document.getElementById("cu_totalhint"); if(!el) return;
+  const difTxt = Math.abs(dif)<0.5 ? `<span style="color:#1c7a40">✓ suman el total</span>` : (dif>0?`<span style="color:#b07d1a">faltan ${money(dif,m)}</span>`:`<span style="color:#c0392b">se pasan ${money(-dif,m)}</span>`);
+  el.innerHTML=`Suma: <b>${money(suma,m)}</b> / ${money(total,m)} — ${difTxt}`;
+}
+function cuotaAdd(){ const f=CURRENT.finanzas; cuotasReadDom(f); f.cuotas=f.cuotas||[]; f.cuotas.push({id:cuotaBlankId(),imp:"",pct:"",plazo:"",base:(f.cuotas.length===0?'contratar':'dias'),pagada:false,fechaPago:"",medio:"",moneda:"",tc:""}); renderCaso(); }
+function cuotaDel(id){ const f=CURRENT.finanzas; cuotasReadDom(f); f.cuotas=(f.cuotas||[]).filter(q=>q.id!==id); renderCaso(); }
+function cuotaOnChange(){ const f=CURRENT.finanzas; cuotasReadDom(f); renderCaso(); }
+function toggleModoCuotas(on){ const c=CURRENT, f=c.finanzas;
+  if(on){ const ade=Number(f.adelanto||0), tot=Number(val("fi_total")||f.montoTotal||0), sal=Math.max(tot-ade,0);
+    f.montoTotal=val("fi_total")||f.montoTotal; f.devolucion=val("fi_dev")||f.devolucion; f.medioPago=val("fi_medio")||f.medioPago;
+    f.cuotas=[
+      {id:cuotaBlankId(),imp:ade?String(ade):"",pct:"",plazo:"",base:'contratar',pagada:!!(c.pagos||[]).some(p=>p.esAdelanto),fechaPago:f.fechaAdelanto||"",medio:f.medioPago||"",moneda:f.monedaAdelanto||"",tc:f.tcAdelanto||""},
+      {id:cuotaBlankId(),imp:sal?String(sal):"",pct:"",plazo:"",base:'audiencia',pagada:!!f.saldoPagado,fechaPago:f.fechaSaldoPago||"",medio:f.medioSaldo||"",moneda:f.monedaSaldo||"",tc:f.tcSaldo||""}
+    ];
+  } else { cuotasReadDom(f); f.adelanto=cuotaImporte(f,(f.cuotas||[])[0]||{}); f.cuotas=[];
+    c.pagos=(c.pagos||[]).filter(p=>!p.cuotaId); f.saldo=Math.max(Number(f.montoTotal||0)-Number(f.adelanto||0),0);
+    syncAdelanto(c); syncSaldo(c);
+  }
+  renderCaso();
+}
 function saveFinanzas(){ const c=CURRENT, f=c.finanzas;
-  f.moneda=val("fi_mon"); f.montoTotal=val("fi_total"); f.adelanto=val("fi_adel"); f.devolucion=val("fi_dev"); f.fechaAdelanto=val("fi_fadel"); f.fechaSaldo=val("fi_fsaldo"); f.medioPago=val("fi_medio"); f.obs=val("fi_obs");
-  // moneda + TC del adelanto (carga inicial)
+  f.moneda=val("fi_mon"); f.montoTotal=val("fi_total"); f.devolucion=val("fi_dev"); f.medioPago=val("fi_medio"); f.obs=val("fi_obs");
+  if(usaCuotas(f)){
+    cuotasReadDom(f);
+    const tot=Number(f.montoTotal||0), suma=cuotasTotal(f);
+    if(tot>0 && Math.abs(suma-tot)>0.5){ toast(`Las cuotas suman ${money(suma,f.moneda)} y el total es ${money(tot,f.moneda)}. Ajustá los importes.`,"err"); return; }
+    for(const q of (f.cuotas||[])){ if(q.pagada && q.moneda && q.moneda!==f.moneda && !(Number(q.tc)>0)){ toast("Cargá el tipo de cambio de la cuota cobrada en "+q.moneda,"err"); return; } }
+    syncCuotas(c); recalcEstadoPago(c);
+    finLog(c,"Plan de cuotas actualizado",`${f.cuotas.length} cuotas · total ${money(suma,f.moneda)}`);
+    logAction(c,"Finanzas actualizadas"); save(); toast("Finanzas guardadas"); renderCaso(); return;
+  }
+  f.adelanto=val("fi_adel"); f.fechaAdelanto=val("fi_fadel"); f.fechaSaldo=val("fi_fsaldo");
   const aMon=val("fi_adelMon");
   if(aMon && aMon!==f.moneda){ const aTc=Number(val("fi_adelTc")||0); if(Number(f.adelanto)>0 && !(aTc>0)){ toast("Cargá el tipo de cambio del adelanto cobrado en "+aMon,"err"); return; } f.monedaAdelanto=aMon; f.tcAdelanto=val("fi_adelTc"); }
   else { f.monedaAdelanto=""; f.tcAdelanto=""; }
@@ -3327,6 +3455,21 @@ const DOC_VARS=[
   ["sintesis","Síntesis del hecho"],["requeridos_bloque","Bloque de requeridos (auto)"]
 ];
 const DOC_RAW_KEYS=new Set(["sintesis","requeridos_bloque","clausula_pago","direccion_bloque"]);
+// Cláusula de pago para 3 o más cuotas (redacción aprobada, misma lógica de exigibilidad).
+function clausulaCuotas(f, m){
+  const qs=f.cuotas||[]; const n=qs.length;
+  const roman=["(i)","(ii)","(iii)","(iv)","(v)","(vi)","(vii)","(viii)","(ix)","(x)"];
+  const items=qs.map((q,i)=>{
+    const imp=`<b>${money(cuotaImporte(f,q),m)}</b>`;
+    const last=i===n-1;
+    let plazo;
+    if(i===0 || q.base==='contratar') plazo='al momento de contratar';
+    else if(last || q.base==='audiencia') plazo='que deberá estar íntegramente cancelada con anterioridad o, como máximo, al momento de celebrarse la audiencia, comunicación formal o gestión prejudicial con Meta, Instagram, sus representantes o apoderados';
+    else plazo='dentro de los '+esc(String(q.plazo||''))+' días corridos de suscripto el presente';
+    return `${roman[i]||("("+(i+1)+")")} ${imp} ${plazo}`;
+  }).join("; ");
+  return `Por el servicio contratado, EL CLIENTE abonará a EL ESTUDIO la suma total de <b>${money(f.montoTotal,m)}</b>, pagadera en las siguientes cuotas: ${items}. Las partes dejan expresamente convenido que la totalidad de los honorarios se devenga y resulta exigible por la prestación profesional contratada, con independencia del momento en que la cuenta sea rehabilitada, reactivada o recuperada. En consecuencia, si la rehabilitación, reactivación o recuperación de la cuenta se produjera antes de la cancelación total del precio, EL CLIENTE deberá igualmente abonar la totalidad de las cuotas pendientes dentro de las cuarenta y ocho (48) horas de verificada la recuperación, sin que el adelantamiento del resultado favorable lo libere ni reduzca su obligación de pago. La falta de pago de cualquiera de las cuotas en los plazos indicados facultará a EL ESTUDIO a suspender las gestiones pendientes hasta su regularización y a reclamar su cobro por las vías que correspondan, sin que ello configure incumplimiento de EL ESTUDIO.`;
+}
 function docVars(c){
   const cl=c.cliente||{}, f=c.finanzas||{}, E=DB.config.estudio||{}, cu=c.cuenta||{}, m=f.moneda;
   const ab=DB.abogados||[], a1=ab[0]||{}, a2=ab[1]||{};
@@ -3340,9 +3483,9 @@ function docVars(c){
   // se usa la redacción de pago único; si hay saldo (dos cuotas), la redacción original.
   const _mt=money(f.montoTotal,m), _ad=money(f.adelanto,m), _sd=money(f.saldo,m);
   const _pagoUnico = Number(f.montoTotal||0)>0 && Number(f.adelanto||0) >= Number(f.montoTotal||0);
-  const clausula_pago = _pagoUnico
+  const clausula_pago = (usaCuotas(f) && f.cuotas.length>=3) ? clausulaCuotas(f,m) : (_pagoUnico
     ? `Por el servicio contratado, EL CLIENTE abonará a EL ESTUDIO la suma total de <b>${_mt}</b>, que se abona en un único pago al momento de contratar, quedando de tal modo íntegramente cancelados los honorarios profesionales convenidos por la gestión objeto del presente. Las partes dejan expresamente convenido que dichos honorarios se devengan y resultan exigibles por la prestación profesional contratada, con independencia del momento en que la cuenta sea rehabilitada, reactivada o recuperada. En consecuencia, habiéndose abonado la totalidad de los honorarios al momento de contratar, EL CLIENTE nada adeuda por este concepto, sin que el eventual adelantamiento del resultado favorable ni las demoras ajenas a EL ESTUDIO alteren el carácter ya devengado de la retribución percibida.`
-    : `Por el servicio contratado, EL CLIENTE abonará a EL ESTUDIO la suma total de <b>${_mt}</b>. Dicho importe será abonado en dos partes: a) adelanto inicial de <b>${_ad}</b> al momento de contratar; y b) saldo restante de <b>${_sd}</b>, que deberá estar íntegramente cancelado con anterioridad o, como máximo, al momento de celebrarse la audiencia, comunicación formal o gestión prejudicial con Meta, Instagram, sus representantes o apoderados. Las partes dejan expresamente convenido que el saldo se devenga y resulta exigible por la prestación profesional contratada con independencia del momento en que la cuenta sea rehabilitada, reactivada o recuperada. En consecuencia, si la rehabilitación, reactivación o recuperación de la cuenta se produjera antes de la fecha fijada para la audiencia, comunicación formal o gestión prejudicial —o en cualquier otro momento anterior a la cancelación del saldo—, EL CLIENTE deberá igualmente abonar la totalidad del saldo adeudado dentro de las cuarenta y ocho (48) horas de verificada la recuperación, sin que el adelantamiento del resultado favorable lo libere ni reduzca su obligación de pago. La falta de pago del saldo en los plazos indicados facultará a EL ESTUDIO a suspender las gestiones pendientes hasta su regularización y a reclamar su cobro por las vías que correspondan, sin que ello configure incumplimiento de EL ESTUDIO.`;
+    : `Por el servicio contratado, EL CLIENTE abonará a EL ESTUDIO la suma total de <b>${_mt}</b>. Dicho importe será abonado en dos partes: a) adelanto inicial de <b>${_ad}</b> al momento de contratar; y b) saldo restante de <b>${_sd}</b>, que deberá estar íntegramente cancelado con anterioridad o, como máximo, al momento de celebrarse la audiencia, comunicación formal o gestión prejudicial con Meta, Instagram, sus representantes o apoderados. Las partes dejan expresamente convenido que el saldo se devenga y resulta exigible por la prestación profesional contratada con independencia del momento en que la cuenta sea rehabilitada, reactivada o recuperada. En consecuencia, si la rehabilitación, reactivación o recuperación de la cuenta se produjera antes de la fecha fijada para la audiencia, comunicación formal o gestión prejudicial —o en cualquier otro momento anterior a la cancelación del saldo—, EL CLIENTE deberá igualmente abonar la totalidad del saldo adeudado dentro de las cuarenta y ocho (48) horas de verificada la recuperación, sin que el adelantamiento del resultado favorable lo libere ni reduzca su obligación de pago. La falta de pago del saldo en los plazos indicados facultará a EL ESTUDIO a suspender las gestiones pendientes hasta su regularización y a reclamar su cobro por las vías que correspondan, sin que ello configure incumplimiento de EL ESTUDIO.`);
   // Bloque de dirección para documentos: arma domicilio + localidad/provincia + C.P. + país,
   // omitiendo los campos vacíos (evita "ZIP Code , , Argentina").
   const _ciudadLinea=[ [cl.localidad,cl.provincia].filter(Boolean).join(", "), cl.cp?("C.P. "+cl.cp):"" ].filter(Boolean).join(" - ");

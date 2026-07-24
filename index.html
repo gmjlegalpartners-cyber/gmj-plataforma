@@ -441,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.16 · B61 sincronización casi en vivo sin saturar: chequeo de 'firma' cada 8s (consulta minúscula) que recarga solo si algo cambió; respaldo cada 120s; botón ⟳ Actualizar";
+const BUILD = "2026.07.16 · B62 fix: contrato y carta poder firmados por el cliente ya salen con nombre y datos (se capturaba el formulario después de mostrar el spinner y venían en blanco)";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -4239,13 +4239,15 @@ async function submitClientFormCloud(token){
   if(autoDocs){ const errFirma=validarFirma(); if(errFirma){ toast(errFirma,"err"); return; } }
   const subeDrive=async(tipo,nombre,b64)=>{ try{ const rr=await fetch(FUNCTIONS_URL+"/drive-sync",{method:"POST",headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({formToken:token,action:"upload",tipo,nombre,mime:"application/pdf",base64:b64})}); const jj=await rr.json().catch(()=>({})); return (jj&&(jj.link||jj.respaldo))||""; }catch(e){ console.error("subeDrive",tipo,e); return ""; } };
   try{
-    document.getElementById("formRoot").innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--grey-bg)"><div style="text-align:center;color:#64748b"><div style="font-size:32px">⏳</div><p style="margin-top:10px">Procesando tu firma y documentos, no cierres esta ventana…</p></div></div>`;
     // ---------- Autogeneración de contrato + poder con firma electrónica ----------
-    let consent=null, docsPayload=null;
+    // IMPORTANTE (fix): capturar la firma y armar el caso con los datos del formulario ANTES de
+    // reemplazar el DOM por el spinner. Si se lee después, val()/firma devuelven vacío y el
+    // contrato y la carta poder salen SIN nombre ni datos del cliente.
+    let consent=null, docsPayload=null, cdoc=null;
+    if(autoDocs){ consent=armarConsentimiento(); cdoc=_casoTempDelForm(casoCloud); }
+    document.getElementById("formRoot").innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--grey-bg)"><div style="text-align:center;color:#64748b"><div style="font-size:32px">⏳</div><p style="margin-top:10px">Procesando tu firma y documentos, no cierres esta ventana…</p></div></div>`;
     if(autoDocs){
-      consent=armarConsentimiento();
-      const cdoc=_casoTempDelForm(casoCloud);           // caso con los valores recién cargados + finanzas del GET
-      const docs=docsClienteGenerar(cdoc, consent);
+      const docs=docsClienteGenerar(cdoc, consent);           // caso con los valores recién cargados + finanzas del GET
       const nombreArch=(clienteFull(cdoc)||"cliente").replace(/[ ,]+/g,"_");
       DOCS_CLIENTE={ contrato:docs.contrato, poder:docs.poder, nombreArch };
       try{

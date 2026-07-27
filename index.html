@@ -441,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.16 · B63 cuotas flexibles: plan de pagos con más de 2 cuotas (por monto o %, con plazo en días), plan de pagos y contrato adaptados; la cláusula de 3+ cuotas se genera automática. Casos de 1 o 2 pagos siguen igual";
+const BUILD = "2026.07.16 · B64 caja operativa muestra los cobros de los casos (adelanto/saldo/cuota) en la moneda recibida con su TC; y fix: caso generado desde presupuesto ya no arrastra cuentas de ejemplo en el formulario";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -5038,6 +5038,14 @@ function movimientosCajaMes(ym){
   (DB.casos||[]).forEach(c=>{ const f=c.finanzas||{}; const dev=Number(f.devolucion||0); if(f.estadoDevolucion!=='realizada_dev'||dev<=0)return;
     const fr=fechaReembolso(c); const fm=(fr||"").slice(0,7); const enMes = fm ? (fm===ym) : (ym===curMonth); if(!enMes) return;
     out.push({id:'dev-'+c.id,source:'dev',fecha:fr||'',categoria:'reembolso',concepto:'Reembolso al cliente',importe:dev,moneda:f.moneda==='USD'?'USD':'ARS',estado:'abonado',medio:'',socio:'',casoId:c.id,casoLabel:clienteFull(c)+' ('+c.id+')',sinFecha:!fm}); });
+  // COBROS de cada caso (ingresos): cada pago registrado —adelanto, saldo o cuota— desglosado,
+  // en la moneda en que se recibió, con su TC si se cobró en otra moneda.
+  (DB.casos||[]).forEach(c=>{ const f=c.finanzas||{}; (c.pagos||[]).forEach(p=>{ const imp=Number(p.importe||0); if(!imp)return;
+    const pm=(p.fecha||"").slice(0,7); const enMes = pm ? (pm===ym) : (ym===curMonth); if(!enMes) return;
+    const tipo = p.esAdelanto?'Adelanto' : p.esSaldo?'Saldo' : p.cuotaId?(p.obs||'Cuota') : (p.obs||'Pago');
+    out.push({ id:'pago-'+(p.id||Math.random().toString(36).slice(2)), source:'pago', fecha:p.fecha||'', categoria:'cobro',
+      concepto:'Cobro · '+tipo, importe:imp, moneda:p.moneda==='USD'?'USD':'ARS', tc:Number(p.tc||0)||0, monedaCaso:f.moneda||'',
+      estado:'abonado', medio:p.medio||'', socio:'', casoId:c.id, casoLabel:clienteFull(c)+' ('+c.id+')', sinFecha:!pm }); }); });
   return out;
 }
 function renderCajaOperativa(){
@@ -5049,16 +5057,20 @@ function renderCajaOperativa(){
   const abon=z(), pend=z(), ingr=z(); const porCat={};
   GG_CATS.forEach(([k])=>porCat[k]=z()); porCat['caso']=z();
   movMes.forEach(m=>{ const mo=m.moneda; const imp=m.importe; if(!imp)return; const cat=m.categoria||"otros"; if(!porCat[cat])porCat[cat]=z();
-    if(cat==='ingreso'){ if(m.estado!=='pendiente') ingr[mo]+=imp; return; }   // ingreso: suma aparte, no es gasto
+    if(cat==='ingreso'||cat==='cobro'){ if(m.estado!=='pendiente') ingr[mo]+=imp; return; }   // ingreso/cobro: suma aparte, no es gasto
     if(m.estado==="pendiente"){ pend[mo]+=imp; } else { abon[mo]+=imp; porCat[cat][mo]+=imp; } });
   // tabla del mes
-  const catBadge=k=>`<span class="badge ${k==='empleados'?'b-blue':k==='licencias'?'b-gold':k==='adelanto_socio'?'b-red':k==='reembolso'?'b-red':k==='ingreso'?'b-green':k==='caso'?'b-blue':k==='operativo'?'b-grey':'b-grey'}">${k==='caso'?'Gasto de caso':k==='reembolso'?'Reembolso':esc(ggCatLabel(k))}</span>`;
+  const catBadge=k=>`<span class="badge ${k==='empleados'?'b-blue':k==='licencias'?'b-gold':k==='adelanto_socio'?'b-red':k==='reembolso'?'b-red':k==='ingreso'?'b-green':k==='cobro'?'b-green':k==='caso'?'b-blue':k==='operativo'?'b-grey':'b-grey'}">${k==='caso'?'Gasto de caso':k==='reembolso'?'Reembolso':k==='cobro'?'Cobro':esc(ggCatLabel(k))}</span>`;
+  // Nota de tipo de cambio para un cobro recibido en moneda distinta a la del caso.
+  const tcNota=m=>{ if(m.categoria!=='cobro'||!(m.tc>0)||!m.monedaCaso||m.moneda===m.monedaCaso) return '';
+    const eq = m.monedaCaso==='USD' ? (m.moneda==='ARS'? m.importe/m.tc : m.importe) : (m.moneda==='USD'? m.importe*m.tc : m.importe);
+    return `<br><small style="color:var(--gold)">TC ${Number(m.tc).toLocaleString("es-AR")} · equivale ${money(eq,m.monedaCaso)}</small>`; };
   const rows=movMes.length?movMes.slice().sort((x,y)=>(y.fecha||"").localeCompare(x.fecha||"")).map(m=>`
-    <tr class="clickable" onclick="${m.source==='caso'?`go('caso','${m.casoId}')`:`gastoGenModal('${m.id}')`}">
+    <tr class="clickable" onclick="${(m.source==='caso'||m.source==='pago'||m.source==='dev')?`go('caso','${m.casoId}')`:`gastoGenModal('${m.id}')`}">
       <td>${m.sinFecha?'<span style="color:var(--muted)">sin fecha</span>':fdate(m.fecha)}</td>
       <td>${catBadge(m.categoria||'otros')}${m.categoria==='adelanto_socio'&&m.socio?`<br><small style="color:var(--muted)">${esc(userName(m.socio))}</small>`:''}</td>
-      <td><b>${esc(m.concepto||'—')}</b>${m.source==='caso'?`<br><small style="color:var(--muted)">📁 ${esc(m.casoLabel)}</small>`:''}</td>
-      <td>${money(m.importe,m.moneda)}</td>
+      <td><b>${esc(m.concepto||'—')}</b>${(m.source==='caso'||m.source==='pago'||m.source==='dev')?`<br><small style="color:var(--muted)">📁 ${esc(m.casoLabel)}</small>`:''}${tcNota(m)}</td>
+      <td style="${(m.categoria==='cobro'||m.categoria==='ingreso')?'color:#1c7a40;font-weight:600':(m.categoria==='reembolso'?'color:#c0392b':'')}">${(m.categoria==='cobro'||m.categoria==='ingreso')?'+ ':''}${money(m.importe,m.moneda)}</td>
       <td><span class="badge ${m.estado==='abonado'?'b-green':'b-amber'}">${esc(m.estado||'—')}</span></td>
       <td>${esc(m.medio||'—')}</td>
     </tr>`).join(""):`<tr><td colspan="6" class="empty">Sin movimientos en ${finMonthName(FINMONTH)}</td></tr>`;
@@ -5066,11 +5078,11 @@ function renderCajaOperativa(){
   const catRows=GG_CATS.concat([['caso','Gasto de caso']]).map(([k,t])=>{ if(k==='ingreso')return ''; const v=porCat[k]||z(); if(!v.USD&&!v.ARS&&(k==='otros'||k==='caso'))return ''; return `<tr><td>${catBadge(k)}</td><td style="text-align:right">${money(v.ARS,"ARS")}</td><td style="text-align:right">${money(v.USD,"USD")}</td></tr>`; }).join("");
   // historial mes a mes (últimos 6 meses, abonado) — gastos del estudio + gastos de casos
   const meses=[]; { const [y,m]=FINMONTH.split("-").map(Number); for(let i=0;i<6;i++){ const d=new Date(y,(m-1)-i,1); meses.push(d.toISOString().slice(0,7)); } }
-  const histMes=meses.map(ym=>{ const t=z(); movimientosCajaMes(ym).forEach(m=>{ if(m.estado==="pendiente"||m.categoria==='ingreso')return; t[m.moneda]+=m.importe; }); return {ym,t}; });
+  const histMes=meses.map(ym=>{ const t=z(); movimientosCajaMes(ym).forEach(m=>{ if(m.estado==="pendiente"||m.categoria==='ingreso'||m.categoria==='cobro')return; t[m.moneda]+=m.importe; }); return {ym,t}; });
   const histRows=histMes.map(({ym,t})=>`<tr class="clickable" onclick="setFinMonth('${ym}')" ${ym===FINMONTH?'style="background:var(--grey-bg);font-weight:600"':''}><td>${finMonthName(ym)}</td><td style="text-align:right">${money(t.ARS,"ARS")}</td><td style="text-align:right">${money(t.USD,"USD")}</td></tr>`).join("");
 
   document.getElementById("view").innerHTML=`
-    <div class="pagehead"><div><h2>Caja operativa</h2><div class="sub">Gastos del estudio (sueldos, licencias, operativos, adelantos) + gastos abonados de cada caso</div></div>
+    <div class="pagehead"><div><h2>Caja operativa</h2><div class="sub">Cobros de los casos (adelantos, saldos y cuotas) + gastos del estudio (sueldos, licencias, operativos, adelantos) + gastos abonados de cada caso</div></div>
       <button class="btn btn-primary" onclick="gastoGenModal()">＋ Nuevo gasto / movimiento</button></div>
 
     <div class="grid g2" style="margin-bottom:16px">
@@ -5866,6 +5878,7 @@ async function generarCasoDesdePresupuesto(id){
     proximaAccion:"Enviar formulario al cliente", fechaLimite:"",
     cliente:{apellido:p.cliente.apellido||"", nombre:p.cliente.nombre||"", dni:"", cuit:"", nacionalidad:"Argentina", fechaNac:"", estadoCivil:"", conyuge:"", domicilio:"", localidad:"", provincia:"", cp:"", tel:"", email:""},
     cuenta:{plataforma:"Instagram", url:p.cuenta.url||"", handle:"", emailVinc:"", telVinc:"", tipo:"", pautaActiva:false, saldoRetenido:false, cuentasVinc:"", businessManager:false, metodoPago:false, campanasActivas:false, hackeo:false},
+    cuentasAfectadas:[], // limpiar las cuentas de ejemplo que trae demoCase() (evita que el form muestre datos de muestra)
     relato:{fechaSusp:"",mensaje:"",tipoSusp:"",apelo:false,recibioResp:false,hackeo:false,recupParcial:false,volvioSusp:false,perdida:"",original:"",sintesis:""},
     finanzas:{moneda:p.moneda||"USD", montoTotal:p.montoTotal||"", adelanto:adelanto||"", saldo:saldo||"", fechaAdelanto:"", fechaSaldo:"", devolucion:(p.reintegro&&p.reintegro.aplica)?p.reintegro.importe:"", estadoPago:"pendiente", medioPago:"", obs:"Generado desde presupuesto", ...finEstadosDefault(), hist:[]},
     pagos:[],

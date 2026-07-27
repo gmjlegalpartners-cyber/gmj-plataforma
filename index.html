@@ -441,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.16 · B65 baja de egress: se quitó el poll completo cada 2 min y el chequeo de cambios pasó a 20s; una pestaña abierta sin actividad casi no consume datos (evita exceder la cuota de Supabase)";
+const BUILD = "2026.07.16 · B66 Finanzas global: panel 'Compromisos con mediadores' (honorarios finales potenciales de casos en trámite + iniciales por pagar, N × monto), informativo (no descuenta); monto editable en Configuración";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -829,7 +829,7 @@ async function cloudLoad(){
   ]);
   const cfg = (st.data && st.data.data) || {};
   DB = {
-    config:{ estudio:cfg.estudio||{}, asistenteMail:cfg.asistenteMail||"", mediador:cfg.mediador||"", requeridos:cfg.requeridos||[], objeto:cfg.objeto||"", plantillas:cfg.plantillas||{}, etiquetas:(Array.isArray(cfg.etiquetas)&&cfg.etiquetas.length)?cfg.etiquetas:JSON.parse(JSON.stringify(ETIQUETAS_DEFAULT)), promptSintesis:cfg.promptSintesis||"", informeModeloGuia:cfg.informeModeloGuia||"", tycTexto:cfg.tycTexto||"" },
+    config:{ estudio:cfg.estudio||{}, asistenteMail:cfg.asistenteMail||"", mediador:cfg.mediador||"", requeridos:cfg.requeridos||[], objeto:cfg.objeto||"", plantillas:cfg.plantillas||{}, etiquetas:(Array.isArray(cfg.etiquetas)&&cfg.etiquetas.length)?cfg.etiquetas:JSON.parse(JSON.stringify(ETIQUETAS_DEFAULT)), promptSintesis:cfg.promptSintesis||"", informeModeloGuia:cfg.informeModeloGuia||"", tycTexto:cfg.tycTexto||"", honMediador:cfg.honMediador||50000 },
     abogados: cfg.abogados||[],
     usuarios: (profs.data||[]).map(p=>({id:p.id,nombre:p.nombre,rol:p.rol})),
     casos: [],
@@ -865,7 +865,7 @@ let _saveTimer=null;
 // Sólo escribimos la fila "settings" cuando la config realmente cambió en ESTA sesión.
 // Así, guardar un caso no pisa los modelos/config que editó otro usuario.
 let _cfgSig="";
-function cfgPayload(){ return { estudio:DB.config.estudio, asistenteMail:DB.config.asistenteMail, mediador:DB.config.mediador, requeridos:DB.config.requeridos, objeto:DB.config.objeto, plantillas:DB.config.plantillas||{}, etiquetas:DB.config.etiquetas||[], abogados:DB.abogados, counter:DB.counter, promptSintesis:DB.config.promptSintesis||"", informeModeloGuia:DB.config.informeModeloGuia||"", tycTexto:DB.config.tycTexto||"" }; }
+function cfgPayload(){ return { estudio:DB.config.estudio, asistenteMail:DB.config.asistenteMail, mediador:DB.config.mediador, requeridos:DB.config.requeridos, objeto:DB.config.objeto, plantillas:DB.config.plantillas||{}, etiquetas:DB.config.etiquetas||[], abogados:DB.abogados, counter:DB.counter, promptSintesis:DB.config.promptSintesis||"", informeModeloGuia:DB.config.informeModeloGuia||"", tycTexto:DB.config.tycTexto||"", honMediador:DB.config.honMediador||50000 }; }
 function cfgSignature(){ try{ return JSON.stringify(cfgPayload()); }catch(e){ return "x"+Date.now(); } }
 function cloudSave(){ if(!sb) return; if(_saveTimer) clearTimeout(_saveTimer); _saveTimer=setTimeout(doCloudSave,350); }
 async function doCloudSave(){
@@ -4822,6 +4822,51 @@ function resumenPorSocio(){
   (DB.liquidaciones||[]).forEach(l=>{ const m=l.moneda==='ARS'?'ARS':'USD'; (l.reparto||[]).forEach(r=>{ const k=r.socio_id||r.nombre; acc[k]=acc[k]||{nombre:r.nombre||userName(r.socio_id),USD:0,ARS:0}; acc[k][m]+=Number(r.monto||0); }); });
   return acc;
 }
+// ===== Compromisos con mediadores (INFORMATIVO — no se descuenta de la caja ni de la bolsa repartible) =====
+// - Honorarios FINALES potenciales: casos pendientes de resolución (en trámite) × honorario por caso.
+//   Solo se pagan si el caso sale favorable (los favorables ya pagados están registrados en cada caso).
+// - Honorarios INICIALES por pagar: casos donde ese ítem todavía no está abonado.
+// El monto por defecto sale de Configuración (honMediador, $50.000); si el caso tiene un importe propio
+// cargado en ese gasto, se respeta ese.
+function honMediadorDefault(){ return Number((DB.config&&DB.config.honMediador)||50000); }
+function gastoCasoRx(c,rx){ return (c.gastos||[]).find(g=>rx.test(g.nombre||"")); }
+function comprMediadores(){
+  const def=honMediadorDefault();
+  const feeDe=(g)=>{ const imp=Number((g&&g.importe)||0); return imp>0?imp:def; };
+  let finN=0, finTot=0, iniN=0, iniTot=0; const finCasos=[], iniCasos=[];
+  casosActivos().filter(c=>!casoEsHistorial(c)).forEach(c=>{
+    const f=c.finanzas||{};
+    if((f.estadoResultado||'en_tramite')==='en_tramite'){ const fee=feeDe(gastoCasoRx(c,/honorarios?\s+final/i)); finN++; finTot+=fee; finCasos.push({c,fee}); }
+    const gi=gastoCasoRx(c,/honorarios?\s+inicial/i);
+    if(gi && gi.estado!=='abonado' && gi.estado!=='no corresponde'){ const fee=feeDe(gi); iniN++; iniTot+=fee; iniCasos.push({c,fee}); }
+  });
+  return {def, finN, finTot, finCasos, iniN, iniTot, iniCasos};
+}
+function comprMediadoresHtml(){
+  const m=comprMediadores();
+  const line=(color,titulo,n,tot,onclick,nota)=>`<div class="driveitem" style="border-bottom:1px solid var(--line);align-items:center;gap:10px;cursor:pointer" onclick="${onclick}">
+    <div style="flex:1"><b style="color:var(--navy)">${titulo}</b>${nota?`<br><small style="color:var(--muted)">${nota}</small>`:''}</div>
+    <div style="text-align:right;white-space:nowrap"><b style="color:${color};font-size:15px">${money(tot,"ARS")}</b><br><small style="color:var(--muted)">${n} caso${n===1?'':'s'} × ${money(m.def,"ARS")}</small></div>
+    <div style="color:var(--muted)">›</div></div>`;
+  return `<div class="card" style="margin-top:8px;border-left:4px solid #7c5cbf"><div class="card-h"><h3>🧾 Compromisos con mediadores</h3><span class="badge b-grey">informativo</span></div>
+    <div class="card-b" style="padding:6px 8px">
+      ${line('#b07d1a','Honorarios finales (potenciales)', m.finN, m.finTot, "comprMediadorDetalle('fin')", 'casos pendientes de resolución · solo se pagan si salen favorables')}
+      ${line('#c0392b','Honorarios iniciales por pagar', m.iniN, m.iniTot, "comprMediadorDetalle('ini')", 'ítem todavía no marcado como abonado')}
+      <div class="hint" style="padding:8px 10px">Es <b>informativo</b>: <b>no</b> se descuenta de la caja disponible ni de la bolsa repartible. Sirve para tener presente cuánto podrías llegar a deberle a los mediadores. El monto por caso ($ ${Number(m.def).toLocaleString("es-AR")}) se edita en <b>Configuración</b>.</div>
+    </div></div>`;
+}
+function comprMediadorDetalle(tipo){
+  const m=comprMediadores();
+  const arr = tipo==='fin'?m.finCasos:m.iniCasos;
+  const titulo = tipo==='fin'?'Honorarios finales (potenciales)':'Honorarios iniciales por pagar';
+  const rows = arr.length? arr.map(({c,fee})=>`<tr class="clickable" onclick="closeModal();go('caso','${c.id}')"><td><b>${esc(clienteFull(c))}</b><br><small style="color:var(--muted)">${esc(c.id)}</small></td><td style="text-align:right">${money(fee,"ARS")}</td></tr>`).join("")
+    : `<tr><td colspan="2" class="empty">No hay casos en esta categoría</td></tr>`;
+  const tot = arr.reduce((s,x)=>s+x.fee,0);
+  modal({title:titulo, size:"sm", body:`
+    <div class="hint" style="margin:0 0 8px">${arr.length} caso(s) · total <b>${money(tot,"ARS")}</b>. Informativo, no se descuenta de la caja.</div>
+    <table><thead><tr><th>Caso</th><th style="text-align:right">Honorario</th></tr></thead><tbody>${rows}</tbody></table>`,
+    footer:`<button class="btn btn-primary" onclick="closeModal()">Cerrar</button>`});
+}
 function renderFinanzasGlobal(){
   setCrumb("Finanzas global"); topActions("");
   const a=calcFinanzasGlobal();
@@ -4964,6 +5009,7 @@ function renderFinanzasGlobal(){
     <div class="sec-title" style="font-weight:700;color:var(--navy);margin:14px 0 8px">⚖️ Liquidación entre socios</div>
     ${socioLiqCards}
     <div class="hint" style="margin:6px 0 10px">Los adelantos se cargan en <b>Caja operativa</b> → categoría “Adelanto entre socios”. Tocá cada socio para ver el detalle (fecha y concepto).</div>
+    ${comprMediadoresHtml()}
     <div class="alert alert-info"><span>💱</span><div>Si un caso se pactó en USD pero se cobró en pesos, esos pesos suman a la <b>caja en ARS</b> (efectivo real), no a la de dólares. Para pasar pesos a dólares usá <b>Cambios de divisa</b> con su tipo de cambio.</div></div>
     <div class="alert alert-warn"><span>⏸️</span><div>El monto <b>en stand by</b> es la <b>devolución pactada</b> de casos sin resolver: no es plata del estudio todavía. Si el caso termina favorable pasa a la caja; si termina negativo se devuelve. Por eso no se reparte ni se gasta hasta cerrar el caso.</div></div>
     <div class="card" style="margin-top:8px"><div class="card-h"><h3>¿Cómo se compone la caja disponible?</h3></div>
@@ -5146,6 +5192,7 @@ function renderConfig(){
         <div class="frow fr2">${inp("co_mail","Mail del estudio",E.mail)}${inp("co_dom","Domicilio",E.domicilio)}</div>
         ${inp("co_jur","Jurisdicción",E.jurisdiccion)}
         ${inp("co_med","Mediador por defecto",DB.config.mediador)}
+        <div class="field"><label>Honorarios del mediador por etapa (referencia)</label><input id="co_honmed" type="number" value="${esc((DB.config.honMediador||50000))}"><div class="hint">Monto por defecto de honorarios iniciales/finales del mediador. Se usa en <b>Finanzas global → Compromisos con mediadores</b> para los casos que no tengan un importe propio cargado.</div></div>
         <button class="btn btn-primary" onclick="saveConfig()">Guardar</button>
       </div></div>
       <div class="card"><div class="card-h"><h3>Objeto del reclamo (por defecto)</h3></div><div class="card-b">
@@ -5229,7 +5276,7 @@ function renderConfig(){
       </div></div>
     </div>`;
 }
-function saveConfig(){ const E=DB.config.estudio; E.nombre=val("co_nom"); E.repr=val("co_repr"); E.mail=val("co_mail"); E.domicilio=val("co_dom"); E.jurisdiccion=val("co_jur"); DB.config.mediador=val("co_med"); save(); toast("Configuración guardada"); }
+function saveConfig(){ const E=DB.config.estudio; E.nombre=val("co_nom"); E.repr=val("co_repr"); E.mail=val("co_mail"); E.domicilio=val("co_dom"); E.jurisdiccion=val("co_jur"); DB.config.mediador=val("co_med"); if(document.getElementById("co_honmed")) DB.config.honMediador=Number(val("co_honmed")||50000); save(); toast("Configuración guardada"); }
 /* ---- Etiquetas de expedientes (socios) ---- */
 function readEtiquetasFromUI(){
   const pool=etiquetasPool(); const out=[];

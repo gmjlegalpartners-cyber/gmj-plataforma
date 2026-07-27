@@ -441,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.16 · B64 caja operativa muestra los cobros de los casos (adelanto/saldo/cuota) en la moneda recibida con su TC; y fix: caso generado desde presupuesto ya no arrastra cuentas de ejemplo en el formulario";
+const BUILD = "2026.07.16 · B65 baja de egress: se quitó el poll completo cada 2 min y el chequeo de cambios pasó a 20s; una pestaña abierta sin actividad casi no consume datos (evita exceder la cuota de Supabase)";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -941,7 +941,9 @@ function bindRealtime(){
     .subscribe();
   startLivePolling();
   startLiveSync();
-  startCasosPolling();
+  // B65: se quitó el poll completo cada 2 min (startCasosPolling) para bajar el egress de Supabase.
+  // El chequeo de "firma" cada 20s ya recarga solo cuando algo cambió; los cambios en cambios/liquidaciones/
+  // gastos (poco frecuentes) se ven al navegar o con el botón ⟳ Actualizar.
 }
 // SINCRONIZACIÓN CASI EN VIVO SIN SATURAR (B61):
 // En vez de descargar todos los datos seguido, cada 8s pedimos una "firma" minúscula
@@ -950,7 +952,7 @@ function bindRealtime(){
 // se actualiza solo, en segundos, cuando otro socio toca algo — pero si nadie cambió nada, no se
 // baja ni un dato. Es liviano para la base (una consulta de agregados, no el JSON de los casos).
 let _sigLast=null, _sigTimer=null;
-function startLiveSync(){ if(_sigTimer||!CLOUD||!sb) return; _sigTimer=setInterval(pollSig, 8000); }
+function startLiveSync(){ if(_sigTimer||!CLOUD||!sb) return; _sigTimer=setInterval(pollSig, 20000); }
 async function pollSig(){
   if(document.hidden || !CLOUD || !sb) return;
   try{

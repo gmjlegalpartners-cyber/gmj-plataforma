@@ -441,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.16 · B66 Finanzas global: panel 'Compromisos con mediadores' (honorarios finales potenciales de casos en trámite + iniciales por pagar, N × monto), informativo (no descuenta); monto editable en Configuración";
+const BUILD = "2026.07.16 · B67 Caja operativa: filtros tipo check (categoría/estado/moneda) + búsqueda + exportar a Excel y PDF; y fix: etiquetas borradas de Config que quedaban pegadas a un caso ahora se pueden quitar";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -534,6 +534,8 @@ function casoChecks(c){
   };
 }
 let FINMONTH=new Date().toISOString().slice(0,7); // mes seleccionado en Caja operativa (YYYY-MM)
+// Filtro de la Caja operativa: off = elementos ocultados (categoría/estado/moneda); q = búsqueda de texto.
+let CAJAFILTER={ off:{}, q:"" };
 // Prompt de referencia para generar la "Síntesis del Caso" del informe a Meta (lo usa la IA en la versión real)
 const PROMPT_SINTESIS_DEFAULT=`ACTÚA COMO UN ABOGADO ESPECIALISTA EN DERECHO DIGITAL Y RECUPERACIÓN DE CUENTAS DE INSTAGRAM.
 Tu tarea consiste en transformar el relato de hechos proporcionado por el cliente en una "Síntesis del Caso" destinada a ser incorporada en un informe jurídico que será remitido a META durante un procedimiento extrajudicial de revisión de cuenta suspendida.
@@ -1743,11 +1745,17 @@ function tabResumen(c){
         <dt>Saldo</dt><dd>${money(c.finanzas.saldo,c.finanzas.moneda)}</dd>
         <dt>Devolución pactada</dt><dd>${money(c.finanzas.devolucion,c.finanzas.moneda)}</dd>
       </dl></div></div>` : "";
-  const chips=etiquetasPool().map(e=>{ const on=casoEtiquetas(c).includes(e.nombre); return `<button type="button" class="badge ${on?e.color:'b-grey'}" style="cursor:pointer;border:none;font-size:12px;padding:5px 10px;${on?'':'opacity:.45'}" onclick="toggleEtiqueta('${encodeURIComponent(e.nombre)}')">${on?'✓ ':''}${esc(e.nombre)}</button>`; }).join("");
+  const pool=etiquetasPool(); const poolNames=pool.map(e=>e.nombre);
+  const chips=pool.map(e=>{ const on=casoEtiquetas(c).includes(e.nombre); return `<button type="button" class="badge ${on?e.color:'b-grey'}" style="cursor:pointer;border:none;font-size:12px;padding:5px 10px;${on?'':'opacity:.45'}" onclick="toggleEtiqueta('${encodeURIComponent(e.nombre)}')">${on?'✓ ':''}${esc(e.nombre)}</button>`; }).join("");
+  // Etiquetas huérfanas: asignadas al caso pero ya no existen en Configuración (se borraron).
+  // Se muestran igual para poder quitarlas del caso.
+  const huerf=casoEtiquetas(c).filter(n=>!poolNames.includes(n));
+  const chipsHuerf=huerf.map(n=>`<button type="button" class="badge b-grey" style="cursor:pointer;border:1px dashed var(--red);color:var(--red);font-size:12px;padding:5px 10px" title="Etiqueta eliminada de Configuración — tocá para quitarla del caso" onclick="toggleEtiqueta('${encodeURIComponent(n)}')">${esc(n)} · quitar ✕</button>`).join("");
   return `<div class="grid g2">
     <div class="card" style="grid-column:1/-1"><div class="card-h"><h3>Etiquetas del expediente</h3>${isSocio()?`<button class="btn btn-ghost btn-sm" onclick="go('config')">⚙ Editar etiquetas</button>`:''}</div><div class="card-b">
       <div class="sub" style="margin-bottom:10px">Tocá para marcar o desmarcar. Podés poner varias a la vez.</div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px">${chips}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${chips}${chipsHuerf}</div>
+      ${huerf.length?`<div class="hint" style="margin-top:8px;color:var(--red)">⚠ Las etiquetas en rojo fueron eliminadas de Configuración pero seguían asignadas a este caso. Tocalas para quitarlas.</div>`:''}
     </div></div>
     <div class="card"><div class="card-h"><h3>Datos del caso</h3></div><div class="card-b">
       <dl class="kv">
@@ -5096,6 +5104,51 @@ function movimientosCajaMes(ym){
       estado:'abonado', medio:p.medio||'', socio:'', casoId:c.id, casoLabel:clienteFull(c)+' ('+c.id+')', sinFecha:!pm }); }); });
   return out;
 }
+/* ---- Filtro + exportación de la Caja operativa (B67) ---- */
+function cajaMovPasa(m){
+  const off=CAJAFILTER.off;
+  if(off["cat:"+(m.categoria||'otros')]) return false;
+  if(off["est:"+(m.estado||'abonado')]) return false;
+  if(off["mon:"+(m.moneda||'ARS')]) return false;
+  const q=(CAJAFILTER.q||"").trim().toLowerCase();
+  if(q){ const hay=((m.concepto||"")+" "+(m.casoLabel||"")+" "+(m.medio||"")).toLowerCase(); if(!hay.includes(q)) return false; }
+  return true;
+}
+function cajaFilterToggle(key){ CAJAFILTER.off[key]=!CAJAFILTER.off[key]; renderCajaOperativa(); }
+function cajaFilterSearch(v){ CAJAFILTER.q=v; renderCajaOperativa(); const el=document.getElementById('caja_q'); if(el){ el.focus(); el.setSelectionRange(el.value.length,el.value.length); } }
+function cajaFilterClear(){ CAJAFILTER={off:{},q:""}; renderCajaOperativa(); }
+function cajaCatLabel(k){ return k==='caso'?'Gasto de caso':k==='reembolso'?'Reembolso':k==='cobro'?'Cobro':(ggCatLabel(k)||k); }
+function cajaEquiv(m){ if(m.categoria!=='cobro'||!(m.tc>0)||!m.monedaCaso||m.moneda===m.monedaCaso) return ''; const eq=m.monedaCaso==='USD'?(m.moneda==='ARS'?m.importe/m.tc:m.importe):(m.moneda==='USD'?m.importe*m.tc:m.importe); return money(eq,m.monedaCaso); }
+function cajaExportData(){
+  const movs=movimientosCajaMes(FINMONTH).filter(cajaMovPasa).slice().sort((x,y)=>(y.fecha||"").localeCompare(x.fecha||""));
+  const rows=movs.map(m=>[ m.sinFecha?'sin fecha':fdate(m.fecha), cajaCatLabel(m.categoria||'otros'), m.concepto||'', m.casoLabel||'', Number(m.importe||0), m.moneda||'', m.tc?String(m.tc):'', cajaEquiv(m), m.estado||'', m.medio||'' ]);
+  return { head:["Fecha","Categoría","Concepto","Caso","Importe","Moneda","TC","Equivale","Estado","Medio"], rows, n:rows.length };
+}
+function exportCajaCSV(){
+  const {head,rows,n}=cajaExportData(); if(!n){ toast("No hay movimientos para exportar","err"); return; }
+  const cell=c=>{ const s=String(c==null?'':c); return /[";\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
+  const csv=[head].concat(rows).map(r=>r.map(cell).join(";")).join("\r\n");
+  const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8"});
+  const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download="Caja_operativa_"+FINMONTH+".csv"; document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); }, 1500);
+  toast("Exportado a Excel (CSV) ✓");
+}
+async function exportCajaPDF(){
+  const {head,rows,n}=cajaExportData(); if(!n){ toast("No hay movimientos para exportar","err"); return; }
+  toast("Generando PDF…");
+  try{ await ensureHtml2Pdf(); }catch(e){ toast("No se pudo cargar el generador de PDF","err"); return; }
+  const est=(DB.config.estudio&&DB.config.estudio.nombre)||"GMJ Legal Partners";
+  const filtrado = CAJAFILTER.q || Object.values(CAJAFILTER.off).some(Boolean);
+  const th=head.map(h=>`<th style="text-align:left;border-bottom:1.5px solid #444;padding:4px 6px;font-size:10px">${esc(h)}</th>`).join("");
+  const tr=rows.map(r=>`<tr>${r.map((c,i)=>`<td style="padding:3px 6px;font-size:9.5px;border-bottom:1px solid #eee;${i===4?'text-align:right;white-space:nowrap':''}">${esc(i===4?money(c,r[5]):c)}</td>`).join("")}</tr>`).join("");
+  const el=document.createElement("div");
+  el.style.cssText="padding:14px;font-family:Arial,Helvetica,sans-serif;color:#111;background:#fff";
+  el.innerHTML=`<h2 style="margin:0 0 2px;color:#16294d;font-size:16px">${esc(est)} — Caja operativa</h2><div style="color:#555;font-size:11px;margin-bottom:10px">Movimientos de ${esc(finMonthName(FINMONTH))} · ${n} registro(s)${filtrado?' · (vista filtrada)':''}</div>
+    <table style="width:100%;border-collapse:collapse"><thead><tr>${th}</tr></thead><tbody>${tr}</tbody></table>`;
+  const opt={ margin:8, filename:"Caja_operativa_"+FINMONTH+".pdf", image:{type:"jpeg",quality:.95}, html2canvas:{scale:2}, jsPDF:{unit:"mm",format:"a4",orientation:"landscape"}, pagebreak:{mode:["css","legacy"]} };
+  try{ await window.html2pdf().set(opt).from(el).save(); toast("PDF generado ✓"); }
+  catch(e){ console.error(e); toast("No se pudo generar el PDF","err"); }
+}
 function renderCajaOperativa(){
   setCrumb("Caja operativa"); topActions("");
   const a=calcFinanzasGlobal();
@@ -5113,7 +5166,25 @@ function renderCajaOperativa(){
   const tcNota=m=>{ if(m.categoria!=='cobro'||!(m.tc>0)||!m.monedaCaso||m.moneda===m.monedaCaso) return '';
     const eq = m.monedaCaso==='USD' ? (m.moneda==='ARS'? m.importe/m.tc : m.importe) : (m.moneda==='USD'? m.importe*m.tc : m.importe);
     return `<br><small style="color:var(--gold)">TC ${Number(m.tc).toLocaleString("es-AR")} · equivale ${money(eq,m.monedaCaso)}</small>`; };
-  const rows=movMes.length?movMes.slice().sort((x,y)=>(y.fecha||"").localeCompare(x.fecha||"")).map(m=>`
+  // ---- filtro (chips de categoría/estado/moneda + búsqueda) ----
+  const movFilt=movMes.filter(cajaMovPasa);
+  const cats=[...new Set(movMes.map(m=>m.categoria||'otros'))];
+  const estados=[...new Set(movMes.map(m=>m.estado||'abonado'))];
+  const monedas=[...new Set(movMes.map(m=>m.moneda||'ARS'))];
+  const anyFiltro = CAJAFILTER.q || Object.values(CAJAFILTER.off).some(Boolean);
+  const chip=(key,label)=>{ const off=!!CAJAFILTER.off[key]; return `<button type="button" class="badge ${off?'b-grey':'b-blue'}" style="cursor:pointer;border:none;padding:5px 10px;${off?'opacity:.5':''}" onclick="cajaFilterToggle('${key}')">${off?'':'✓ '}${esc(label)}</button>`; };
+  const filtroBar=`<div class="card" style="margin-bottom:14px"><div class="card-b" style="padding:12px 14px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><span style="font-size:12px;color:var(--muted);font-weight:700;min-width:70px">Categoría</span>${cats.map(k=>chip('cat:'+k,cajaCatLabel(k))).join('')}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px"><span style="font-size:12px;color:var(--muted);font-weight:700;min-width:70px">Estado</span>${estados.map(k=>chip('est:'+k,k)).join('')}<span style="font-size:12px;color:var(--muted);font-weight:700;margin-left:10px">Moneda</span>${monedas.map(k=>chip('mon:'+k,k)).join('')}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <div class="search" style="max-width:300px;flex:1"><span class="si">🔎</span><input id="caja_q" placeholder="Buscar concepto, caso o medio…" value="${esc(CAJAFILTER.q)}" oninput="cajaFilterSearch(this.value)"></div>
+        ${anyFiltro?`<button class="btn btn-ghost btn-sm" onclick="cajaFilterClear()">Limpiar</button>`:''}
+        <div style="flex:1;min-width:10px"></div>
+        <button class="btn btn-ghost btn-sm" onclick="exportCajaCSV()" title="Descargar en Excel">⬇ Excel</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportCajaPDF()" title="Descargar en PDF">⬇ PDF</button>
+      </div>
+    </div></div>`;
+  const rows=movFilt.length?movFilt.slice().sort((x,y)=>(y.fecha||"").localeCompare(x.fecha||"")).map(m=>`
     <tr class="clickable" onclick="${(m.source==='caso'||m.source==='pago'||m.source==='dev')?`go('caso','${m.casoId}')`:`gastoGenModal('${m.id}')`}">
       <td>${m.sinFecha?'<span style="color:var(--muted)">sin fecha</span>':fdate(m.fecha)}</td>
       <td>${catBadge(m.categoria||'otros')}${m.categoria==='adelanto_socio'&&m.socio?`<br><small style="color:var(--muted)">${esc(userName(m.socio))}</small>`:''}</td>
@@ -5121,7 +5192,7 @@ function renderCajaOperativa(){
       <td style="${(m.categoria==='cobro'||m.categoria==='ingreso')?'color:#1c7a40;font-weight:600':(m.categoria==='reembolso'?'color:#c0392b':'')}">${(m.categoria==='cobro'||m.categoria==='ingreso')?'+ ':''}${money(m.importe,m.moneda)}</td>
       <td><span class="badge ${m.estado==='abonado'?'b-green':'b-amber'}">${esc(m.estado||'—')}</span></td>
       <td>${esc(m.medio||'—')}</td>
-    </tr>`).join(""):`<tr><td colspan="6" class="empty">Sin movimientos en ${finMonthName(FINMONTH)}</td></tr>`;
+    </tr>`).join(""):`<tr><td colspan="6" class="empty">${movMes.length?'Ningún movimiento coincide con el filtro':'Sin movimientos en '+finMonthName(FINMONTH)}</td></tr>`;
   // desglose por categoría (solo abonado) — incluye gastos de casos
   const catRows=GG_CATS.concat([['caso','Gasto de caso']]).map(([k,t])=>{ if(k==='ingreso')return ''; const v=porCat[k]||z(); if(!v.USD&&!v.ARS&&(k==='otros'||k==='caso'))return ''; return `<tr><td>${catBadge(k)}</td><td style="text-align:right">${money(v.ARS,"ARS")}</td><td style="text-align:right">${money(v.USD,"USD")}</td></tr>`; }).join("");
   // historial mes a mes (últimos 6 meses, abonado) — gastos del estudio + gastos de casos
@@ -5152,8 +5223,10 @@ function renderCajaOperativa(){
       </div>
     </div></div>
 
+    ${filtroBar}
+
     <div class="grid" style="grid-template-columns:1.7fr 1fr;gap:16px;align-items:start">
-      <div class="card" style="overflow-x:auto"><div class="card-h"><h3>Movimientos de ${finMonthName(FINMONTH)}</h3><span class="badge b-grey">${movMes.length}</span></div>
+      <div class="card" style="overflow-x:auto"><div class="card-h"><h3>Movimientos de ${finMonthName(FINMONTH)}</h3><span class="badge b-grey">${movFilt.length}${anyFiltro?' de '+movMes.length:''}</span></div>
         <table><thead><tr><th>Fecha</th><th>Categoría</th><th>Concepto</th><th>Importe</th><th>Estado</th><th>Medio</th></tr></thead><tbody>${rows}</tbody></table></div>
       <div>
         <div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Por categoría (abonado)</h3></div>

@@ -441,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.16 · B68 audiencia/mediación: se agregó la opción de duración '20 min'";
+const BUILD = "2026.07.16 · B69 reembolso del stand by: se puede pagar en pesos (con TC) aunque el reintegro sea en USD; impacta la caja de pesos y libera los dólares retenidos de ese caso";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -4480,7 +4480,8 @@ function netLiquidableCaso(c){
   const devEnStandBy = dev>0 && f.estadoResultado!=='favorable' && !['realizada_dev','cancelada_dev'].includes(f.estadoDevolucion);
   // El stand by se respalda con lo cobrado del SALDO (2ª cuota); si fue pago único, con todo lo cobrado.
   const reservaCaso = devEnStandBy ? Math.min(dev, baseReservaStandBy(c)) : 0;
-  const devRealizada = f.estadoDevolucion==='realizada_dev'?dev:0;
+  // Si el reembolso se pagó en otra moneda (pesos), el dólar de este caso NO se gastó → no se descuenta de su neto en USD.
+  const devRealizada = (f.estadoDevolucion==='realizada_dev' && !(f.monedaDevolucion && f.monedaDevolucion!==f.moneda)) ? dev : 0;
   let gastosCaso=0; (c.gastos||[]).forEach(g=>{ if(g.estado==='abonado') gastosCaso+=gastoCostoEnCaso(g, f.moneda); });
   const liq=liquidacionesDe(c.id).reduce((s,l)=>s+(l.reparto||[]).reduce((ss,r)=>ss+Number(r.monto||0),0),0);
   return Math.max(cob - reservaCaso - devRealizada - gastosCaso - liq, 0);
@@ -4530,19 +4531,33 @@ async function standByCobradoConfirm(casoId){
 // Marca la devolución como realizada (devRealizada), que descuenta la caja bruta.
 function standByReembolsado(casoId){
   const c=DB.casos.find(x=>x.id===casoId); if(!c) return;
-  const f=c.finanzas||{}; const dev=Number(f.devolucion||0);
+  const f=c.finanzas||{}; const dev=Number(f.devolucion||0); const otra=f.moneda==='USD'?'ARS':'USD';
   modal({title:"Reembolso al cliente", size:"sm", body:`
-    <div class="alert alert-warn" style="margin-bottom:12px"><span>↩</span><div>Se le devolvió la plata a <b>${esc(clienteFull(c))}</b> (resultado no favorable).</div></div>
-    <p style="font-size:13.5px;color:var(--text);margin:0">La devolución de <b>${money(dev,f.moneda)}</b> se registra como <b>realizada</b>: sale del stand by y se <b>descuenta de la caja</b> del estudio.</p>`,
+    <div class="alert alert-warn" style="margin-bottom:12px"><span>↩</span><div>Se le devolvió la plata a <b>${esc(clienteFull(c))}</b> (resultado no favorable). Reintegro pactado: <b>${money(dev,f.moneda)}</b>.</div></div>
+    ${sel("sr_mon","Moneda en que devolviste",[f.moneda,otra],f.moneda)}
+    <div id="sr_tcbox" style="display:none">
+      <div class="frow fr2">${inp("sr_tc","Tipo de cambio (ARS por 1 USD)","","number")}<div class="field"><label>Devolviste</label><div id="sr_equiv" style="padding:9px 12px;border:1px solid var(--line2);border-radius:8px;background:var(--grey-bg);font-weight:600">—</div></div></div>
+      <div class="alert alert-info" style="margin-top:2px"><span>💡</span><div>Al devolver en pesos: sale de la <b>caja en pesos</b> y se <b>liberan los ${money(dev,f.moneda)}</b> retenidos de este caso (vuelven a tu caja de dólares, porque ya no hacen falta).</div></div>
+    </div>
+    ${inp("sr_fec","Fecha del reembolso",todayISO(),"date")}`,
     footer:`<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-danger" onclick="standByReembolsadoConfirm('${casoId}')">↩ Registrar reembolso</button>`});
+  const rec=()=>{ const mon=val("sr_mon"), box=document.getElementById("sr_tcbox"); if(!box)return;
+    if(mon!==f.moneda){ box.style.display="block"; const tc=Number(val("sr_tc")||0); let r="—"; if(tc>0){ r = f.moneda==='USD'? money(dev*tc,"ARS") : money(dev/tc,"USD"); } const el=document.getElementById("sr_equiv"); if(el)el.textContent=r; }
+    else box.style.display="none"; };
+  ["sr_mon","sr_tc"].forEach(id=>{ const el=document.getElementById(id); if(el){ el.addEventListener("input",rec); el.addEventListener("change",rec);} }); rec();
 }
 async function standByReembolsadoConfirm(casoId){
   const c=DB.casos.find(x=>x.id===casoId); if(!c){ closeModal(); return; }
-  const f=c.finanzas||(c.finanzas={}); const dev=Number(f.devolucion||0);
+  const f=c.finanzas||(c.finanzas={}); const dev=Number(f.devolucion||0); const mon=val("sr_mon"); const fec=val("sr_fec")||todayISO();
+  if(mon!==f.moneda){ const tc=Number(val("sr_tc")||0); if(!(tc>0)){ toast("Cargá el tipo de cambio para registrar el reembolso en "+mon,"err"); return; }
+    f.monedaDevolucion=mon; f.tcDevolucion=tc; f.importeDevolucion = f.moneda==='USD' ? dev*tc : dev/tc;
+  } else { f.monedaDevolucion=f.moneda; f.tcDevolucion=""; f.importeDevolucion=dev; }
   closeModal();
-  f.estadoDevolucion='realizada_dev'; f.fechaDevolucion=todayISO();
-  finLog(c,"Stand by resuelto: REEMBOLSADO (devolución realizada)",`se devolvió ${money(dev,f.moneda)} al cliente`);
-  await persistCaso(c); toast("Reembolso registrado ✓ · descontado de la caja"); standByRefresh();
+  f.estadoDevolucion='realizada_dev'; f.fechaDevolucion=fec;
+  const enOtra = f.monedaDevolucion!==f.moneda;
+  const det = enOtra ? `${money(f.importeDevolucion,f.monedaDevolucion)} · TC ${Number(f.tcDevolucion).toLocaleString("es-AR")} · reemplaza ${money(dev,f.moneda)} (liberados)` : money(dev,f.moneda);
+  finLog(c,"Stand by resuelto: REEMBOLSADO (devolución realizada)",`se devolvió ${det} al cliente`);
+  await persistCaso(c); toast(enOtra?"Reembolso en pesos registrado ✓ · dólares liberados":"Reembolso registrado ✓ · descontado de la caja"); standByRefresh();
 }
 // Fecha en que se realizó la devolución/reembolso al cliente (para ubicarlo en los movimientos del mes).
 function fechaReembolso(c){ const f=c.finanzas||{}; if(f.fechaDevolucion) return f.fechaDevolucion; const h=(f.hist||[]).find(x=>/reembols|devoluci[oó]n realizada/i.test(x.accion||'')); return h?(h.fecha||'').slice(0,10):''; }
@@ -4575,7 +4590,12 @@ function calcFinanzasGlobal(){
       if(devEnStandBy) a.reservaDev[m]+=reservaCaso;
       if(["pendiente_dev","parcial_dev"].includes(f.estadoDevolucion)) a.pendDev[m]+=dev;
     }
-    if(f.estadoDevolucion==="realizada_dev") a.devRealizada[m]+=dev;
+    if(f.estadoDevolucion==="realizada_dev"){
+      // Si el reembolso se pagó en OTRA moneda (ej. pactado USD, pagado en pesos): descuenta de la caja
+      // de ESA moneda, y los dólares retenidos se liberan solos (ya no cuenta en reservaDev).
+      if(f.monedaDevolucion && f.monedaDevolucion!==f.moneda) a.devRealizada[cur(f.monedaDevolucion)]+=Number(f.importeDevolucion||0);
+      else a.devRealizada[m]+=dev;
+    }
     (c.gastos||[]).forEach(g=>{ const gm=cur(g.moneda); const imp=Number(g.importe||0); if(!imp||g.estado==='no corresponde')return; if(g.estado==='abonado') a.gastosPag[gm]+=imp; else a.pendGasto[gm]+=imp; });
   });
   // gastos generales del estudio (no atados a un caso)
@@ -4946,7 +4966,7 @@ function renderFinanzasGlobal(){
   const movs=[];
   casosActivos().forEach(c=>{ (c.pagos||[]).forEach(p=>movs.push({fecha:p.fecha,tipo:"Cobro",detalle:clienteFull(c),monto:Number(p.importe||0),moneda:p.moneda,signo:1}));
     (c.gastos||[]).forEach(g=>{ if(g.estado==='abonado'&&Number(g.importe||0)) movs.push({fecha:g.fecha,tipo:"Gasto",detalle:g.nombre+" · "+clienteFull(c),monto:Number(g.importe||0),moneda:g.moneda,signo:-1}); });
-    const f=c.finanzas||{}; const dev=Number(f.devolucion||0); if(f.estadoDevolucion==='realizada_dev'&&dev>0) movs.push({fecha:fechaReembolso(c),tipo:"Reembolso",detalle:"Devolución al cliente · "+clienteFull(c),monto:dev,moneda:f.moneda,signo:-1}); });
+    const f=c.finanzas||{}; const dev=Number(f.devolucion||0); if(f.estadoDevolucion==='realizada_dev'&&dev>0){ const enOtra=f.monedaDevolucion&&f.monedaDevolucion!==f.moneda; const rm=enOtra?f.monedaDevolucion:f.moneda; const ri=enOtra?Number(f.importeDevolucion||0):dev; movs.push({fecha:fechaReembolso(c),tipo:"Reembolso",detalle:"Devolución al cliente · "+clienteFull(c)+(enOtra?` · TC ${Number(f.tcDevolucion).toLocaleString("es-AR")}`:''),monto:ri,moneda:rm==='USD'?'USD':'ARS',signo:-1}); } });
   (DB.cambios||[]).forEach(x=>movs.push({fecha:x.fecha,tipo:"Cambio",detalle:`${money(x.monto_origen,x.moneda_origen)} → ${money(x.monto_destino,x.moneda_destino)}${x.motivo?' · '+x.motivo:''}`,fx:true,signo:0}));
   (DB.liquidaciones||[]).forEach(l=>{ const caso=l.caso_id?DB.casos.find(c=>c.id===l.caso_id):null; movs.push({fecha:l.fecha,tipo:"Liquidación",detalle:`${caso?clienteFull(caso):'—'} · ${(l.reparto||[]).map(r=>r.nombre+' '+money(r.monto,l.moneda)).join(', ')}`,monto:(l.reparto||[]).reduce((s,r)=>s+Number(r.monto||0),0),moneda:l.moneda,signo:-1}); });
   (DB.gastosGen||[]).forEach(g=>{ if(g.estado==='pendiente'||!Number(g.importe||0))return; const esIngreso=g.categoria==='ingreso'; movs.push({fecha:g.fecha,tipo:esIngreso?"Ingreso":"Gasto",detalle:(g.concepto||(esIngreso?'Ingreso':'Gasto general'))+" · (general)",monto:Number(g.importe||0),moneda:g.moneda,signo:esIngreso?1:-1}); });
@@ -5093,7 +5113,8 @@ function movimientosCajaMes(ym){
   // Reembolsos al cliente (devolución realizada): salen de la caja, se muestran en el mes en que se hicieron.
   (DB.casos||[]).forEach(c=>{ const f=c.finanzas||{}; const dev=Number(f.devolucion||0); if(f.estadoDevolucion!=='realizada_dev'||dev<=0)return;
     const fr=fechaReembolso(c); const fm=(fr||"").slice(0,7); const enMes = fm ? (fm===ym) : (ym===curMonth); if(!enMes) return;
-    out.push({id:'dev-'+c.id,source:'dev',fecha:fr||'',categoria:'reembolso',concepto:'Reembolso al cliente',importe:dev,moneda:f.moneda==='USD'?'USD':'ARS',estado:'abonado',medio:'',socio:'',casoId:c.id,casoLabel:clienteFull(c)+' ('+c.id+')',sinFecha:!fm}); });
+    const enOtra=f.monedaDevolucion&&f.monedaDevolucion!==f.moneda; const rm=enOtra?f.monedaDevolucion:f.moneda; const ri=enOtra?Number(f.importeDevolucion||0):dev;
+    out.push({id:'dev-'+c.id,source:'dev',fecha:fr||'',categoria:'reembolso',concepto:'Reembolso al cliente'+(enOtra?` (pactado ${money(dev,f.moneda)})`:''),importe:ri,moneda:rm==='USD'?'USD':'ARS',tc:enOtra?Number(f.tcDevolucion||0):0,monedaCaso:f.moneda,estado:'abonado',medio:'',socio:'',casoId:c.id,casoLabel:clienteFull(c)+' ('+c.id+')',sinFecha:!fm}); });
   // COBROS de cada caso (ingresos): cada pago registrado —adelanto, saldo o cuota— desglosado,
   // en la moneda en que se recibió, con su TC si se cobró en otra moneda.
   (DB.casos||[]).forEach(c=>{ const f=c.finanzas||{}; (c.pagos||[]).forEach(p=>{ const imp=Number(p.importe||0); if(!imp)return;

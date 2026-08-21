@@ -441,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.16 · B69 reembolso del stand by: se puede pagar en pesos (con TC) aunque el reintegro sea en USD; impacta la caja de pesos y libera los dólares retenidos de ese caso";
+const BUILD = "2026.07.16 · B70 audiencia/mediación: se agregó la duración '15 min' (incluye también B69: reembolso del stand by pagable en pesos que libera los dólares retenidos)";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -2802,7 +2802,7 @@ function audEditForm(c,a){
   const isNew=a.id==="__new__";
   return `<div style="border:1.5px solid var(--primary);border-radius:10px;padding:16px;margin-bottom:12px;background:var(--grey-bg)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><b style="color:var(--navy)">${isNew?'Nueva audiencia':'Editando audiencia'}</b>${isNew?'':audBadge(a)}</div>
-    <div class="frow fr3">${inp("au_fec","Fecha",a.fecha||"","date")}${inp("au_hora","Hora",a.hora||"10:00","time")}${sel("au_dur","Duración",["20 min","30 min","60 min","90 min","120 min"],a.duracion||"60 min")}</div>
+    <div class="frow fr3">${inp("au_fec","Fecha",a.fecha||"","date")}${inp("au_hora","Hora",a.hora||"10:00","time")}${sel("au_dur","Duración",["15 min","20 min","30 min","60 min","90 min","120 min"],a.duracion||"60 min")}</div>
     <div class="frow fr2">${sel("au_mod","Modalidad",["Virtual","Presencial"],a.modalidad||"Virtual")}${inp("au_link","Link de reunión (si es virtual)",a.linkReunion||"")}</div>
     ${inp("au_lugar","Lugar (si es presencial)",a.lugar||"")}
     <div class="field"><label>Observaciones</label><textarea id="au_obs" rows="2">${esc(a.obs||"")}</textarea></div>

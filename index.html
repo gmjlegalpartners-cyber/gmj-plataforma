@@ -441,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.07.16 · B70 audiencia/mediación: se agregó la duración '15 min' (incluye también B69: reembolso del stand by pagable en pesos que libera los dólares retenidos)";
+const BUILD = "2026.09.07 · B71 mejoras panel: eliminar audiencia borra el evento en todas las agendas de Google + invitado fijo configurable; formulario clientes (URL instagram.com/usuario, aviso de que no se agrega después, CUIT opcional/extranjeros); descargar datos del caso + adjuntos en ZIP para el informe a Meta; minutas fechadas por caso; blindaje anti-pérdida de datos en cloudLoad (incluye B70 duración 15 min y B69 reembolso stand-by en pesos)";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -829,9 +829,22 @@ async function cloudLoad(){
     sb.from("liquidaciones").select("*").order("fecha",{ascending:false}),
     sb.from("gastos_generales").select("*").order("fecha",{ascending:false})
   ]);
+  // ── BLINDAJE ANTI-PÉRDIDA (B71) ────────────────────────────────────────────
+  // Si una query crítica falla por un error transitorio (red/DB), NO reemplazamos
+  // los datos ya cargados con vacío: conservamos lo que había y reintentamos.
+  // Esto evita el síntoma de "los casos desaparecen" hasta recargar Chrome.
+  const _crit=[st,profs,cs,fin];
+  const _fail=_crit.find(r=>r&&r.error);
+  const _yaHabia=(typeof DB==="object"&&DB&&Array.isArray(DB.casos)&&DB.casos.length>0);
+  if(_fail && _yaHabia){
+    console.warn("cloudLoad: error transitorio, conservo datos previos y reintento", _fail.error);
+    try{ toast("Conexión inestable — reintentando…","err"); }catch(e){}
+    setTimeout(()=>{ try{ cloudLoad(); }catch(e){} }, 4000);
+    return;
+  }
   const cfg = (st.data && st.data.data) || {};
   DB = {
-    config:{ estudio:cfg.estudio||{}, asistenteMail:cfg.asistenteMail||"", mediador:cfg.mediador||"", requeridos:cfg.requeridos||[], objeto:cfg.objeto||"", plantillas:cfg.plantillas||{}, etiquetas:(Array.isArray(cfg.etiquetas)&&cfg.etiquetas.length)?cfg.etiquetas:JSON.parse(JSON.stringify(ETIQUETAS_DEFAULT)), promptSintesis:cfg.promptSintesis||"", informeModeloGuia:cfg.informeModeloGuia||"", tycTexto:cfg.tycTexto||"", honMediador:cfg.honMediador||50000 },
+    config:{ estudio:cfg.estudio||{}, asistenteMail:cfg.asistenteMail||"", mediador:cfg.mediador||"", requeridos:cfg.requeridos||[], objeto:cfg.objeto||"", plantillas:cfg.plantillas||{}, etiquetas:(Array.isArray(cfg.etiquetas)&&cfg.etiquetas.length)?cfg.etiquetas:JSON.parse(JSON.stringify(ETIQUETAS_DEFAULT)), promptSintesis:cfg.promptSintesis||"", informeModeloGuia:cfg.informeModeloGuia||"", tycTexto:cfg.tycTexto||"", honMediador:cfg.honMediador||50000, calInvitados:(cfg.calInvitados!=null?cfg.calInvitados:"maria.gmele@gmj-abogados.com.ar") },
     abogados: cfg.abogados||[],
     usuarios: (profs.data||[]).map(p=>({id:p.id,nombre:p.nombre,rol:p.rol})),
     casos: [],
@@ -867,7 +880,7 @@ let _saveTimer=null;
 // Sólo escribimos la fila "settings" cuando la config realmente cambió en ESTA sesión.
 // Así, guardar un caso no pisa los modelos/config que editó otro usuario.
 let _cfgSig="";
-function cfgPayload(){ return { estudio:DB.config.estudio, asistenteMail:DB.config.asistenteMail, mediador:DB.config.mediador, requeridos:DB.config.requeridos, objeto:DB.config.objeto, plantillas:DB.config.plantillas||{}, etiquetas:DB.config.etiquetas||[], abogados:DB.abogados, counter:DB.counter, promptSintesis:DB.config.promptSintesis||"", informeModeloGuia:DB.config.informeModeloGuia||"", tycTexto:DB.config.tycTexto||"", honMediador:DB.config.honMediador||50000 }; }
+function cfgPayload(){ return { estudio:DB.config.estudio, asistenteMail:DB.config.asistenteMail, mediador:DB.config.mediador, requeridos:DB.config.requeridos, objeto:DB.config.objeto, plantillas:DB.config.plantillas||{}, etiquetas:DB.config.etiquetas||[], abogados:DB.abogados, counter:DB.counter, promptSintesis:DB.config.promptSintesis||"", informeModeloGuia:DB.config.informeModeloGuia||"", tycTexto:DB.config.tycTexto||"", honMediador:DB.config.honMediador||50000, calInvitados:(DB.config.calInvitados!=null?DB.config.calInvitados:"") }; }
 function cfgSignature(){ try{ return JSON.stringify(cfgPayload()); }catch(e){ return "x"+Date.now(); } }
 function cloudSave(){ if(!sb) return; if(_saveTimer) clearTimeout(_saveTimer); _saveTimer=setTimeout(doCloudSave,350); }
 async function doCloudSave(){
@@ -2116,6 +2129,99 @@ async function descargarPaqueteIA(){
     toast("✓ Paquete descargado — subilo a ChatGPT o Claude y pedile el informe");
   }catch(e){ toast("No se pudo generar el PDF: "+(e.message||e),"err"); }
 }
+/* ============================================================
+   DESCARGAR DATOS DEL CASO (B71) — .txt de cliente/cuenta/relato + adjuntos
+   en un ZIP, tomando las capturas desde Storage (case-files), sin entrar a Drive.
+   ============================================================ */
+function ensureJSZip(){
+  return new Promise((res,rej)=>{
+    if(window.JSZip) return res();
+    const s=document.createElement("script");
+    s.src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+    s.onload=()=>res(); s.onerror=()=>rej(new Error("No se pudo cargar el compresor ZIP"));
+    document.head.appendChild(s);
+  });
+}
+function _datosCasoTexto(c){
+  const cl=c.cliente||{}, cu=c.cuenta||{}, re=c.relato||{};
+  const S=v=>(v==null||v==="")?"—":String(v);
+  const SN=b=>b?"sí":"no";
+  const L=[];
+  L.push("GMJ LEGAL PARTNERS — DATOS DEL CASO (para el informe a Meta)");
+  L.push("Expediente: "+S(c.id)+"   ·   Cliente: "+S(clienteFull(c)));
+  L.push("Estado: "+S(c.estado)+"   ·   Generado: "+new Date().toLocaleString("es-AR"));
+  L.push("============================================================");
+  L.push("");
+  L.push("── CLIENTE ──────────────────────────────────────────────");
+  L.push("Apellido y nombre: "+S([cl.apellido,cl.nombre].filter(Boolean).join(", ")));
+  L.push("DNI: "+S(cl.dni)+"   ·   CUIT/CUIL: "+S(cl.cuit));
+  L.push("Nacionalidad: "+S(cl.nacionalidad)+"   ·   Fecha de nacimiento: "+S(cl.fechaNac));
+  L.push("Estado civil: "+S(cl.estadoCivil)+"   ·   Cónyuge: "+S(cl.conyuge));
+  L.push("Domicilio: "+S(cl.domicilio)+", "+S(cl.localidad)+", "+S(cl.provincia)+" (CP "+S(cl.cp)+")");
+  L.push("Teléfono: "+S(cl.tel)+"   ·   Email: "+S(cl.email));
+  L.push("");
+  L.push("── CUENTA PRINCIPAL ─────────────────────────────────────");
+  L.push("Plataforma: "+S(cu.plataforma));
+  L.push("URL: "+S(cu.url));
+  L.push("Usuario: "+S(cu.handle));
+  L.push("Email vinculado: "+S(cu.emailVinc)+"   ·   Teléfono vinculado: "+S(cu.telVinc));
+  L.push("Tipo de cuenta: "+S(cu.tipo));
+  L.push("Pauta activa: "+SN(cu.pautaActiva)+"   ·   Saldo retenido: "+SN(cu.saldoRetenido)+"   ·   Business Manager: "+SN(cu.businessManager)+"   ·   Campañas activas: "+SN(cu.campanasActivas));
+  const adic=(Array.isArray(c.cuentasAfectadas)?c.cuentasAfectadas:[]).filter(q=>q&&(q.url||q.emailVinc||q.handle));
+  if(adic.length){
+    L.push("");
+    L.push("   Otras cuentas afectadas (orden de prioridad):");
+    adic.forEach((q,i)=>L.push("   ("+(i+2)+") "+S(q.plataforma||"Instagram")+" · "+S(q.url)+" · "+S(q.handle)+" · "+S(q.emailVinc)));
+  }
+  L.push("");
+  L.push("── RELATO DE LOS HECHOS ─────────────────────────────────");
+  L.push("Fecha de suspensión: "+S(re.fechaSusp)+"   ·   Tipo: "+S(re.tipoSusp));
+  L.push("Mensaje recibido de Meta: "+S(re.mensaje));
+  L.push("¿Apeló?: "+SN(re.apelo)+"   ·   ¿Recibió respuesta?: "+SN(re.recibioResp)+"   ·   ¿Hubo hackeo?: "+SN(re.hackeo));
+  L.push("¿Recuperación parcial?: "+SN(re.recupParcial)+"   ·   ¿Volvió a suspenderse?: "+SN(re.volvioSusp));
+  L.push("Pérdidas: "+S(re.perdida));
+  L.push("");
+  L.push("Relato original del cliente:");
+  L.push(S(re.original));
+  L.push("");
+  L.push("Síntesis:");
+  L.push(S(re.sintesis));
+  L.push("");
+  L.push("── DOCUMENTACIÓN ADJUNTA ────────────────────────────────");
+  const adjs=(c.adjuntos||[]);
+  if(!adjs.length) L.push("(Sin documentación cargada.)");
+  adjs.forEach((a,i)=>L.push("("+(i+1)+") "+S(a.tipo)+" — "+S(a.desc)+(a.nombre?(" ["+a.nombre+"]"):"")+(a.respaldo?"   ✓ incluido en la carpeta /adjuntos de este ZIP":(a.link?("   (en Drive: "+a.link+")"):"   (archivo no disponible en el panel)"))));
+  return L.join("\n");
+}
+async function descargarDatosCaso(id){
+  const c=(id?(DB.casos||[]).find(x=>x.id===id):null)||CURRENT;
+  if(!c){ toast("Caso no encontrado","err"); return; }
+  toast("Preparando los datos del caso…");
+  try{
+    await ensureJSZip();
+    const zip=new JSZip();
+    const base="GMJ_"+(c.id||"caso")+"_"+(clienteFull(c)||"").replace(/[^\wáéíóúñ ]+/gi,"").replace(/\s+/g,"_").slice(0,50);
+    zip.file("datos_del_caso.txt", _datosCasoTexto(c));
+    const adjs=(c.adjuntos||[]).filter(a=>a&&a.respaldo);
+    let ok=0, fail=0;
+    if(adjs.length && CLOUD && typeof sb!=="undefined" && sb){
+      const folder=zip.folder("adjuntos"); const usados={};
+      for(const a of adjs){
+        try{
+          const { data, error }=await sb.storage.from("case-files").download(a.respaldo);
+          if(error||!data){ fail++; continue; }
+          let nom=(a.nombre||a.tipo||"adjunto").replace(/[\\/:*?"<>|]+/g,"_");
+          if(usados[nom]!=null){ const n=++usados[nom]; const p=nom.lastIndexOf("."); nom=(p>0?nom.slice(0,p)+"_"+n+nom.slice(p):nom+"_"+n); }
+          else usados[nom]=1;
+          folder.file(nom, data); ok++;
+        }catch(e){ fail++; }
+      }
+    }
+    const blob=await zip.generateAsync({type:"blob"});
+    const url=URL.createObjectURL(blob); const el=document.createElement("a"); el.href=url; el.download=base+".zip"; document.body.appendChild(el); el.click(); el.remove(); URL.revokeObjectURL(url);
+    toast("✓ Datos descargados"+(adjs.length?(" · "+ok+" adjunto/s"+(fail?(" · "+fail+" sin descargar"):"")):" (sin adjuntos guardados en el panel)"));
+  }catch(e){ toast("No se pudo generar el paquete: "+(e.message||e),"err"); }
+}
 /* ---- Opción SIN costo de API: copiar el prompt para pegar en ChatGPT/Claude web ---- */
 function copyText(t,msg){
   try{ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(t); } else { const ta=document.createElement("textarea"); ta.value=t; ta.style.position="fixed"; ta.style.left="-9999px"; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); } toast(msg||"Copiado ✓"); }
@@ -2413,7 +2519,15 @@ function tabDocs(c){
       <button class="btn btn-gold btn-sm" onclick="sendDocModal('${d.id}')">📤 Enviar</button>
       <select class="btn btn-ghost btn-sm" onchange="setDocEstado('${d.id}',this.value)" style="padding:5px"><option value="">estado…</option>${["borrador","enviado","firmado","final"].map(s=>`<option ${d.estado===s?'selected':''}>${s}</option>`).join("")}</select>
     </div></div>`).join(""):`<div class="empty">Todavía no se generaron documentos</div>`;
-  return `${constanciaFirmaHtml(c)}<div class="grid g3" style="margin-bottom:18px">${cards}</div>
+  return `${constanciaFirmaHtml(c)}
+    <div class="card" style="margin-bottom:18px;border:1px solid #bfdbfe">
+      <div class="card-b" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <div style="flex:1;min-width:200px"><div style="font-weight:700;color:var(--navy)">📥 Descargar datos del caso</div>
+          <div style="font-size:12.5px;color:var(--muted)">Un ZIP con los datos de <b>cliente</b>, <b>cuenta</b> y <b>relato</b> más las <b>capturas y documentación</b> que cargó el cliente, sin entrar a Drive. Para armar el informe a Meta.</div></div>
+        <button class="btn btn-primary" onclick="descargarDatosCaso('${c.id}')">⬇️ Descargar datos + adjuntos</button>
+      </div>
+    </div>
+    <div class="grid g3" style="margin-bottom:18px">${cards}</div>
     <div class="card"><div class="card-h"><h3>Historial de documentos generados</h3></div><div class="card-b">${hist}</div></div>`;
 }
 // Constancia de firma electrónica: expediente probatorio del consentimiento del cliente.
@@ -2821,6 +2935,12 @@ function cancelarEditAud(){ EDIT_AUD=null; renderTab(); }
 function readAudInto(a){ a.fecha=val("au_fec"); a.hora=val("au_hora"); a.duracion=val("au_dur"); a.modalidad=val("au_mod"); a.linkReunion=val("au_link"); a.lugar=val("au_lugar"); a.obs=val("au_obs"); return a; }
 function resolveAud(c,id){ if(id==="__new__"){ const a={id:uid("a")}; c.audiencias.push(a); return a; } return c.audiencias.find(x=>x.id===id); }
 function allInvitados(){ return DB.usuarios.map(u=>u.id); }
+// B71: correos fijos que se agregan como INVITADOS a cada evento de mediación (config).
+function calAttendeesFijos(){
+  const raw=(DB&&DB.config&&DB.config.calInvitados!=null)?DB.config.calInvitados:"maria.gmele@gmj-abogados.com.ar";
+  const arr=Array.isArray(raw)?raw:String(raw||"").split(/[,;\s]+/);
+  return arr.map(s=>String(s).trim()).filter(e=>/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e));
+}
 async function saveAud(id){
   const c=CURRENT; ensureAudiencias(c); const a=resolveAud(c,id); if(!a) return;
   readAudInto(a);
@@ -2829,7 +2949,23 @@ async function saveAud(id){
   await persistCaso(c); EDIT_AUD=null; toast("Audiencia guardada"); renderTab();
 }
 async function marcarAud(id){ const c=CURRENT; const a=c.audiencias.find(x=>x.id===id); if(!a)return; a.realizada=true; c.estado="Audiencia realizada"; logAction(c,"Audiencia marcada como realizada"); await persistCaso(c); toast("Marcada como realizada"); renderTab(); }
-async function eliminarAud(id){ if(!confirm("¿Eliminar esta audiencia? (no borra el evento ya creado en Google Calendar)"))return; const c=CURRENT; c.audiencias=c.audiencias.filter(x=>x.id!==id); logAction(c,"Audiencia eliminada"); await persistCaso(c); EDIT_AUD=null; toast("Audiencia eliminada"); renderTab(); }
+async function eliminarAud(id){
+  const c=CURRENT; const a=(c.audiencias||[]).find(x=>x.id===id);
+  const tieneEventos=a&&a.eventos&&Object.keys(a.eventos).length>0;
+  if(!confirm("¿Eliminar esta audiencia?"+(tieneEventos?" También se borrará el evento en las agendas de Google Calendar.":"")))return;
+  if(tieneEventos && CLOUD && typeof sb!=="undefined" && sb){
+    try{
+      toast("Eliminando de las agendas…");
+      const {data:{session}}=await sb.auth.getSession();
+      const r=await fetch(FUNCTIONS_URL+"/calendar-insert",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({delete:true, invitados:Object.keys(a.eventos), eventos:a.eventos})});
+      const j=await r.json(); const oks=((j&&j.results)||[]).filter(x=>x&&x.ok).length;
+      logAction(c,"Evento de audiencia eliminado de Google Calendar ("+oks+" agenda/s)");
+    }catch(e){ console.error(e); toast("No se pudo borrar en Google (se elimina igual del panel)","err"); }
+  }
+  c.audiencias=c.audiencias.filter(x=>x.id!==id);
+  logAction(c,"Audiencia eliminada");
+  await persistCaso(c); EDIT_AUD=null; toast("Audiencia eliminada"); renderTab();
+}
 async function crearEventoAud(id){
   const c=CURRENT; ensureAudiencias(c); const a=resolveAud(c,id); if(!a) return;
   readAudInto(a);
@@ -2849,7 +2985,7 @@ async function crearEventoAud(id){
   toast(yaTenia?"Actualizando en los calendarios…":"Cargando en los calendarios…");
   try{
     const {data:{session}}=await sb.auth.getSession();
-    const r=await fetch(FUNCTIONS_URL+"/calendar-insert",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({invitados:allInvitados(),title,startISO:iso(start),endISO:iso(end),details:det,location,eventos:a.eventos||{}})});
+    const r=await fetch(FUNCTIONS_URL+"/calendar-insert",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({invitados:allInvitados(),attendees:calAttendeesFijos(),title,startISO:iso(start),endISO:iso(end),details:det,location,eventos:a.eventos||{}})});
     const j=await r.json();
     if(j.error){ toast("Audiencia guardada, pero falló el calendario: "+j.error,"err"); renderTab(); return; }
     a.eventos=Object.assign(a.eventos||{}, j.eventos||{}); a.calCreado=true;
@@ -2881,7 +3017,7 @@ async function guardarAud(id){
   toast(yaTenia?"Guardando y actualizando en calendarios…":"Guardando y cargando en calendarios…");
   try{
     const {data:{session}}=await sb.auth.getSession();
-    const r=await fetch(FUNCTIONS_URL+"/calendar-insert",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({invitados:allInvitados(),title,startISO:iso(start),endISO:iso(end),details:det,location,eventos:a.eventos||{}})});
+    const r=await fetch(FUNCTIONS_URL+"/calendar-insert",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({invitados:allInvitados(),attendees:calAttendeesFijos(),title,startISO:iso(start),endISO:iso(end),details:det,location,eventos:a.eventos||{}})});
     const j=await r.json();
     if(j.error){ toast("Guardada en el panel, pero falló el calendario: "+j.error,"err"); renderTab(); return; }
     a.eventos=Object.assign(a.eventos||{}, j.eventos||{}); a.calCreado=true;
@@ -3276,11 +3412,51 @@ function tabHistorial(c){
   return `<div class="card"><div class="card-h"><h3>Historial del caso</h3></div><div class="card-b"><div class="timeline">${items}</div></div></div>`;
 }
 
-/* ---------- TAB: OBSERVACIONES ---------- */
+/* ---------- TAB: OBSERVACIONES + MINUTAS (B71) ---------- */
+function ensureMinutas(c){ if(!Array.isArray(c.minutas)) c.minutas=[]; return c.minutas; }
+function addMinuta(){
+  const c=CURRENT; ensureMinutas(c);
+  const texto=(val("min_txt")||"").trim();
+  const fecha=val("min_fec")||todayISO();
+  if(!texto){ toast("Escribí el contenido de la minuta","err"); return; }
+  const tipo=chkVal("min_aud")?"Post-audiencia":"Seguimiento";
+  c.minutas.push({id:uid("m"), fecha, texto, tipo, autor:(SESSION&&SESSION.nombre)||"", ts:new Date().toISOString()});
+  logAction(c,"Minuta agregada"+(tipo==="Post-audiencia"?" (post-audiencia)":"")+" — "+fdate(fecha));
+  save(); toast("Minuta agregada ✓"); renderCaso();
+}
+function delMinuta(id){
+  const c=CURRENT; if(!confirm("¿Eliminar esta minuta?")) return;
+  c.minutas=(c.minutas||[]).filter(m=>m.id!==id);
+  logAction(c,"Minuta eliminada"); save(); renderCaso();
+}
 function tabObs(c){
-  return `<div class="card"><div class="card-h"><h3>Observaciones internas</h3></div><div class="card-b">
-    <div class="field"><textarea id="obs_t" rows="8" placeholder="Notas internas del estudio (no visibles para el cliente)">${esc(c.observaciones)}</textarea></div>
-    <button class="btn btn-primary" onclick="CURRENT.observaciones=val('obs_t');save();toast('Observaciones guardadas')">Guardar</button>
+  ensureMinutas(c);
+  const mins=(c.minutas||[]).slice().sort((a,b)=>String((b.fecha||"")+(b.ts||"")).localeCompare(String((a.fecha||"")+(a.ts||""))));
+  const items=mins.length?mins.map(m=>`
+    <div class="tl-item">
+      <div class="d"></div>
+      <div style="flex:1">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:center">
+          <div><span class="badge ${m.tipo==='Post-audiencia'?'b-blue':'b-grey'}">${esc(m.tipo||'Seguimiento')}</span> <b>${esc(fdate(m.fecha))}</b> ${m.autor?`<small style="color:var(--muted)">· ${esc(m.autor)}</small>`:''}</div>
+          <button class="btn btn-ghost btn-sm" onclick="delMinuta('${m.id}')" title="Eliminar minuta">🗑</button>
+        </div>
+        <div style="white-space:pre-wrap;margin-top:4px;font-size:13.5px">${esc(m.texto)}</div>
+      </div>
+    </div>`).join(""):`<div class="empty">Todavía no hay minutas cargadas.</div>`;
+  return `
+  <div class="card" style="margin-bottom:18px"><div class="card-h"><h3>🗒️ Minutas e historia del caso</h3></div><div class="card-b">
+    <div class="alert alert-info"><span>ℹ️</span><div>Registrá acá la <b>historia del caso</b> y una <b>minuta después de cada audiencia</b>, para un seguimiento personalizado. Cada entrada queda fechada y con su autor.</div></div>
+    <div class="frow fr2">
+      <div class="field"><label>Fecha</label><input id="min_fec" type="date" value="${todayISO()}"></div>
+      <div class="field" style="display:flex;flex-direction:column;justify-content:flex-end"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:500"><input type="checkbox" id="min_aud"> Es minuta post-audiencia</label></div>
+    </div>
+    <div class="field"><textarea id="min_txt" rows="4" placeholder="Qué pasó, qué se resolvió, próximos pasos…"></textarea></div>
+    <button class="btn btn-primary" onclick="addMinuta()">＋ Agregar minuta</button>
+    <div class="timeline" style="margin-top:16px">${items}</div>
+  </div></div>
+  <div class="card"><div class="card-h"><h3>Observaciones internas (nota general)</h3></div><div class="card-b">
+    <div class="field"><textarea id="obs_t" rows="6" placeholder="Notas internas del estudio (no visibles para el cliente)">${esc(c.observaciones)}</textarea></div>
+    <button class="btn btn-primary" onclick="CURRENT.observaciones=val('obs_t');save();toast('Observaciones guardadas')">Guardar nota general</button>
   </div></div>`;
 }
 
@@ -4058,9 +4234,10 @@ function paintForm(token,c,submitFn){
       <div style="text-align:center;margin-bottom:24px"><div style="width:80px;height:94px;margin:0 auto 12px">${LOGO_FULL}</div>
         <h1 style="color:var(--navy);font-size:22px">Formulario de relevamiento</h1>
         <p style="color:var(--muted);font-size:13px">GMJ Legal Partners · Rehabilitación de cuentas digitales</p></div>
+      <div class="alert alert-warn" style="margin-bottom:16px"><span>⚠️</span><div><b>Importante:</b> completá el formulario con toda la información y documentación disponible. Lo que <b>no cargues ahora</b> no podrá agregarse después, así que revisá bien antes de enviar.</div></div>
       <div class="card"><div class="card-b">
         <div class="section-title">A. Cuenta principal afectada (la más importante a recuperar)</div>
-        <div class="frow fr2"><div class="field"><label>URL completa de la cuenta <span class="req">*</span></label><input id="cf_url" type="text" value="${esc(cu.url||'')}" placeholder=""><div class="hint">Obligatorio.</div></div>${selR("cf_plat","Plataforma",["Instagram","Facebook","Otra"],cu.plataforma||"Instagram")}</div>
+        <div class="frow fr2"><div class="field"><label>URL completa de la cuenta <span class="req">*</span></label><input id="cf_url" type="text" value="${esc(cu.url||'')}" placeholder="instagram.com/USUARIO"><div class="hint">Obligatorio. La URL es <b>instagram.com/USUARIO</b> (o <b>facebook.com/USUARIO</b>), reemplazando USUARIO por tu nombre de usuario.</div></div>${selR("cf_plat","Plataforma",["Instagram","Facebook","Otra"],cu.plataforma||"Instagram")}</div>
         <div class="frow fr2"><div class="field"><label>Cuenta (usuario con @) <span class="req">*</span></label><input id="cf_handle" type="text" value="${esc(cu.handle||'')}" placeholder=""><div class="hint">El nombre de usuario, siempre con arroba.</div></div>${inpR("cf_em","Email vinculado a la cuenta",cu.emailVinc)}</div>
         <div class="frow fr2">${inp("cf_tel","Teléfono vinculado",cu.telVinc)}${sel("cf_tipo","Tipo de cuenta",["",...TIPO_CUENTA],cu.tipo)}</div>
         <div class="frow fr2">${chk("cf_pauta","Tenía pauta publicitaria activa",cu.pautaActiva)}${chk("cf_saldo","Había saldo retenido / fondos de anuncios",cu.saldoRetenido)}</div>
@@ -4073,7 +4250,7 @@ function paintForm(token,c,submitFn){
 
         <div class="section-title">B. Datos del titular</div>
         <div class="frow fr2">${inpR("cf_ap","Apellido",cl.apellido)}${inpR("cf_no","Nombre",cl.nombre)}</div>
-        <div class="frow fr2">${inpR("cf_dni","DNI",cl.dni)}${inpR("cf_cuit","CUIT / CUIL",cl.cuit)}</div>
+        <div class="frow fr2">${inpR("cf_dni","DNI",cl.dni)}<div class="field"><label>CUIT / CUIL</label><input id="cf_cuit" type="text" value="${esc(cl.cuit||'')}"><div class="hint">Opcional. No corresponde para personas extranjeras; si no tenés, dejalo en blanco.</div></div></div>
         <div class="frow fr2">${inpR("cf_nac","Nacionalidad",cl.nacionalidad)}${inp("cf_fnac","Fecha de nacimiento",cl.fechaNac,"date")}</div>
         <div class="frow fr2">${sel("cf_ec","Estado civil",["","Soltero/a","Casado/a","Divorciado/a","Viudo/a","Unión convivencial"],cl.estadoCivil)}${inp("cf_con","Cónyuge (si corresponde)",cl.conyuge)}</div>
         ${inpR("cf_dom","Domicilio completo",cl.domicilio)}
@@ -5287,6 +5464,7 @@ function renderConfig(){
         ${inp("co_jur","Jurisdicción",E.jurisdiccion)}
         ${inp("co_med","Mediador por defecto",DB.config.mediador)}
         <div class="field"><label>Honorarios del mediador por etapa (referencia)</label><input id="co_honmed" type="number" value="${esc((DB.config.honMediador||50000))}"><div class="hint">Monto por defecto de honorarios iniciales/finales del mediador. Se usa en <b>Finanzas global → Compromisos con mediadores</b> para los casos que no tengan un importe propio cargado.</div></div>
+        <div class="field"><label>Invitados fijos a las audiencias (Google Calendar)</label><input id="co_calinv" type="text" value="${esc((DB.config.calInvitados!=null?DB.config.calInvitados:''))}" placeholder="mail1@dominio.com, mail2@dominio.com"><div class="hint">Estos correos se agregan como <b>invitados</b> a cada evento de mediación que se crea/actualiza en las agendas. Separá varios con coma.</div></div>
         <button class="btn btn-primary" onclick="saveConfig()">Guardar</button>
       </div></div>
       <div class="card"><div class="card-h"><h3>Objeto del reclamo (por defecto)</h3></div><div class="card-b">
@@ -5370,7 +5548,7 @@ function renderConfig(){
       </div></div>
     </div>`;
 }
-function saveConfig(){ const E=DB.config.estudio; E.nombre=val("co_nom"); E.repr=val("co_repr"); E.mail=val("co_mail"); E.domicilio=val("co_dom"); E.jurisdiccion=val("co_jur"); DB.config.mediador=val("co_med"); if(document.getElementById("co_honmed")) DB.config.honMediador=Number(val("co_honmed")||50000); save(); toast("Configuración guardada"); }
+function saveConfig(){ const E=DB.config.estudio; E.nombre=val("co_nom"); E.repr=val("co_repr"); E.mail=val("co_mail"); E.domicilio=val("co_dom"); E.jurisdiccion=val("co_jur"); DB.config.mediador=val("co_med"); if(document.getElementById("co_honmed")) DB.config.honMediador=Number(val("co_honmed")||50000); if(document.getElementById("co_calinv")) DB.config.calInvitados=val("co_calinv")||""; save(); toast("Configuración guardada"); }
 /* ---- Etiquetas de expedientes (socios) ---- */
 function readEtiquetasFromUI(){
   const pool=etiquetasPool(); const out=[];
@@ -5753,7 +5931,7 @@ function selR(id,label,opts,v){ return `<div class="field"><label>${esc(label)} 
 // Devuelve los campos obligatorios vacíos [[id,label],...]
 function formMissing(reqs){ const m=[]; for(const [id,lab] of reqs){ const el=document.getElementById(id); if(!el||!String(el.value||"").trim()) m.push([id,lab]); } return m; }
 function formFocusMissing(miss){ const msg="Faltan campos obligatorios: "+miss.map(x=>x[1]).join(", "); const box=document.getElementById("cf_formerr"); if(box){ box.innerHTML="<span>⚠</span><div>"+esc(msg)+"</div>"; box.style.display="flex"; } toast(msg,"err"); const el=document.getElementById(miss[0][0]); if(el){ el.focus(); el.scrollIntoView({behavior:"smooth",block:"center"}); el.style.outline="2px solid var(--red)"; setTimeout(()=>{el.style.outline="";},2500);} }
-const FORM_REQ=[["cf_url","URL de la cuenta"],["cf_handle","Cuenta (usuario con @)"],["cf_em","Email vinculado a la cuenta"],["cf_ap","Apellido"],["cf_no","Nombre"],["cf_dni","DNI"],["cf_cuit","CUIT / CUIL"],["cf_nac","Nacionalidad"],["cf_dom","Domicilio"],["cf_loc","Localidad"],["cf_prov","Provincia"],["cf_celular","Teléfono celular"],["cf_email","Email de contacto"],["cf_fs","Fecha de suspensión"],["cf_ts","Tipo de suspensión"],["cf_orig","Relato de los hechos"]];
+const FORM_REQ=[["cf_url","URL de la cuenta"],["cf_handle","Cuenta (usuario con @)"],["cf_em","Email vinculado a la cuenta"],["cf_ap","Apellido"],["cf_no","Nombre"],["cf_dni","DNI"],["cf_nac","Nacionalidad"],["cf_dom","Domicilio"],["cf_loc","Localidad"],["cf_prov","Provincia"],["cf_celular","Teléfono celular"],["cf_email","Email de contacto"],["cf_fs","Fecha de suspensión"],["cf_ts","Tipo de suspensión"],["cf_orig","Relato de los hechos"]];
 function chk(id,label,v){ return `<div class="check"><input type="checkbox" id="${id}" ${v?'checked':''}><label for="${id}" style="margin:0;font-weight:500">${esc(label)}</label></div>`; }
 function formCard(title, fields, onsave){
   return `<div class="card"><div class="card-h"><h3>${esc(title)}</h3></div><div class="card-b">

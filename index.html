@@ -2188,9 +2188,10 @@ function _datosCasoTexto(c){
   L.push(S(re.sintesis));
   L.push("");
   L.push("── DOCUMENTACIÓN ADJUNTA ────────────────────────────────");
+  L.push("Los archivos que cargó el cliente están en la carpeta /adjuntos de este ZIP.");
   const adjs=(c.adjuntos||[]);
-  if(!adjs.length) L.push("(Sin documentación cargada.)");
-  adjs.forEach((a,i)=>L.push("("+(i+1)+") "+S(a.tipo)+" — "+S(a.desc)+(a.nombre?(" ["+a.nombre+"]"):"")+(a.respaldo?"   ✓ incluido en la carpeta /adjuntos de este ZIP":(a.link?("   (en Drive: "+a.link+")"):"   (archivo no disponible en el panel)"))));
+  if(!adjs.length) L.push("(Sin documentación registrada.)");
+  adjs.forEach((a,i)=>L.push("("+(i+1)+") "+S(a.tipo)+" — "+S(a.desc)+(a.nombre?(" ["+a.nombre+"]"):"")));
   return L.join("\n");
 }
 async function descargarDatosCaso(id){
@@ -2202,24 +2203,41 @@ async function descargarDatosCaso(id){
     const zip=new JSZip();
     const base="GMJ_"+(c.id||"caso")+"_"+(clienteFull(c)||"").replace(/[^\wáéíóúñ ]+/gi,"").replace(/\s+/g,"_").slice(0,50);
     zip.file("datos_del_caso.txt", _datosCasoTexto(c));
-    const adjs=(c.adjuntos||[]).filter(a=>a&&a.respaldo);
+    // Reunir TODAS las rutas guardadas del caso en Storage (bucket case-files/<casoId>/...).
+    // Listamos la carpeta del caso — así bajamos TODO lo que subió el cliente aunque
+    // el registro del adjunto haya perdido su "respaldo" (uploads en paralelo).
     let ok=0, fail=0;
-    if(adjs.length && CLOUD && typeof sb!=="undefined" && sb){
-      const folder=zip.folder("adjuntos"); const usados={};
-      for(const a of adjs){
-        try{
-          const { data, error }=await sb.storage.from("case-files").download(a.respaldo);
-          if(error||!data){ fail++; continue; }
-          let nom=(a.nombre||a.tipo||"adjunto").replace(/[\\/:*?"<>|]+/g,"_");
-          if(usados[nom]!=null){ const n=++usados[nom]; const p=nom.lastIndexOf("."); nom=(p>0?nom.slice(0,p)+"_"+n+nom.slice(p):nom+"_"+n); }
-          else usados[nom]=1;
-          folder.file(nom, data); ok++;
-        }catch(e){ fail++; }
+    if(CLOUD && typeof sb!=="undefined" && sb){
+      const paths=new Set();
+      try{
+        let offset=0;
+        for(;;){
+          const { data:list, error }=await sb.storage.from("case-files").list(String(c.id), {limit:100, offset, sortBy:{column:"name",order:"asc"}});
+          if(error||!list||!list.length) break;
+          list.forEach(f=>{ if(f&&f.name&&f.id!==null) paths.add(String(c.id)+"/"+f.name); });
+          if(list.length<100) break; offset+=100;
+        }
+      }catch(e){ console.warn("list case-files",e); }
+      // sumar los respaldos referenciados en los adjuntos, por si alguno quedó fuera del listado
+      (c.adjuntos||[]).forEach(a=>{ if(a&&a.respaldo) paths.add(a.respaldo); });
+      const arr=Array.from(paths);
+      if(arr.length){
+        const folder=zip.folder("adjuntos"); const usados={};
+        for(const p of arr){
+          try{
+            const { data, error }=await sb.storage.from("case-files").download(p);
+            if(error||!data){ fail++; continue; }
+            let nom=(p.split("/").pop()||"adjunto").replace(/^\d+_/,"").replace(/[\\/:*?"<>|]+/g,"_")||"adjunto";
+            if(usados[nom]!=null){ const n=++usados[nom]; const q=nom.lastIndexOf("."); nom=(q>0?nom.slice(0,q)+"_"+n+nom.slice(q):nom+"_"+n); }
+            else usados[nom]=1;
+            folder.file(nom, data); ok++;
+          }catch(e){ fail++; }
+        }
       }
     }
     const blob=await zip.generateAsync({type:"blob"});
     const url=URL.createObjectURL(blob); const el=document.createElement("a"); el.href=url; el.download=base+".zip"; document.body.appendChild(el); el.click(); el.remove(); URL.revokeObjectURL(url);
-    toast("✓ Datos descargados"+(adjs.length?(" · "+ok+" adjunto/s"+(fail?(" · "+fail+" sin descargar"):"")):" (sin adjuntos guardados en el panel)"));
+    toast("✓ Datos descargados"+(ok?(" · "+ok+" archivo/s"+(fail?(" · "+fail+" con error"):"")):(fail?" · adjuntos con error":" (sin archivos guardados en el panel)")));
   }catch(e){ toast("No se pudo generar el paquete: "+(e.message||e),"err"); }
 }
 /* ---- Opción SIN costo de API: copiar el prompt para pegar en ChatGPT/Claude web ---- */
@@ -3446,10 +3464,8 @@ function tabObs(c){
   return `
   <div class="card" style="margin-bottom:18px"><div class="card-h"><h3>🗒️ Minutas e historia del caso</h3></div><div class="card-b">
     <div class="alert alert-info"><span>ℹ️</span><div>Registrá acá la <b>historia del caso</b> y una <b>minuta después de cada audiencia</b>, para un seguimiento personalizado. Cada entrada queda fechada y con su autor.</div></div>
-    <div class="frow fr2">
-      <div class="field"><label>Fecha</label><input id="min_fec" type="date" value="${todayISO()}"></div>
-      <div class="field" style="display:flex;flex-direction:column;justify-content:flex-end"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:500"><input type="checkbox" id="min_aud"> Es minuta post-audiencia</label></div>
-    </div>
+    <div class="field" style="max-width:220px"><label>Fecha</label><input id="min_fec" type="date" value="${todayISO()}"></div>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:2px 0 12px;font-size:13.5px"><input type="checkbox" id="min_aud" style="width:16px;height:16px;margin:0;flex:none"> Marcar como <b>minuta post-audiencia</b></label>
     <div class="field"><textarea id="min_txt" rows="4" placeholder="Qué pasó, qué se resolvió, próximos pasos…"></textarea></div>
     <button class="btn btn-primary" onclick="addMinuta()">＋ Agregar minuta</button>
     <div class="timeline" style="margin-top:16px">${items}</div>

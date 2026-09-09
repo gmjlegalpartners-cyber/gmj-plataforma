@@ -441,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.09.07 · B71 mejoras panel: eliminar audiencia borra el evento en todas las agendas de Google + invitado fijo configurable; formulario clientes (URL instagram.com/usuario, aviso de que no se agrega después, CUIT opcional/extranjeros); descargar datos del caso + adjuntos en ZIP para el informe a Meta; minutas fechadas por caso; blindaje anti-pérdida de datos en cloudLoad (incluye B70 duración 15 min y B69 reembolso stand-by en pesos)";
+const BUILD = "2026.09.09 · B72 rendimiento: la carga inicial ya no baja el HTML pesado de los documentos (los trae al abrir cada caso). Baja el peso de 31MB a ~5MB, acelera la carga y reduce el egress; los documentos se conservan intactos (incluye B71: calendario/formulario/descarga de datos/minutas y B70/B69)";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -821,7 +821,7 @@ async function cloudLoad(){
   const [st, profs, cs, fin, tk, nt, cd, lq, gg] = await Promise.all([
     sb.from("settings").select("data").eq("id",1).maybeSingle(),
     sb.from("profiles").select("id,nombre,rol"),
-    sb.from("casos").select("id,data,form_token"),
+    sb.rpc("gmj_casos_light"),
     sb.from("case_finance").select("*"),
     sb.from("tareas").select("*"),
     sb.from("notificaciones").select("*").order("created_at",{ascending:false}).limit(50),
@@ -912,6 +912,17 @@ function protegerDatosCliente(local, db){
   ['adjuntos','cuentasAfectadas','docs'].forEach(k=>{
     if(Array.isArray(db[k]) && db[k].length && (!Array.isArray(local[k]) || local[k].length===0)) local[k]=db[k];
   });
+  // B72: la carga liviana omite el html pesado de los documentos. Al guardar, si un
+  // documento local no trae html (o vino vacío), lo restauramos desde la nube por id,
+  // para nunca pisar/perder el documento generado.
+  if(Array.isArray(local.docs) && Array.isArray(db.docs)){
+    local.docs.forEach(ld=>{
+      if(ld && (ld.html==null || ld.html==="")){
+        const dd=db.docs.find(x=>x && x.id===ld.id);
+        if(dd && dd.html){ ld.html=dd.html; }
+      }
+    });
+  }
   if(db.formCompletado && !local.formCompletado){ local.formCompletado=true; if(db.formCompletadoFecha)local.formCompletadoFecha=db.formCompletadoFecha; }
   if(db.drive && db.drive.link && (!local.drive || !local.drive.link)){ local.drive=Object.assign({},local.drive,{link:db.drive.link, creada:true}); }
 }
@@ -1682,6 +1693,15 @@ async function createCase(){
    ============================================================ */
 function renderCaso(){
   const c=CURRENT; if(!c){ go("casos"); return; }
+  // Carga diferida (B72): la lista trae los documentos SIN el html pesado (para acelerar).
+  // Al abrir el caso, traemos los documentos completos (con html) una sola vez.
+  if(CLOUD && sb && !c._docsFull && !c._docsLoading){
+    c._docsLoading=true;
+    sb.rpc('gmj_caso_docs',{p_id:c.id}).then(r=>{
+      c._docsLoading=false;
+      if(!r.error && Array.isArray(r.data)){ c.docs=r.data; c._docsFull=true; if(CURRENT===c) renderCaso(); }
+    }).catch(()=>{ c._docsLoading=false; });
+  }
   setCrumb(clienteFull(c), "Casos /");
   topActions(`<button class="btn btn-ghost btn-sm" onclick="go('casos')">← Volver</button>`);
   let tabs=[
@@ -2455,6 +2475,7 @@ async function autoSyncDrive(c){
 // Guarda un documento generado (PDF) en la carpeta de Drive del caso (usa la acción upload de drive-sync).
 async function guardarDocEnDrive(d, silent){
   if(!CLOUD||!sb){ if(!silent)toast("Solo en la versión nube","err"); return; }
+  if(d && (d.html==null||d.html==="") && d.id){ await ensureDocsCargados(); const fresh=((CURRENT&&CURRENT.docs)||[]).find(x=>x.id===d.id); if(fresh) d=fresh; }
   try{
     if(!silent) toast("Guardando el documento en Drive…");
     const nombre=docTitle(d.tipo).replace(/[ /]+/g,"_")+"_v"+(d.version||1)+"_"+clienteFull(CURRENT).replace(/[ ,]+/g,"_")+".pdf";
@@ -2597,7 +2618,14 @@ const DOC_MSG={
   informe:c=>`A quien corresponda de META PLATFORMS, INC.: adjuntamos el informe de solicitud de revisión y rehabilitación de las cuentas del titular ${clienteFull(c)}, junto con la documentación respaldatoria. Solicitamos una revisión humana e integral del caso. Quedamos a disposición para aportar información adicional.`
 };
 function docLink(c){ return c.drive.link || ""; }
-function sendDocModal(id){
+// B72: garantiza que los documentos completos (con html) del caso actual estén cargados
+// antes de ver / descargar / enviar (la lista los trae sin html para acelerar).
+async function ensureDocsCargados(){
+  const c=CURRENT; if(!c||!CLOUD||!sb||c._docsFull) return;
+  try{ const r=await sb.rpc('gmj_caso_docs',{p_id:c.id}); if(!r.error && Array.isArray(r.data)){ c.docs=r.data; c._docsFull=true; } }catch(e){ console.warn("ensureDocsCargados",e); }
+}
+async function sendDocModal(id){
+  await ensureDocsCargados();
   const c=CURRENT, d=c.docs.find(x=>x.id===id);
   const base=DOC_MSG[d.tipo]?DOC_MSG[d.tipo](c):("Hola, te compartimos el documento: "+docTitle(d.tipo)+".");
   const full=base+"\n\nTe adjunto el "+docTitle(d.tipo).toLowerCase()+" en PDF.";
@@ -2800,6 +2828,7 @@ async function docToPdfBase64(d){
   return _renderDocPdf(d,"b64","doc");
 }
 async function sendDocVia(id,via){
+  await ensureDocsCargados();
   const c=CURRENT, d=c.docs.find(x=>x.id===id);
   const msg=val("sd_msg"); const to=val("sd_to").trim();
   const filename=docTitle(d.tipo).replace(/ /g,"_")+"_"+clienteFull(c).replace(/[ ,]+/g,"_");
@@ -3556,8 +3585,10 @@ function buildDocMhtml(html, css){
   mht+="--"+boundary+"--\r\n";
   return mht;
 }
-function downloadDoc(id, fmt){
+async function downloadDoc(id, fmt){
+  await ensureDocsCargados();
   const c=CURRENT; const d=c.docs.find(x=>x.id===id);
+  if(!d){ toast("Documento no encontrado","err"); return; }
   const filename = docTitle(d.tipo).replace(/ /g,"_")+"_"+clienteFull(c).replace(/[ ,]+/g,"_")+"_v"+d.version;
   const css=docExportCSS(d.tipo);
   if(fmt==="word"){

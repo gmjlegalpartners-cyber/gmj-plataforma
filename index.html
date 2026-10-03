@@ -441,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.10.03 · B75 botón 'Descargar TODO del cliente' arriba de cada caso (a un clic desde cualquier solapa): baja un ZIP con un .doc prolijo de TODOS los datos del formulario (cliente, cuentas afectadas, relato, etc.) + un .txt para IA + TODOS los archivos del cliente. · B74 subida de archivos del cliente CONFIABLE: los adjuntos se suben uno por uno con 3 reintentos (antes iban en paralelo y muchos se perdían), con progreso visible y aviso claro si alguno falla. Soluciona la pérdida de archivos del formulario. · B73 sincronización en vivo optimizada: los cambios de otros usuarios (casos nuevos, agenda, pagos) se ven en vivo, incluso dentro de un caso, trayendo SOLO lo que cambió (menos egress, no más). Además, al salir de un caso volvés al mismo lugar de la lista (no salta al tope). Incluye B72 (carga liviana de documentos) y B71/B70/B69";
+const BUILD = "2026.10.03 · B75";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;

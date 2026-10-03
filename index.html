@@ -441,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.09.21 · B73 sincronización en vivo optimizada: los cambios de otros usuarios (casos nuevos, agenda, pagos) se ven en vivo, incluso dentro de un caso, trayendo SOLO lo que cambió (menos egress, no más). Además, al salir de un caso volvés al mismo lugar de la lista (no salta al tope). Incluye B72 (carga liviana de documentos) y B71/B70/B69";
+const BUILD = "2026.10.03 · B74 subida de archivos del cliente CONFIABLE: los adjuntos se suben uno por uno con 3 reintentos (antes iban en paralelo y muchos se perdían), con progreso visible y aviso claro si alguno falla. Soluciona la pérdida de archivos del formulario. · B73 sincronización en vivo optimizada: los cambios de otros usuarios (casos nuevos, agenda, pagos) se ven en vivo, incluso dentro de un caso, trayendo SOLO lo que cambió (menos egress, no más). Además, al salir de un caso volvés al mismo lugar de la lista (no salta al tope). Incluye B72 (carga liviana de documentos) y B71/B70/B69";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -4733,7 +4733,7 @@ async function submitClientFormCloud(token){
   const casoCloud=(DB.casos||[]).find(x=>x.formToken===token)||{};
   const autoDocs = casoCloud.autoDocs!==false;
   if(autoDocs){ const errFirma=validarFirma(); if(errFirma){ toast(errFirma,"err"); return; } }
-  const subeDrive=async(tipo,nombre,b64)=>{ try{ const rr=await fetch(FUNCTIONS_URL+"/drive-sync",{method:"POST",headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({formToken:token,action:"upload",tipo,nombre,mime:"application/pdf",base64:b64})}); const jj=await rr.json().catch(()=>({})); return (jj&&(jj.link||jj.respaldo))||""; }catch(e){ console.error("subeDrive",tipo,e); return ""; } };
+  const subeDrive=async(tipo,nombre,b64)=>{ for(let i=0;i<3;i++){ try{ const rr=await fetch(FUNCTIONS_URL+"/drive-sync",{method:"POST",headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({formToken:token,action:"upload",tipo,nombre,mime:"application/pdf",base64:b64})}); const jj=await rr.json().catch(()=>({})); const ref=(jj&&(jj.link||jj.respaldo))||""; if(ref) return ref; }catch(e){ console.error("subeDrive",tipo,e); } await new Promise(r=>setTimeout(r,600*(i+1))); } return ""; };
   try{
     // ---------- Autogeneración de contrato + poder con firma electrónica ----------
     // IMPORTANTE (fix): capturar la firma y armar el caso con los datos del formulario ANTES de
@@ -4761,21 +4761,40 @@ async function submitClientFormCloud(token){
     const r=await fetch(FUNCTIONS_URL+"/public-form",{method:"POST",headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({token,cliente,cuenta,cuentasAfectadas,relato,adjuntos,consent,docs:docsPayload})});
     const j=await r.json();
     if(!j.ok){ toast("No se pudo enviar el formulario","err"); return; }
-    // ---------- Subir los archivos del cliente a Drive EN PARALELO (antes era uno por uno) ----------
+    // ---------- Subir los archivos del cliente: UNO POR UNO con REINTENTOS (B74) ----------
+    // Antes se subían en paralelo (todos de golpe): bajo esa ráfaga muchos fallaban y se
+    // PERDÍAN (ni Drive ni respaldo). Secuencial + 3 reintentos c/u asegura que cada archivo
+    // quede guardado, y evita que las escrituras en paralelo se pisen el registro del adjunto.
     const subeArchivo=async(job)=>{ try{ const b64=await fileToB64(job.file); const rr=await fetch(FUNCTIONS_URL+"/drive-sync",{method:"POST",headers:{"Content-Type":"application/json","apikey":SUPABASE_ANON_KEY},body:JSON.stringify({formToken:token,action:"upload",tipo:job.tipo,nombre:job.file.name,mime:job.file.type||"application/octet-stream",base64:b64})}); const jj=await rr.json().catch(()=>({})); return (rr.ok && !jj.error); }catch(e){ console.error("upload",job.tipo,e); return false; } };
-    let okCount=0;
+    let okCount=0; const fallidos=[];
     if(jobs.length){
-      let arr;
-      if(autoDocs){ arr=await Promise.allSettled(jobs.map(subeArchivo)); }  // la carpeta ya existe (contrato subido) -> todo en paralelo
-      else { const f=await subeArchivo(jobs[0]); const rest=await Promise.allSettled(jobs.slice(1).map(subeArchivo)); arr=[{status:"fulfilled",value:f}].concat(rest); } // 1º crea la carpeta, el resto en paralelo
-      okCount=arr.filter(x=>x.status==="fulfilled" && x.value).length;
+      const spin=(hechos)=>`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--grey-bg)"><div style="text-align:center;color:#64748b"><div style="font-size:32px">⏳</div><p style="margin-top:10px">Subiendo tus archivos… <b>${hechos}</b> de <b>${jobs.length}</b><br><span style="font-size:12px">No cierres esta ventana hasta que termine.</span></p></div></div>`;
+      try{ document.getElementById("formRoot").innerHTML=spin(0); }catch(e){}
+      for(let k=0;k<jobs.length;k++){
+        const job=jobs[k]; let ok=false;
+        for(let intento=0; intento<3 && !ok; intento++){ ok=await subeArchivo(job); if(!ok) await new Promise(r=>setTimeout(r, 700*(intento+1))); }
+        if(ok) okCount++; else fallidos.push((job.file&&job.file.name)||job.tipo);
+        try{ document.getElementById("formRoot").innerHTML=spin(k+1); }catch(e){}
+      }
     }
-    // Pantalla final: si autogeneró, ofrece descargar las copias firmadas.
-    if(autoDocs){ formSuccessConDocs(); }
-    else if(jobs.length>0 && okCount===0){
-      document.getElementById("formRoot").innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:24px"><div class="card" style="max-width:480px;text-align:center"><div class="card-b" style="padding:42px"><div style="font-size:42px">⚠️</div><h2 style="color:var(--navy);margin:12px 0 8px">Recibimos tus datos</h2><p style="color:var(--muted)">Tus datos se cargaron correctamente, pero tuvimos un inconveniente al guardar los archivos adjuntos. El estudio se va a contactar con vos para completarlos. ¡Gracias!</p></div></div></div>`;
-    } else { formSuccess(); }
+    // Pantalla final.
+    if(fallidos.length>0 && okCount===0 && !autoDocs){
+      document.getElementById("formRoot").innerHTML=`<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:24px"><div class="card" style="max-width:480px;text-align:center"><div class="card-b" style="padding:42px"><div style="font-size:42px">⚠️</div><h2 style="color:var(--navy);margin:12px 0 8px">Recibimos tus datos</h2><p style="color:var(--muted)">Tus datos se cargaron, pero <b>no pudimos guardar los archivos adjuntos</b>. El estudio se va a contactar con vos para completarlos. ¡Gracias!</p></div></div></div>`;
+    } else if(autoDocs){ formSuccessConDocs(); }
+    else { formSuccess(); }
+    // Aviso visible si algún archivo no se pudo subir (sobre cualquier pantalla de éxito).
+    if(fallidos.length>0){ try{ _avisoAdjuntosFallidos(fallidos); }catch(e){} }
   }catch(e){ console.error(e); toast("Error al enviar","err"); }
+}
+// Banner visible cuando algún adjunto no pudo subirse (para que el cliente reenvíe y el estudio se entere).
+function _avisoAdjuntosFallidos(list){
+  const n=(list||[]).length; if(!n) return;
+  if(document.getElementById("avisoFallidos")) return;
+  const banner=document.createElement("div");
+  banner.id="avisoFallidos";
+  banner.style.cssText="position:fixed;top:0;left:0;right:0;z-index:99999;background:#b45309;color:#fff;padding:12px 16px;text-align:center;font-size:13.5px;box-shadow:0 2px 10px rgba(0,0,0,.25)";
+  banner.innerHTML="⚠️ <b>Atención:</b> "+n+" archivo(s) no se pudieron subir ("+list.slice(0,4).map(esc).join(", ")+(n>4?", …":"")+"). Por favor <b>volvé a enviarlos</b> o avisá al estudio.";
+  document.body.appendChild(banner);
 }
 function fileToB64(file){ return new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(",")[1]); r.onerror=rej; r.readAsDataURL(file); }); }
 // --- Huella digital de integridad (SHA-256) para el expediente probatorio ---

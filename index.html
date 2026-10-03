@@ -441,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.10.03 · B74 subida de archivos del cliente CONFIABLE: los adjuntos se suben uno por uno con 3 reintentos (antes iban en paralelo y muchos se perdían), con progreso visible y aviso claro si alguno falla. Soluciona la pérdida de archivos del formulario. · B73 sincronización en vivo optimizada: los cambios de otros usuarios (casos nuevos, agenda, pagos) se ven en vivo, incluso dentro de un caso, trayendo SOLO lo que cambió (menos egress, no más). Además, al salir de un caso volvés al mismo lugar de la lista (no salta al tope). Incluye B72 (carga liviana de documentos) y B71/B70/B69";
+const BUILD = "2026.10.03 · B75 botón 'Descargar TODO del cliente' arriba de cada caso (a un clic desde cualquier solapa): baja un ZIP con un .doc prolijo de TODOS los datos del formulario (cliente, cuentas afectadas, relato, etc.) + un .txt para IA + TODOS los archivos del cliente. · B74 subida de archivos del cliente CONFIABLE: los adjuntos se suben uno por uno con 3 reintentos (antes iban en paralelo y muchos se perdían), con progreso visible y aviso claro si alguno falla. Soluciona la pérdida de archivos del formulario. · B73 sincronización en vivo optimizada: los cambios de otros usuarios (casos nuevos, agenda, pagos) se ven en vivo, incluso dentro de un caso, trayendo SOLO lo que cambió (menos egress, no más). Además, al salir de un caso volvés al mismo lugar de la lista (no salta al tope). Incluye B72 (carga liviana de documentos) y B71/B70/B69";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -1822,7 +1822,7 @@ function renderCaso(){
     }).catch(()=>{ c._docsLoading=false; });
   }
   setCrumb(clienteFull(c), "Casos /");
-  topActions(`<button class="btn btn-ghost btn-sm" onclick="go('casos')">← Volver</button>`);
+  topActions(`<button class="btn btn-ghost btn-sm" onclick="go('casos')">← Volver</button> <button class="btn btn-primary btn-sm" onclick="descargarDatosCaso('${c.id}')" title="Descarga un ZIP con un .doc de todos los datos del cliente + todos sus archivos (para pasar a IA y armar el informe)">📥 Descargar TODO del cliente</button>`);
   let tabs=[
     ["resumen","Resumen"],["avance","Avance"],["cliente","Cliente"],["cuenta","Cuenta afectada"],["relato","Relato"],
     ["doc","Documentación"],["drive","Drive"],["docs","Documentos"],["mediacion","Mediación"],["gastos","Gastos"]
@@ -2333,6 +2333,45 @@ function _datosCasoTexto(c){
   adjs.forEach((a,i)=>L.push("("+(i+1)+") "+S(a.tipo)+" — "+S(a.desc)+(a.nombre?(" ["+a.nombre+"]"):"")));
   return L.join("\n");
 }
+// Documento Word (.doc) prolijo con TODOS los datos personales que cargó el cliente.
+function _datosClienteDocHtml(c){
+  const cl=c.cliente||{}, cu=c.cuenta||{}, re=c.relato||{};
+  const S=v=>(v==null||v==="")?"—":esc(String(v));
+  const SN=b=>b?"Sí":"No";
+  const kv=(l,v)=>`<p style="margin:2px 0"><b>${esc(l)}:</b> ${S(v)}</p>`;
+  const h=(t)=>`<h2 style="color:#16294D;border-bottom:1px solid #B7892E;padding-bottom:2px;margin:16px 0 6px;font-size:14pt">${esc(t)}</h2>`;
+  let b="";
+  b+=`<h1 style="color:#16294D;text-align:center;font-size:18pt;margin:0">GMJ LEGAL PARTNERS</h1>`;
+  b+=`<p style="text-align:center;color:#555;margin:0">Datos del cliente — ${esc(c.id||"")} · ${esc(clienteFull(c))}</p>`;
+  b+=`<p style="text-align:center;color:#888;font-size:9pt;margin:0 0 10px">Generado el ${esc(new Date().toLocaleString("es-AR"))}</p>`;
+  b+=h("Datos personales");
+  b+=kv("Apellido y nombre",[cl.apellido,cl.nombre].filter(Boolean).join(", "));
+  b+=kv("DNI",cl.dni); b+=kv("CUIT / CUIL",cl.cuit);
+  b+=kv("Nacionalidad",cl.nacionalidad); b+=kv("Fecha de nacimiento",cl.fechaNac);
+  b+=kv("Estado civil",cl.estadoCivil); b+=kv("Cónyuge",cl.conyuge);
+  b+=kv("Domicilio",[cl.domicilio,cl.localidad,cl.provincia,cl.cp?("CP "+cl.cp):""].filter(Boolean).join(", "));
+  b+=kv("Teléfono",cl.tel); b+=kv("Email",cl.email);
+  b+=h("Cuenta principal afectada");
+  b+=kv("Plataforma",cu.plataforma); b+=kv("URL",cu.url); b+=kv("Usuario",cu.handle);
+  b+=kv("Email vinculado",cu.emailVinc); b+=kv("Teléfono vinculado",cu.telVinc); b+=kv("Tipo de cuenta",cu.tipo);
+  b+=kv("Pauta publicitaria activa",SN(cu.pautaActiva)); b+=kv("Saldo retenido / fondos",SN(cu.saldoRetenido));
+  b+=kv("Meta Business Manager",SN(cu.businessManager)); b+=kv("Campañas activas al bloqueo",SN(cu.campanasActivas));
+  const adic=(Array.isArray(c.cuentasAfectadas)?c.cuentasAfectadas:[]).filter(q=>q&&(q.url||q.emailVinc||q.handle));
+  if(adic.length){ b+=h("Otras cuentas afectadas (orden de prioridad)"); adic.forEach((q,i)=>{ b+=`<p style="margin:2px 0"><b>(${i+2})</b> ${S(q.plataforma||"Instagram")} · ${S(q.url)} · ${S(q.handle)}${q.emailVinc?(" · "+S(q.emailVinc)):""}</p>`; }); }
+  b+=h("Relato de los hechos");
+  b+=kv("Fecha de suspensión",re.fechaSusp); b+=kv("Tipo de suspensión",re.tipoSusp);
+  b+=kv("Mensaje recibido de Meta",re.mensaje);
+  b+=kv("¿Apeló por las herramientas de Meta?",SN(re.apelo)); b+=kv("¿Recibió respuesta?",SN(re.recibioResp));
+  b+=kv("¿Hubo hackeo?",SN(re.hackeo)); b+=kv("¿Recuperación parcial?",SN(re.recupParcial)); b+=kv("¿Volvió a suspenderse?",SN(re.volvioSusp));
+  b+=kv("Pérdidas declaradas",re.perdida);
+  b+=`<p style="margin:8px 0 2px"><b>Relato original del cliente:</b></p><p style="margin:0;white-space:pre-wrap">${S(re.original)}</p>`;
+  if(re.sintesis) b+=`<p style="margin:8px 0 2px"><b>Síntesis:</b></p><p style="margin:0;white-space:pre-wrap">${S(re.sintesis)}</p>`;
+  const adjs=(c.adjuntos||[]);
+  b+=h("Documentación adjunta (archivos en la carpeta /adjuntos del ZIP)");
+  if(!adjs.length) b+="<p>(Sin documentación registrada.)</p>";
+  else adjs.forEach((a,i)=>{ b+=`<p style="margin:1px 0">(${i+1}) ${S(a.tipo)} — ${S(a.desc)}${a.nombre?(" ["+esc(a.nombre)+"]"):""}</p>`; });
+  return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>Datos ${esc(c.id||"")}</title></head><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#222">${b}</body></html>`;
+}
 async function descargarDatosCaso(id){
   const c=(id?(DB.casos||[]).find(x=>x.id===id):null)||CURRENT;
   if(!c){ toast("Caso no encontrado","err"); return; }
@@ -2341,6 +2380,7 @@ async function descargarDatosCaso(id){
     await ensureJSZip();
     const zip=new JSZip();
     const base="GMJ_"+(c.id||"caso")+"_"+(clienteFull(c)||"").replace(/[^\wáéíóúñ ]+/gi,"").replace(/\s+/g,"_").slice(0,50);
+    zip.file("datos_cliente_"+(c.id||"caso")+".doc", "﻿"+_datosClienteDocHtml(c));
     zip.file("datos_del_caso.txt", _datosCasoTexto(c));
     // Reunir TODAS las rutas guardadas del caso en Storage (bucket case-files/<casoId>/...).
     // Listamos la carpeta del caso — así bajamos TODO lo que subió el cliente aunque

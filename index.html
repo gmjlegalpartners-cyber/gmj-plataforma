@@ -441,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.10.03 · B75"; /* redeploy */
+const BUILD = "2026.10.14 · B76";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -844,7 +844,7 @@ async function cloudLoad(){
   }
   const cfg = (st.data && st.data.data) || {};
   DB = {
-    config:{ estudio:cfg.estudio||{}, asistenteMail:cfg.asistenteMail||"", mediador:cfg.mediador||"", requeridos:cfg.requeridos||[], objeto:cfg.objeto||"", plantillas:cfg.plantillas||{}, etiquetas:(Array.isArray(cfg.etiquetas)&&cfg.etiquetas.length)?cfg.etiquetas:JSON.parse(JSON.stringify(ETIQUETAS_DEFAULT)), promptSintesis:cfg.promptSintesis||"", informeModeloGuia:cfg.informeModeloGuia||"", tycTexto:cfg.tycTexto||"", honMediador:cfg.honMediador||50000, calInvitados:(cfg.calInvitados!=null?cfg.calInvitados:"maria.gmele@gmj-abogados.com.ar") },
+    config:{ estudio:cfg.estudio||{}, asistenteMail:cfg.asistenteMail||"", mediador:cfg.mediador||"", requeridos:cfg.requeridos||[], objeto:cfg.objeto||"", plantillas:cfg.plantillas||{}, etiquetas:(Array.isArray(cfg.etiquetas)&&cfg.etiquetas.length)?cfg.etiquetas:JSON.parse(JSON.stringify(ETIQUETAS_DEFAULT)), promptSintesis:cfg.promptSintesis||"", informeModeloGuia:cfg.informeModeloGuia||"", tycTexto:cfg.tycTexto||"", honMediador:cfg.honMediador||50000, calInvitados:(cfg.calInvitados!=null?cfg.calInvitados:"maria.gmele@gmj-abogados.com.ar"), kanbanEtapas:(Array.isArray(cfg.kanbanEtapas)&&cfg.kanbanEtapas.length)?cfg.kanbanEtapas:JSON.parse(JSON.stringify(KANBAN_ETAPAS_DEFAULT)) },
     abogados: cfg.abogados||[],
     usuarios: (profs.data||[]).map(p=>({id:p.id,nombre:p.nombre,rol:p.rol})),
     casos: [],
@@ -880,7 +880,7 @@ let _saveTimer=null;
 // Sólo escribimos la fila "settings" cuando la config realmente cambió en ESTA sesión.
 // Así, guardar un caso no pisa los modelos/config que editó otro usuario.
 let _cfgSig="";
-function cfgPayload(){ return { estudio:DB.config.estudio, asistenteMail:DB.config.asistenteMail, mediador:DB.config.mediador, requeridos:DB.config.requeridos, objeto:DB.config.objeto, plantillas:DB.config.plantillas||{}, etiquetas:DB.config.etiquetas||[], abogados:DB.abogados, counter:DB.counter, promptSintesis:DB.config.promptSintesis||"", informeModeloGuia:DB.config.informeModeloGuia||"", tycTexto:DB.config.tycTexto||"", honMediador:DB.config.honMediador||50000, calInvitados:(DB.config.calInvitados!=null?DB.config.calInvitados:"") }; }
+function cfgPayload(){ return { estudio:DB.config.estudio, asistenteMail:DB.config.asistenteMail, mediador:DB.config.mediador, requeridos:DB.config.requeridos, objeto:DB.config.objeto, plantillas:DB.config.plantillas||{}, etiquetas:DB.config.etiquetas||[], abogados:DB.abogados, counter:DB.counter, promptSintesis:DB.config.promptSintesis||"", informeModeloGuia:DB.config.informeModeloGuia||"", tycTexto:DB.config.tycTexto||"", honMediador:DB.config.honMediador||50000, calInvitados:(DB.config.calInvitados!=null?DB.config.calInvitados:""), kanbanEtapas:(Array.isArray(DB.config.kanbanEtapas)&&DB.config.kanbanEtapas.length)?DB.config.kanbanEtapas:[] }; }
 function cfgSignature(){ try{ return JSON.stringify(cfgPayload()); }catch(e){ return "x"+Date.now(); } }
 function cloudSave(){ if(!sb) return; if(_saveTimer) clearTimeout(_saveTimer); _saveTimer=setTimeout(doCloudSave,350); }
 async function doCloudSave(){
@@ -1159,7 +1159,7 @@ function _normCasoRow(row, ex){
 // Reconstruye DB.config/abogados/counter desde la fila settings (sin tocar el resto).
 function _applyConfigCfg(cfg){
   cfg=cfg||{};
-  DB.config = { estudio:cfg.estudio||{}, asistenteMail:cfg.asistenteMail||"", mediador:cfg.mediador||"", requeridos:cfg.requeridos||[], objeto:cfg.objeto||"", plantillas:cfg.plantillas||{}, etiquetas:(Array.isArray(cfg.etiquetas)&&cfg.etiquetas.length)?cfg.etiquetas:JSON.parse(JSON.stringify(ETIQUETAS_DEFAULT)), promptSintesis:cfg.promptSintesis||"", informeModeloGuia:cfg.informeModeloGuia||"", tycTexto:cfg.tycTexto||"", honMediador:cfg.honMediador||50000, calInvitados:(cfg.calInvitados!=null?cfg.calInvitados:"maria.gmele@gmj-abogados.com.ar") };
+  DB.config = { estudio:cfg.estudio||{}, asistenteMail:cfg.asistenteMail||"", mediador:cfg.mediador||"", requeridos:cfg.requeridos||[], objeto:cfg.objeto||"", plantillas:cfg.plantillas||{}, etiquetas:(Array.isArray(cfg.etiquetas)&&cfg.etiquetas.length)?cfg.etiquetas:JSON.parse(JSON.stringify(ETIQUETAS_DEFAULT)), promptSintesis:cfg.promptSintesis||"", informeModeloGuia:cfg.informeModeloGuia||"", tycTexto:cfg.tycTexto||"", honMediador:cfg.honMediador||50000, calInvitados:(cfg.calInvitados!=null?cfg.calInvitados:"maria.gmele@gmj-abogados.com.ar"), kanbanEtapas:(Array.isArray(cfg.kanbanEtapas)&&cfg.kanbanEtapas.length)?cfg.kanbanEtapas:JSON.parse(JSON.stringify(KANBAN_ETAPAS_DEFAULT)) };
   DB.abogados = cfg.abogados||[];
   DB.counter = cfg.counter||0;
   try{ _cfgSig = cfgSignature(); }catch(e){}
@@ -1218,8 +1218,10 @@ async function incrementalSync(prevSig, newSig){
 }
 // Repinta la vista actual conservando el scroll, sin sacarte de donde estás.
 function rerenderActual(){
+  if(_kanbanDragging) return;   // no repintar el tablero mientras arrastrás una tarjeta
   const y=window.scrollY, r=ROUTE;
   if(r==="casos") renderCasos();
+  else if(r==="kanban") renderKanban();
   else if(r==="dashboard") renderDashboard();
   else if(r==="finanzas") renderFinanzasGlobal();
   else if(r==="operativa") renderCajaOperativa();
@@ -1369,6 +1371,7 @@ function buildNav(){
   const items=[
     {k:"dashboard", i:"▦", t:"Panel"},
     {k:"casos", i:"📁", t:"Casos"},
+    {k:"kanban", i:"🗂️", t:"Tablero"},
     {k:"calendario", i:"🗓️", t:"Calendario"},
     {k:"tareas", i:"✅", t:"Tareas"},
     {k:"presupuestos", i:"🧾", t:"Presupuestos"},
@@ -1401,6 +1404,7 @@ function go(route, arg){
   ROUTE=route; NAV_TOKEN++; topActions(""); closeSidebar();
   if(route==="dashboard"){ setActiveNav("dashboard"); renderDashboard(); }
   else if(route==="casos"){ setActiveNav("casos"); renderCasos(); }
+  else if(route==="kanban"){ setActiveNav("kanban"); renderKanban(); }
   else if(route==="calendario"){ setActiveNav("calendario"); renderCalendario(); }
   else if(route==="tareas"){ setActiveNav("tareas"); renderTareas(); }
   else if(route==="presupuestos"){ setActiveNav("presupuestos"); renderPresupuestos(); }
@@ -1755,6 +1759,171 @@ function caseProgress(c){
 }
 
 /* ---------- NEW CASE ---------- */
+/* ============================================================
+   TABLERO KANBAN (B76) — una tarjeta por caso (se crea sola con el caso).
+   Etapas (columnas) configurables desde el panel. Mover por drag&drop o selector.
+   Detalle de tarjeta: tareas (reusa el módulo de tareas), minutas y observaciones.
+   ============================================================ */
+const KANBAN_ETAPAS_DEFAULT = [
+  {id:"k_nuevo", nombre:"Nuevo", color:"#64748b"},
+  {id:"k_doc", nombre:"Documentación", color:"#d97706"},
+  {id:"k_med", nombre:"Mediación", color:"#2563eb"},
+  {id:"k_aud", nombre:"Audiencia", color:"#7c3aed"},
+  {id:"k_meta", nombre:"Reclamo a Meta", color:"#0891b2"},
+  {id:"k_resuelto", nombre:"Resuelto", color:"#16a34a"},
+  {id:"k_cerrado", nombre:"Cerrado", color:"#334155"}
+];
+function kanbanEtapas(){ const e=DB.config&&DB.config.kanbanEtapas; return (Array.isArray(e)&&e.length)?e:KANBAN_ETAPAS_DEFAULT; }
+function _kanbanEtapasEditable(){ const e=DB.config&&DB.config.kanbanEtapas; return (Array.isArray(e)&&e.length)?e.slice():JSON.parse(JSON.stringify(KANBAN_ETAPAS_DEFAULT)); }
+function kanbanEtapaDeCaso(c){ const ets=kanbanEtapas(); const id=c&&c.kanbanEtapa; if(id && ets.some(e=>e.id===id)) return id; return (ets[0]||{}).id; }
+let _kanbanFiltro="", _kanbanDragging=false, _tarjetaCaso=null;
+function _kanbanEnsureCss(){ if(document.getElementById("kbcss"))return; const s=document.createElement("style"); s.id="kbcss"; s.textContent=".kbboard{display:flex;gap:12px;overflow-x:auto;padding-bottom:12px;align-items:flex-start}.kbcol{flex:0 0 262px;background:var(--grey-bg);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;max-height:calc(100vh - 230px)}.kbcol.kbover{outline:2px dashed var(--navy);outline-offset:-2px}.kbcol-h{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:8px 10px;background:var(--card);border-radius:9px 9px 0 0}.kbcol-b{padding:8px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;min-height:40px}.kbcard{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px;cursor:pointer;box-shadow:var(--shadow)}.kbcard:hover{border-color:var(--navy)}.kbcard select{color:var(--text);background:var(--card);border:1px solid var(--line2);border-radius:6px;margin-top:2px}"; document.head.appendChild(s); }
+function renderKanban(){
+  _kanbanEnsureCss();
+  setCrumb("Tablero");
+  topActions(`<button class="btn btn-primary btn-sm" onclick="openNewCase()">＋ Nuevo caso</button> <button class="btn btn-ghost btn-sm" onclick="kanbanNuevaEtapa()">＋ Etapa</button>`);
+  const ets=kanbanEtapas();
+  const q=(_kanbanFiltro||"").toLowerCase();
+  const base=casosActivos().filter(c=>!q || (clienteFull(c)+c.id+(c.cuenta.handle||"")).toLowerCase().includes(q));
+  const porEtapa={}; ets.forEach(e=>porEtapa[e.id]=[]);
+  base.forEach(c=>{ const eid=kanbanEtapaDeCaso(c); (porEtapa[eid]=porEtapa[eid]||[]).push(c); });
+  const cols=ets.map((e,idx)=>{
+    const lista=porEtapa[e.id]||[];
+    const cards=lista.map(c=>kanbanCardHtml(c)).join("")||`<div style="color:var(--muted);font-size:12px;padding:10px;text-align:center">— sin casos —</div>`;
+    return `<div class="kbcol" data-etapa="${e.id}" ondragover="kanbanDragOver(event)" ondragleave="kanbanDragLeave(event)" ondrop="kanbanDrop(event,'${e.id}')">
+      <div class="kbcol-h" style="border-top:3px solid ${esc(e.color||'#64748b')}">
+        <div style="display:flex;align-items:center;gap:6px;min-width:0"><b style="font-size:13px;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(e.nombre)}</b><span class="badge b-grey" style="font-size:10px">${lista.length}</span></div>
+        <div style="display:flex;gap:1px;flex:none">
+          ${idx>0?`<button class="btn btn-ghost btn-sm" title="Mover etapa a la izquierda" onclick="kanbanMoverEtapa('${e.id}',-1)" style="padding:2px 6px">‹</button>`:''}
+          ${idx<ets.length-1?`<button class="btn btn-ghost btn-sm" title="Mover etapa a la derecha" onclick="kanbanMoverEtapa('${e.id}',1)" style="padding:2px 6px">›</button>`:''}
+          <button class="btn btn-ghost btn-sm" title="Editar / eliminar etapa" onclick="kanbanEditarEtapa('${e.id}')" style="padding:2px 6px">✎</button>
+        </div>
+      </div>
+      <div class="kbcol-b">${cards}</div>
+    </div>`;
+  }).join("");
+  document.getElementById("view").innerHTML=`
+    <div class="pagehead"><div><h2>Tablero de casos</h2><div class="sub">${base.length} casos · ${ets.length} etapas · arrastrá las tarjetas o usá el selector para moverlas</div></div></div>
+    <div class="filters"><div class="search"><span class="si">🔎</span><input id="kbq" placeholder="Buscar caso por cliente, ID o usuario…" value="${esc(_kanbanFiltro)}" oninput="_kanbanFiltro=this.value;renderKanban();setTimeout(()=>{const x=document.getElementById('kbq');if(x){x.focus();x.setSelectionRange(x.value.length,x.value.length);}},0)"></div></div>
+    <div class="kbboard">${cols}</div>`;
+}
+function kanbanCardHtml(c){
+  const px=(typeof proxAud==="function")?proxAud(c):null;
+  const pend=tareasDe(c.id).filter(t=>!["realizada","cancelada"].includes(t.estado)).length;
+  const ets=kanbanEtapas(); const cur=kanbanEtapaDeCaso(c);
+  const sel=`<select class="kbmove" onclick="event.stopPropagation()" onchange="kanbanMoverCaso('${c.id}',this.value)" title="Mover de etapa" style="font-size:11px;padding:2px 4px;width:100%">${ets.map(e=>`<option value="${e.id}" ${cur===e.id?'selected':''}>${esc(e.nombre)}</option>`).join("")}</select>`;
+  return `<div class="kbcard" draggable="true" ondragstart="kanbanDragStart(event,'${c.id}')" ondragend="kanbanDragEnd(event)" onclick="abrirTarjeta('${c.id}')">
+    <div style="font-weight:700;color:var(--navy);font-size:13px">${esc(clienteFull(c))}</div>
+    <div style="color:var(--muted);font-size:11px;margin-bottom:4px">${esc(c.id)}${c.cuenta.handle?(" · "+esc(c.cuenta.handle)):""}</div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:4px">
+      ${px?`<span class="badge ${(!px.realizada&&px.fecha>=todayISO())?'b-green':'b-grey'}" style="font-size:10px">📅 ${fdate(px.fecha)}</span>`:''}
+      ${pend?`<span class="badge b-gold" style="font-size:10px">✅ ${pend} tarea/s</span>`:''}
+    </div>
+    ${sel}
+  </div>`;
+}
+function kanbanDragStart(ev,id){ _kanbanDragging=true; try{ev.dataTransfer.setData("text/plain",id);ev.dataTransfer.effectAllowed="move";}catch(e){} try{ev.currentTarget.style.opacity="0.45";}catch(e){} }
+function kanbanDragEnd(ev){ _kanbanDragging=false; try{ev.currentTarget.style.opacity="";}catch(e){} }
+function kanbanDragOver(ev){ ev.preventDefault(); try{ev.dataTransfer.dropEffect="move";}catch(e){} ev.currentTarget.classList.add("kbover"); }
+function kanbanDragLeave(ev){ ev.currentTarget.classList.remove("kbover"); }
+function kanbanDrop(ev,etapaId){ ev.preventDefault(); ev.currentTarget.classList.remove("kbover"); _kanbanDragging=false; let id=""; try{id=ev.dataTransfer.getData("text/plain");}catch(e){} if(id) kanbanMoverCaso(id,etapaId); }
+async function kanbanMoverCaso(casoId, etapaId){
+  const c=DB.casos.find(x=>x.id===casoId); if(!c) return;
+  if(c.kanbanEtapa===etapaId) return;
+  c.kanbanEtapa=etapaId;
+  const et=kanbanEtapas().find(e=>e.id===etapaId);
+  logAction(c,"Movido en el tablero a: "+((et&&et.nombre)||etapaId));
+  await persistCaso(c);
+  if(ROUTE==="kanban") renderKanban();
+  toast("Movido a "+((et&&et.nombre)||"etapa")+" ✓");
+}
+function kanbanNuevaEtapa(){
+  const nombre=prompt("Nombre de la nueva etapa:"); if(!nombre||!nombre.trim()) return;
+  const ets=_kanbanEtapasEditable(); ets.push({id:uid("k"), nombre:nombre.trim(), color:"#64748b"});
+  DB.config.kanbanEtapas=ets; save(); renderKanban(); toast("Etapa creada");
+}
+function kanbanEditarEtapa(id){
+  const e=kanbanEtapas().find(x=>x.id===id); if(!e) return;
+  modal({title:"Editar etapa", size:"", body:`
+    <div class="field"><label>Nombre de la etapa</label><input id="ke_nom" value="${esc(e.nombre)}"></div>
+    <div class="field"><label>Color</label><input id="ke_col" type="color" value="${esc(e.color||'#64748b')}" style="width:64px;height:36px;padding:2px;border:1px solid var(--line2);border-radius:8px"></div>
+    <div class="alert alert-warn" style="font-size:12px"><span>⚠</span><div>Si eliminás la etapa, los casos que estén en ella pasan a la primera etapa.</div></div>`,
+    footer:`<button class="btn btn-danger" onclick="kanbanEliminarEtapa('${id}')">Eliminar etapa</button><div style="flex:1"></div><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="kanbanGuardarEtapa('${id}')">Guardar</button>`});
+}
+function kanbanGuardarEtapa(id){
+  const ets=_kanbanEtapasEditable(); const e=ets.find(x=>x.id===id); if(!e){ closeModal(); return; }
+  e.nombre=((val("ke_nom")||e.nombre).trim())||e.nombre; e.color=val("ke_col")||e.color;
+  DB.config.kanbanEtapas=ets; save(); closeModal(); renderKanban(); toast("Etapa actualizada");
+}
+function kanbanEliminarEtapa(id){
+  let ets=_kanbanEtapasEditable();
+  if(ets.length<=1){ toast("Tiene que quedar al menos una etapa","err"); return; }
+  if(!confirm("¿Eliminar esta etapa? Los casos que estén en ella pasan a la primera etapa.")) return;
+  ets=ets.filter(x=>x.id!==id);
+  const primera=(ets[0]||{}).id;
+  (DB.casos||[]).forEach(c=>{ if(c.kanbanEtapa===id){ c.kanbanEtapa=primera; persistCaso(c); } });
+  DB.config.kanbanEtapas=ets; save(); closeModal(); renderKanban(); toast("Etapa eliminada");
+}
+function kanbanMoverEtapa(id,dir){
+  const ets=_kanbanEtapasEditable(); const i=ets.findIndex(x=>x.id===id); const j=i+dir;
+  if(i<0||j<0||j>=ets.length) return;
+  const tmp=ets[i]; ets[i]=ets[j]; ets[j]=tmp;
+  DB.config.kanbanEtapas=ets; save(); renderKanban();
+}
+function abrirTarjeta(casoId){
+  const c=DB.casos.find(x=>x.id===casoId); if(!c){ toast("Caso no encontrado","err"); return; }
+  _tarjetaCaso=casoId; if(typeof ensureMinutas==="function") ensureMinutas(c);
+  const ets=kanbanEtapas(); const cur=kanbanEtapaDeCaso(c);
+  const etapaSel=`<select id="tj_etapa" onchange="kanbanMoverCaso('${c.id}',this.value)">${ets.map(e=>`<option value="${e.id}" ${cur===e.id?'selected':''}>${esc(e.nombre)}</option>`).join("")}</select>`;
+  const tks=tareasDe(c.id);
+  const tareasHtml=tks.length?tks.map(t=>{
+    const done=["realizada","cancelada"].includes(t.estado);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)">
+      <input type="checkbox" ${t.estado==="realizada"?'checked':''} onchange="kanbanToggleTarea('${t.id}')" title="Marcar realizada" style="width:16px;height:16px;flex:none">
+      <div style="flex:1;${done?'text-decoration:line-through;color:var(--muted)':''}">${esc(t.titulo)}${t.vence?` <small style="color:var(--muted)">· ${fdate(t.vence)}</small>`:''}</div>
+      <button class="btn btn-ghost btn-sm" onclick="tareaModal('${t.id}')" title="Editar tarea">✎</button>
+    </div>`;
+  }).join(""):`<div style="color:var(--muted);font-size:12px;padding:4px 0">Sin tareas todavía.</div>`;
+  const mins=(c.minutas||[]).slice().sort((a,b)=>String((b.fecha||"")+(b.ts||"")).localeCompare(String((a.fecha||"")+(a.ts||""))));
+  const minsHtml=mins.length?mins.map(m=>`<div style="padding:5px 0;border-bottom:1px solid var(--line)"><div style="font-size:11px;color:var(--muted)"><b>${esc(fdate(m.fecha))}</b>${m.autor?(" · "+esc(m.autor)):""}${m.tipo==='Post-audiencia'?' · <span class="badge b-blue" style="font-size:9px">post-audiencia</span>':''}</div><div style="white-space:pre-wrap;font-size:13px;margin-top:2px">${esc(m.texto)}</div></div>`).join(""):`<div style="color:var(--muted);font-size:12px;padding:4px 0">Sin minutas todavía.</div>`;
+  modal({title:"🗂 "+clienteFull(c)+" · "+c.id, size:"", body:`
+    <div class="frow fr2" style="margin-bottom:4px;align-items:end">
+      <div class="field" style="margin:0"><label>Etapa del tablero</label>${etapaSel}</div>
+      <div class="field" style="margin:0;display:flex;align-items:flex-end;justify-content:flex-end"><button class="btn btn-ghost btn-sm" onclick="closeModal();go('caso','${c.id}')">Abrir caso completo ↗</button></div>
+    </div>
+    <div class="section-title">✅ Tareas del caso</div>
+    <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap"><input id="tj_newtarea" placeholder="Nueva tarea rápida…" style="flex:1;min-width:160px" onkeydown="if(event.key==='Enter'){event.preventDefault();kanbanAddTareaRapida('${c.id}');}"><button class="btn btn-primary btn-sm" onclick="kanbanAddTareaRapida('${c.id}')">Agregar</button><button class="btn btn-ghost btn-sm" onclick="window._kanbanCaso='${c.id}';tareaModal('')" title="Crear tarea con asignados, fecha y prioridad">＋ detallada</button></div>
+    ${tareasHtml}
+    <div class="section-title" style="margin-top:14px">🗒️ Minutas / seguimiento</div>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:6px;flex-wrap:wrap"><input id="tj_minfec" type="date" value="${todayISO()}" style="max-width:160px"><label style="display:inline-flex;align-items:center;gap:6px;font-size:12.5px;cursor:pointer"><input type="checkbox" id="tj_minaud" style="width:15px;height:15px"> post-audiencia</label></div>
+    <div style="display:flex;gap:6px;margin-bottom:6px"><textarea id="tj_mintxt" rows="2" placeholder="Qué pasó, qué se resolvió, próximos pasos…" style="flex:1"></textarea><button class="btn btn-primary btn-sm" onclick="kanbanAddMinuta('${c.id}')" style="align-self:flex-start">Agregar</button></div>
+    ${minsHtml}
+    <div class="section-title" style="margin-top:14px">📝 Observaciones internas</div>
+    <div class="field"><textarea id="tj_obs" rows="3" placeholder="Notas internas del estudio">${esc(c.observaciones)}</textarea></div>
+    <button class="btn btn-primary btn-sm" onclick="kanbanSaveObs('${c.id}')">Guardar observaciones</button>`,
+    footer:`<div style="flex:1"></div><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button>`});
+}
+async function kanbanToggleTarea(id){ const t=(DB.tareas||[]).find(x=>x.id===id); if(!t)return; t.estado=(t.estado==="realizada")?"pendiente":"realizada"; await tareaUpsert(t,false); if(_tarjetaCaso) abrirTarjeta(_tarjetaCaso); }
+async function kanbanAddTareaRapida(casoId){
+  const tit=(val("tj_newtarea")||"").trim(); if(!tit) return;
+  const c=DB.casos.find(x=>x.id===casoId);
+  const base={ id:newTareaId(), creado_por:SESSION.id, created_at:new Date().toISOString(), eventos:{}, titulo:tit, descripcion:"", asignados:[SESSION.id], caso_id:casoId, cliente_nombre:c?clienteFull(c):null, vence:null, hora:null, duracion:null, prioridad:"media", estado:"pendiente", observaciones:"", recordatorio:"", privacidad:"caso" };
+  await tareaUpsert(base, true);
+  DB.tareas=DB.tareas||[]; DB.tareas.push(base);
+  abrirTarjeta(casoId); toast("Tarea agregada");
+}
+async function kanbanAddMinuta(casoId){
+  const c=DB.casos.find(x=>x.id===casoId); if(!c)return; if(typeof ensureMinutas==="function") ensureMinutas(c);
+  const texto=(val("tj_mintxt")||"").trim(); if(!texto){ toast("Escribí la minuta","err"); return; }
+  const fecha=val("tj_minfec")||todayISO(); const tipo=chkVal("tj_minaud")?"Post-audiencia":"Seguimiento";
+  c.minutas=c.minutas||[]; c.minutas.push({id:uid("m"), fecha, texto, tipo, autor:(SESSION&&SESSION.nombre)||"", ts:new Date().toISOString()});
+  logAction(c,"Minuta agregada (tablero) — "+fdate(fecha));
+  await persistCaso(c); abrirTarjeta(casoId); toast("Minuta agregada ✓");
+}
+async function kanbanSaveObs(casoId){
+  const c=DB.casos.find(x=>x.id===casoId); if(!c)return;
+  c.observaciones=val("tj_obs"); await persistCaso(c); toast("Observaciones guardadas ✓");
+}
 function openNewCase(){
   modal({title:"Nuevo caso", size:"", body:`
     <div class="alert alert-info"><span>ℹ️</span><div>Cargá los datos mínimos. Después podés generar un link de formulario para que el cliente complete el resto.</div></div>
@@ -1797,7 +1966,7 @@ async function createCase(){
     finanzas:{moneda:"USD",montoTotal:"",adelanto:"",saldo:"",fechaAdelanto:"",fechaSaldo:"",devolucion:"",estadoPago:"pendiente",medioPago:"",obs:"",...finEstadosDefault(),hist:[]},
     pagos:[],
     gastos:GASTOS_DEFAULT.map(n=>({id:uid("g"),nombre:n,estado:"pendiente",importe:"",moneda:"ARS",fecha:"",medio:"",obs:"",adjunto:""})),
-    docs:[], tareas:[], adjuntos:[], cuentasAfectadas:[], drive:{link:"",creada:false}, objeto:DB.config.objeto, citarFacebook:true, audiencia:null, avance:{},
+    docs:[], tareas:[], adjuntos:[], cuentasAfectadas:[], drive:{link:"",creada:false}, objeto:DB.config.objeto, citarFacebook:true, audiencia:null, avance:{}, kanbanEtapa:(DB.config.kanbanEtapas&&DB.config.kanbanEtapas[0]&&DB.config.kanbanEtapas[0].id)||"",
     historial:[], formToken:null, observaciones:""
   });
   logAction(c,"Caso creado");
@@ -6092,7 +6261,7 @@ async function syncTareaCalendar(t, opts){
 function newTareaId(){ return (window.crypto&&crypto.randomUUID)?crypto.randomUUID():(uid("t")+uid("")+uid("")); }
 function tareaModal(id){
   const editing = !!id;
-  const t = editing ? (DB.tareas||[]).find(x=>x.id===id) : {asignados:[SESSION.id], prioridad:"media", estado:"pendiente", privacidad:(ROUTE==='caso'?'caso':'equipo'), caso_id:(ROUTE==='caso'&&CURRENT?CURRENT.id:"")};
+  const t = editing ? (DB.tareas||[]).find(x=>x.id===id) : {asignados:[SESSION.id], prioridad:"media", estado:"pendiente", privacidad:((ROUTE==='caso'||window._kanbanCaso)?'caso':'equipo'), caso_id:(ROUTE==='caso'&&CURRENT?CURRENT.id:(window._kanbanCaso||""))};
   if(!t){ toast("Tarea no encontrada","err"); return; }
   const asg=t.asignados||[];
   const asgChecks=DB.usuarios.map(u=>`<label class="check" style="padding:3px 0;display:inline-flex;margin-right:16px"><input type="checkbox" class="tk_asg" value="${u.id}" ${asg.includes(u.id)?'checked':''}> <span style="font-weight:500">${esc(u.nombre)}</span></label>`).join("");
@@ -6117,6 +6286,7 @@ function tareaModal(id){
     ${inp("tk_rec","Recordatorio (texto)",t.recordatorio||"")}
     <div class="field"><label>Observaciones</label><textarea id="tk_obs" rows="2">${esc(t.observaciones||'')}</textarea></div>`,
     footer:`${editing?`<button class="btn btn-danger" onclick="deleteTareaConfirm('${id}')">Eliminar</button>`:''}<div style="flex:1"></div><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveTareaForm('${id||''}')">Guardar tarea</button>`});
+  try{ window._kanbanCaso=""; }catch(e){}
 }
 async function saveTareaForm(id){
   const tit=val("tk_tit").trim(); if(!tit){ toast("El título es obligatorio","err"); return; }
@@ -6132,7 +6302,7 @@ async function saveTareaForm(id){
   await tareaUpsert(base, isNew);
   DB.tareas=DB.tareas||[]; const i=DB.tareas.findIndex(x=>x.id===base.id); if(i>=0)DB.tareas[i]=base; else DB.tareas.push(base);
   closeModal(); toast("Tarea guardada");
-  if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='caso')renderCaso();
+  if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='caso')renderCaso(); else if(ROUTE==='kanban'&&_tarjetaCaso){ try{window._kanbanCaso="";}catch(e){} abrirTarjeta(_tarjetaCaso); }
   syncTareaCalendar(base);
   // notificar a los nuevos asignados
   const detalle=(base.vence?("Vence "+fdate(base.vence)+(base.hora?" "+base.hora:"")):"Sin fecha")+(caso?(" · "+clienteFull(caso)):"");
@@ -6141,7 +6311,7 @@ async function saveTareaForm(id){
   if(prevEstado && prevEstado!==base.estado && ["realizada","cancelada"].includes(base.estado) && base.creado_por!==SESSION.id)
     notifCreate(base.creado_por, base.estado==="realizada"?"tarea_completada":"tarea_cancelada", (base.estado==="realizada"?"Tarea completada: ":"Tarea cancelada: ")+tit, "Por "+userName(SESSION.id), base.id, casoId);
 }
-async function deleteTareaConfirm(id){ if(!confirm("¿Eliminar esta tarea? Esta acción no se puede deshacer."))return; const t=(DB.tareas||[]).find(x=>x.id===id); if(t)await syncTareaCalendar(t,{del:true}); const ok=await tareaDelete(id); if(!ok)return; closeModal(); toast("Tarea eliminada"); if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='caso')renderCaso(); }
+async function deleteTareaConfirm(id){ if(!confirm("¿Eliminar esta tarea? Esta acción no se puede deshacer."))return; const t=(DB.tareas||[]).find(x=>x.id===id); if(t)await syncTareaCalendar(t,{del:true}); const ok=await tareaDelete(id); if(!ok)return; closeModal(); toast("Tarea eliminada"); if(ROUTE==='tareas')renderTareas(); else if(ROUTE==='caso')renderCaso(); else if(ROUTE==='kanban'&&_tarjetaCaso){ try{window._kanbanCaso="";}catch(e){} abrirTarjeta(_tarjetaCaso); } }
 
 /* ============================================================
    UI HELPERS (inputs, modal)
@@ -6429,7 +6599,7 @@ async function generarCasoDesdePresupuesto(id){
     finanzas:{moneda:p.moneda||"USD", montoTotal:p.montoTotal||"", adelanto:adelanto||"", saldo:saldo||"", fechaAdelanto:"", fechaSaldo:"", devolucion:(p.reintegro&&p.reintegro.aplica)?p.reintegro.importe:"", estadoPago:"pendiente", medioPago:"", obs:"Generado desde presupuesto", ...finEstadosDefault(), hist:[]},
     pagos:[],
     gastos:GASTOS_DEFAULT.map(n=>({id:uid("g"),nombre:n,estado:"pendiente",importe:"",moneda:"ARS",fecha:"",medio:"",obs:"",adjunto:""})),
-    docs:[], tareas:[], adjuntos:[], drive:{link:"",creada:false}, objeto:DB.config.objeto, citarFacebook:true, audiencia:null, avance:{},
+    docs:[], tareas:[], adjuntos:[], drive:{link:"",creada:false}, objeto:DB.config.objeto, citarFacebook:true, audiencia:null, avance:{}, kanbanEtapa:(DB.config.kanbanEtapas&&DB.config.kanbanEtapas[0]&&DB.config.kanbanEtapas[0].id)||"",
     historial:[], formToken:null, observaciones:"Presupuesto asociado: "+money(p.montoTotal,p.moneda), presupuestoId:p.id
   });
   logAction(c,"Caso creado desde presupuesto");

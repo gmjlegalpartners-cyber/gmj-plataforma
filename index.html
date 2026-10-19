@@ -441,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.10.14 · B76";
+const BUILD = "2026.10.19 · B77";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -1776,8 +1776,8 @@ const KANBAN_ETAPAS_DEFAULT = [
 function kanbanEtapas(){ const e=DB.config&&DB.config.kanbanEtapas; return (Array.isArray(e)&&e.length)?e:KANBAN_ETAPAS_DEFAULT; }
 function _kanbanEtapasEditable(){ const e=DB.config&&DB.config.kanbanEtapas; return (Array.isArray(e)&&e.length)?e.slice():JSON.parse(JSON.stringify(KANBAN_ETAPAS_DEFAULT)); }
 function kanbanEtapaDeCaso(c){ const ets=kanbanEtapas(); const id=c&&c.kanbanEtapa; if(id && ets.some(e=>e.id===id)) return id; return (ets[0]||{}).id; }
-let _kanbanFiltro="", _kanbanDragging=false, _tarjetaCaso=null;
-function _kanbanEnsureCss(){ if(document.getElementById("kbcss"))return; const s=document.createElement("style"); s.id="kbcss"; s.textContent=".kbboard{display:flex;gap:12px;overflow-x:auto;padding-bottom:12px;align-items:flex-start}.kbcol{flex:0 0 262px;background:var(--grey-bg);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;max-height:calc(100vh - 230px)}.kbcol.kbover{outline:2px dashed var(--navy);outline-offset:-2px}.kbcol-h{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:8px 10px;background:var(--card);border-radius:9px 9px 0 0}.kbcol-b{padding:8px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;min-height:40px}.kbcard{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px;cursor:pointer;box-shadow:var(--shadow)}.kbcard:hover{border-color:var(--navy)}.kbcard select{color:var(--text);background:var(--card);border:1px solid var(--line2);border-radius:6px;margin-top:2px}"; document.head.appendChild(s); }
+let _kanbanFiltro="", _kanbanDragging=false, _tarjetaCaso=null, _kanbanScrollLeft=0;
+function _kanbanEnsureCss(){ if(document.getElementById("kbcss"))return; const s=document.createElement("style"); s.id="kbcss"; s.textContent=".kbboard{display:flex;gap:12px;overflow-x:auto;overflow-y:hidden;padding-bottom:10px;align-items:stretch;scroll-behavior:smooth;scrollbar-width:thin}.kbboard::-webkit-scrollbar{height:10px}.kbboard::-webkit-scrollbar-thumb{background:var(--line2);border-radius:6px}.kbcol{flex:0 0 272px;background:var(--grey-bg);border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column;height:calc(100vh - 210px)}.kbcol.kbover{outline:2px solid var(--navy);outline-offset:-2px}.kbcol.kbover .kbcol-b{background:rgba(37,99,235,.09)}.kbcol-h{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:8px 10px;background:var(--card);border-radius:9px 9px 0 0;flex:none}.kbcol-b{padding:8px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;flex:1;min-height:60px}.kbcard{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px;cursor:grab;box-shadow:var(--shadow)}.kbcard:active{cursor:grabbing}.kbcard:hover{border-color:var(--navy)}.kbcard select{color:var(--text);background:var(--card);border:1px solid var(--line2);border-radius:6px;margin-top:2px}"; document.head.appendChild(s); }
 function renderKanban(){
   _kanbanEnsureCss();
   setCrumb("Tablero");
@@ -1803,9 +1803,24 @@ function renderKanban(){
     </div>`;
   }).join("");
   document.getElementById("view").innerHTML=`
-    <div class="pagehead"><div><h2>Tablero de casos</h2><div class="sub">${base.length} casos · ${ets.length} etapas · arrastrá las tarjetas o usá el selector para moverlas</div></div></div>
-    <div class="filters"><div class="search"><span class="si">🔎</span><input id="kbq" placeholder="Buscar caso por cliente, ID o usuario…" value="${esc(_kanbanFiltro)}" oninput="_kanbanFiltro=this.value;renderKanban();setTimeout(()=>{const x=document.getElementById('kbq');if(x){x.focus();x.setSelectionRange(x.value.length,x.value.length);}},0)"></div></div>
-    <div class="kbboard">${cols}</div>`;
+    <div class="pagehead"><div><h2>Tablero de casos</h2><div class="sub">${base.length} casos · ${ets.length} etapas · arrastrá las tarjetas (o usá el selector) para moverlas · deslizá con la rueda del mouse o las flechas ◀ ▶</div></div></div>
+    <div class="filters" style="align-items:center">
+      <div class="search" style="flex:1"><span class="si">🔎</span><input id="kbq" placeholder="Buscar caso por cliente, ID o usuario…" value="${esc(_kanbanFiltro)}" oninput="_kanbanFiltro=this.value;renderKanban();setTimeout(()=>{const x=document.getElementById('kbq');if(x){x.focus();x.setSelectionRange(x.value.length,x.value.length);}},0)"></div>
+      <button class="btn btn-ghost btn-sm" title="Desplazar a la izquierda" onclick="kanbanScroll(-1)" style="font-size:16px;padding:4px 12px">◀</button>
+      <button class="btn btn-ghost btn-sm" title="Desplazar a la derecha" onclick="kanbanScroll(1)" style="font-size:16px;padding:4px 12px">▶</button>
+    </div>
+    <div class="kbboard" id="kbboard" onscroll="_kanbanScrollLeft=this.scrollLeft" onwheel="kanbanWheel(event)">${cols}</div>`;
+  requestAnimationFrame(()=>{ const b=document.getElementById("kbboard"); if(b) b.scrollLeft=_kanbanScrollLeft; });
+}
+function kanbanScroll(dir){ const b=document.getElementById("kbboard"); if(b) b.scrollBy({left:dir*Math.max(300,Math.round(b.clientWidth*0.8)),behavior:"smooth"}); }
+function kanbanWheel(ev){
+  const b=ev.currentTarget; if(ev.deltaX!==0) return;   // el trackpad horizontal ya funciona
+  const colb=ev.target && ev.target.closest ? ev.target.closest(".kbcol-b") : null;
+  if(colb && colb.scrollHeight>colb.clientHeight+1){
+    const atTop=colb.scrollTop<=0, atBottom=colb.scrollTop+colb.clientHeight>=colb.scrollHeight-1;
+    if((ev.deltaY<0 && !atTop) || (ev.deltaY>0 && !atBottom)) return;  // dejar scrollear la columna verticalmente
+  }
+  if(ev.deltaY){ b.scrollLeft+=ev.deltaY; ev.preventDefault(); }
 }
 function kanbanCardHtml(c){
   const px=(typeof proxAud==="function")?proxAud(c):null;
@@ -1824,8 +1839,14 @@ function kanbanCardHtml(c){
 }
 function kanbanDragStart(ev,id){ _kanbanDragging=true; try{ev.dataTransfer.setData("text/plain",id);ev.dataTransfer.effectAllowed="move";}catch(e){} try{ev.currentTarget.style.opacity="0.45";}catch(e){} }
 function kanbanDragEnd(ev){ _kanbanDragging=false; try{ev.currentTarget.style.opacity="";}catch(e){} }
-function kanbanDragOver(ev){ ev.preventDefault(); try{ev.dataTransfer.dropEffect="move";}catch(e){} ev.currentTarget.classList.add("kbover"); }
-function kanbanDragLeave(ev){ ev.currentTarget.classList.remove("kbover"); }
+function kanbanDragOver(ev){
+  ev.preventDefault(); try{ev.dataTransfer.dropEffect="move";}catch(e){}
+  ev.currentTarget.classList.add("kbover");
+  // Auto-desplazar el tablero al acercar la tarjeta a los bordes (para llegar a columnas lejanas).
+  const b=document.getElementById("kbboard");
+  if(b){ const r=b.getBoundingClientRect(), z=80; if(ev.clientX<r.left+z) b.scrollLeft-=24; else if(ev.clientX>r.right-z) b.scrollLeft+=24; }
+}
+function kanbanDragLeave(ev){ const ct=ev.currentTarget, rt=ev.relatedTarget; if(rt && ct.contains && ct.contains(rt)) return; ct.classList.remove("kbover"); }
 function kanbanDrop(ev,etapaId){ ev.preventDefault(); ev.currentTarget.classList.remove("kbover"); _kanbanDragging=false; let id=""; try{id=ev.dataTransfer.getData("text/plain");}catch(e){} if(id) kanbanMoverCaso(id,etapaId); }
 async function kanbanMoverCaso(casoId, etapaId){
   const c=DB.casos.find(x=>x.id===casoId); if(!c) return;

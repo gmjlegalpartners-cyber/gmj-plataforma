@@ -441,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.10.19 · B77";
+const BUILD = "2026.11.02 · B78";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -5862,6 +5862,50 @@ async function conectarGoogle(){
     else { toast("No se pudo iniciar la conexión con Google","err"); }
   }catch(e){ console.error(e); toast("Error al conectar Google","err"); }
 }
+// Arma el mismo payload de evento que usa guardarAud (título/fechas/detalle/lugar).
+function _audEventPayload(c,a){
+  const fb=c.citarFacebook!==false;
+  const title=`Mediación - ${clienteFull(c)} c/ Meta Platforms Inc.${fb?' y Facebook Argentina S.R.L.':''}`;
+  const durMin=parseInt(a.duracion)||60;
+  const start=new Date((a.fecha)+"T"+(a.hora||"10:00")+":00"); const end=new Date(start.getTime()+durMin*60000);
+  const iso=d=>{const p=n=>String(n).padStart(2,"0");return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+"T"+p(d.getHours())+":"+p(d.getMinutes())+":00";};
+  const det=[`Mediador: ${DB.config.mediador}`,`Cliente: ${clienteFull(c)}`,`Requerida: META PLATFORMS INC${fb?' y FACEBOOK ARGENTINA S.R.L.':''}`,`Modalidad: ${a.modalidad||'-'}`,a.linkReunion?`Link reunión: ${a.linkReunion}`:'',c.drive&&c.drive.link?`Carpeta Drive: ${c.drive.link}`:'',`Expediente: ${c.id}`,a.obs?`Obs: ${a.obs}`:''].filter(Boolean).join("\n");
+  const location=a.modalidad==="Presencial"?(a.lugar||""):(a.linkReunion||"");
+  return {title,startISO:iso(start),endISO:iso(end),details:det,location};
+}
+// Trae al Google Calendar del usuario actual las audiencias PRÓXIMAS ya cargadas que todavía
+// no tenga (útil para un usuario nuevo que recién conectó su Google). Solo toca MI agenda.
+async function resyncMiAgenda(){
+  if(!CLOUD||!sb){ toast("Disponible solo en la versión nube","err"); return; }
+  const myId=SESSION&&SESSION.id; if(!myId){ toast("No se pudo identificar tu usuario","err"); return; }
+  const hoy=todayISO(); const pend=[];
+  (DB.casos||[]).forEach(c=>{
+    (c.audiencias||[]).forEach(a=>{
+      if(!a.fecha || a.fecha<hoy) return;        // solo audiencias de hoy en adelante
+      if(a.realizada) return;
+      if(a.eventos && a.eventos[myId]) return;    // ya la tengo en mi agenda
+      pend.push({c,a});
+    });
+  });
+  if(!pend.length){ toast("No hay audiencias próximas para traer a tu agenda (ya está todo sincronizado)"); return; }
+  if(!confirm("Se van a cargar "+pend.length+" audiencia/s próxima/s en TU Google Calendar. ¿Continuar?")) return;
+  toast("Sincronizando "+pend.length+" audiencia/s en tu agenda…");
+  let ok=0, fail=0, sinGoogle=0;
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    for(const {c,a} of pend){
+      try{
+        const p=_audEventPayload(c,a);
+        const r=await fetch(FUNCTIONS_URL+"/calendar-insert",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({invitados:[myId],attendees:[],title:p.title,startISO:p.startISO,endISO:p.endISO,details:p.details,location:p.location,eventos:a.eventos||{}})});
+        const j=await r.json();
+        if(j && j.eventos && j.eventos[myId]){ a.eventos=Object.assign(a.eventos||{}, j.eventos); a.calCreado=true; await persistCaso(c); ok++; }
+        else { const res=(j&&j.results&&j.results[0]); if(res&&res.reason==="sin-google-conectado") sinGoogle++; else fail++; }
+      }catch(e){ console.error("resync aud",e); fail++; }
+    }
+  }catch(e){ console.error(e); toast("Error al sincronizar","err"); return; }
+  if(sinGoogle>0 && ok===0){ toast("Primero conectá tu Google (botón de al lado) y volvé a intentar","err"); return; }
+  toast("✓ "+ok+" audiencia/s agregadas a tu agenda"+(fail?(" · "+fail+" con error"):"")+(sinGoogle?(" · "+sinGoogle+" sin Google"):""));
+}
 function renderConfig(){
   setCrumb("Configuración"); topActions("");
   const E=DB.config.estudio;
@@ -5869,7 +5913,10 @@ function renderConfig(){
     <div class="pagehead"><div><h2>Configuración</h2><div class="sub">Datos del estudio, requeridos y textos por defecto</div></div></div>
     ${CLOUD?`<div class="card" style="margin-bottom:16px"><div class="card-h"><h3>Mi cuenta de Google Calendar</h3></div><div class="card-b" style="display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
       <div style="font-size:13.5px;color:var(--slate)">Conectá tu Google una vez para que las audiencias se carguen <b>automáticamente</b> en tu agenda. Cada usuario del estudio debe hacerlo desde su propia sesión.</div>
-      <button class="btn btn-gold" onclick="conectarGoogle()">🔗 Conectar mi Google Calendar</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-gold" onclick="conectarGoogle()">🔗 Conectar mi Google Calendar</button>
+        <button class="btn btn-ghost" onclick="resyncMiAgenda()" title="Trae a tu Google Calendar las audiencias próximas que ya están cargadas (útil si recién conectaste tu Google o te sumaste al equipo)">🔄 Re-sincronizar mi agenda</button>
+      </div>
     </div></div>`:''}
     <div class="grid g2">
       <div class="card"><div class="card-h"><h3>Datos del estudio</h3></div><div class="card-b">

@@ -441,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.11.12 · B79";
+const BUILD = "2026.11.12 · B79.1";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -939,7 +939,12 @@ function protegerDatosCliente(local, db){
       // unir eventos (no pisar IDs guardados en la nube)
       la.eventos=Object.assign({}, da.eventos||{}, la.eventos||{});
       if(da.calCreado && !la.calCreado) la.calCreado=true;
-      if(da.calEstado && !la.calEstado) la.calEstado=da.calEstado;
+      // calEstado: el SERVIDOR es la fuente de verdad (lo fija según el resultado real de Google).
+      // Nos quedamos con el estado "más sincronizado" para que un 'pendiente' optimista viejo del
+      // navegador NUNCA degrade un 'ok' ya confirmado en la nube.
+      { const _rk={ok:3,parcial:2,error:1,pendiente:0};
+        const lr=(la.calEstado in _rk)?_rk[la.calEstado]:-1, dr=(da.calEstado in _rk)?_rk[da.calEstado]:-1;
+        if(dr>lr && da.calEstado) la.calEstado=da.calEstado; }
     });
   }
 }
@@ -3322,6 +3327,23 @@ function audBadge(a){
   return '<span class="badge b-gold">Agendada</span>';
 }
 function audNeedsSync(a){ return !a.realizada && (a.calEstado==="pendiente"||a.calEstado==="error"||a.calEstado==="parcial"); }
+// B79.1: si la respuesta del calendario no volvió al navegador pero el servidor SÍ persistió los
+// eventos (lo hace con merge atómico), re-leemos la audiencia de la nube para mostrar el estado real
+// y no dejar un "pendiente" falso. Devuelve true si quedó sincronizada en la nube.
+async function _reconcileAudDesdeNube(c,a){
+  try{
+    if(!CLOUD||!sb||!c||!a) return false;
+    const {data:row}=await sb.from("casos").select("data").eq("id",c.id).maybeSingle();
+    const dbAud=row&&row.data&&Array.isArray(row.data.audiencias)?row.data.audiencias.find(x=>x&&x.id===a.id):null;
+    if(dbAud && dbAud.eventos && Object.keys(dbAud.eventos).length){
+      a.eventos=Object.assign({}, dbAud.eventos, a.eventos||{});
+      a.calCreado=true;
+      a.calEstado=dbAud.calEstado||"ok";
+      return a.calEstado==="ok"||a.calEstado==="parcial";
+    }
+  }catch(e){ console.error("reconcileAud",e); }
+  return false;
+}
 function tabAudiencia(c){
   ensureAudiencias(c);
   const cards=c.audiencias.map(a=> a.id===EDIT_AUD ? audEditForm(c,a) : audSummaryCard(c,a)).join("");
@@ -3423,7 +3445,12 @@ async function crearEventoAud(id){
     await persistCaso(c);
     if(fails.length) toast(oks+" ok · sin Google: "+fails.length,"err"); else toast((yaTenia?"Actualizado":"Cargado")+" en "+oks+" agenda/s ✓");
     renderTab();
-  }catch(e){ console.error(e); a.calEstado="pendiente"; toast("Audiencia guardada. El calendario quedó pendiente (reintentá).","err"); renderTab(); }
+  }catch(e){ console.error(e);
+    const sinc=await _reconcileAudDesdeNube(c,a);
+    if(sinc) toast("Cargada y sincronizada ✓");
+    else { a.calEstado="pendiente"; toast("Audiencia guardada. El calendario quedó pendiente (reintentá).","err"); }
+    renderTab();
+  }
 }
 // B50: botón unificado — guarda la audiencia en el panel Y la carga/actualiza en los calendarios, todo junto.
 async function guardarAud(id){
@@ -3462,7 +3489,13 @@ async function guardarAud(id){
     await persistCaso(c); EDIT_AUD=null;
     if(fails.length) toast("Guardada · "+oks+" agenda/s (sin Google en "+fails.length+")","err"); else toast("Guardada y sincronizada en "+oks+" agenda/s ✓");
     renderTab();
-  }catch(e){ console.error(e); a.calEstado="pendiente"; toast("Guardada en el panel. El calendario quedó pendiente (reintentá con el botón).","err"); renderTab(); }
+  }catch(e){ console.error(e);
+    // la respuesta no volvió: puede que el servidor igual lo haya creado. Verificamos en la nube.
+    const sinc=await _reconcileAudDesdeNube(c,a);
+    if(sinc){ EDIT_AUD=null; toast("Guardada y sincronizada ✓"); }
+    else { a.calEstado="pendiente"; toast("Guardada en el panel. El calendario quedó pendiente (reintentá con el botón).","err"); }
+    renderTab();
+  }
 }
 function buildCalUrl(c,a){
   const fb=c.citarFacebook!==false;

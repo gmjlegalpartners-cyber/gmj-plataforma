@@ -441,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.11.02 · B78";
+const BUILD = "2026.11.12 · B79";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -925,26 +925,46 @@ function protegerDatosCliente(local, db){
   }
   if(db.formCompletado && !local.formCompletado){ local.formCompletado=true; if(db.formCompletadoFecha)local.formCompletadoFecha=db.formCompletadoFecha; }
   if(db.drive && db.drive.link && (!local.drive || !local.drive.link)){ local.drive=Object.assign({},local.drive,{link:db.drive.link, creada:true}); }
+  // B79: fusión de AUDIENCIAS por id (anti-clobber concurrente).
+  //  - Los IDs de evento de Google se persisten del lado del servidor vía RPC: NO deben perderse
+  //    si este navegador guarda con una copia vieja de la audiencia. Por eso unimos los eventos
+  //    (los de la nube que falten) y conservamos calCreado/calEstado de la nube si local no los trae.
+  //  - Audiencias que existan en la nube y no en local (cargadas por otra persona) se incorporan.
+  if(Array.isArray(db.audiencias)){
+    if(!Array.isArray(local.audiencias)) local.audiencias=[];
+    db.audiencias.forEach(da=>{
+      if(!da||!da.id) return;
+      const la=local.audiencias.find(x=>x&&x.id===da.id);
+      if(!la){ local.audiencias.push(da); return; }
+      // unir eventos (no pisar IDs guardados en la nube)
+      la.eventos=Object.assign({}, da.eventos||{}, la.eventos||{});
+      if(da.calCreado && !la.calCreado) la.calCreado=true;
+      if(da.calEstado && !la.calEstado) la.calEstado=da.calEstado;
+    });
+  }
 }
 async function _proteger(c, noFin){
   try{ const {data:row}=await sb.from("casos").select("data").eq("id",c.id).maybeSingle();
     if(row&&row.data){ protegerDatosCliente(noFin, row.data);
       // reflejar en memoria para no volver a pisar en el próximo guardado
-      ['cliente','cuenta','relato','adjuntos','cuentasAfectadas','docs','drive'].forEach(k=>{ if(noFin[k]!==undefined) c[k]=noFin[k]; });
+      ['cliente','cuenta','relato','adjuntos','cuentasAfectadas','docs','drive','audiencias'].forEach(k=>{ if(noFin[k]!==undefined) c[k]=noFin[k]; });
       if(noFin.formCompletado){ c.formCompletado=noFin.formCompletado; c.formCompletadoFecha=noFin.formCompletadoFecha; }
     }
   }catch(e){ console.error("proteger",e); }
 }
 async function cloudSaveCaseNow(c){
-  if(!CLOUD||!sb||!c) return;
+  if(!CLOUD||!sb||!c) return true;
   try{
     const noFin = JSON.parse(JSON.stringify(c)); delete noFin.finanzas; delete noFin.pagos;
     await _proteger(c, noFin);
-    await sb.from("casos").upsert({ id:c.id, data:noFin, cliente_nombre:clienteFull(c), estado:c.estado, form_token:c.formToken||null, updated_at:new Date().toISOString(), updated_by:SESSION.id });
-    await sb.from("case_finance").upsert({ caso_id:c.id, finanzas:c.finanzas||{}, pagos:c.pagos||[], updated_at:new Date().toISOString() });
-  }catch(e){ console.error("cloudSaveCaseNow",e); toast("Error guardando en la nube","err"); }
+    const { error:e1 } = await sb.from("casos").upsert({ id:c.id, data:noFin, cliente_nombre:clienteFull(c), estado:c.estado, form_token:c.formToken||null, updated_at:new Date().toISOString(), updated_by:SESSION.id });
+    if(e1) throw e1;
+    const { error:e2 } = await sb.from("case_finance").upsert({ caso_id:c.id, finanzas:c.finanzas||{}, pagos:c.pagos||[], updated_at:new Date().toISOString() });
+    if(e2) throw e2;
+    return true;
+  }catch(e){ console.error("cloudSaveCaseNow",e); toast("Error guardando en la nube","err"); return false; }
 }
-async function persistCaso(c){ if(CLOUD){ await cloudSaveCaseNow(c); } else { saveLocal(); } }
+async function persistCaso(c){ if(CLOUD){ return await cloudSaveCaseNow(c); } else { saveLocal(); return true; } }
 async function cloudInsertCase(c){
   const noFin = JSON.parse(JSON.stringify(c)); delete noFin.finanzas; delete noFin.pagos;
   await sb.from("casos").insert({ id:c.id, data:noFin, cliente_nombre:clienteFull(c), estado:c.estado, form_token:c.formToken||null, updated_by:SESSION.id });
@@ -3292,7 +3312,16 @@ function initAudPickers(){
   }catch(e){ console.warn("flatpickr init",e); }
 }
 function ensureAudiencias(c){ if(!c.audiencias){ c.audiencias=(c.audiencia&&c.audiencia.fecha)?[Object.assign({id:uid('a')},c.audiencia)]:[]; } if(c.audiencia!==undefined) delete c.audiencia; }
-function audBadge(a){ return a.realizada?'<span class="badge b-green">Realizada</span>':a.calCreado?'<span class="badge b-blue">En calendario</span>':'<span class="badge b-gold">Agendada</span>'; }
+function audBadge(a){
+  if(a.realizada) return '<span class="badge b-green">Realizada</span>';
+  // B79: reflejar el estado de sincronización con Google
+  if(a.calEstado==="pendiente") return '<span class="badge b-gold">⏳ Sincronización pendiente</span>';
+  if(a.calEstado==="error") return '<span class="badge b-gold">⚠ Sin sincronizar</span>';
+  if(a.calEstado==="parcial") return '<span class="badge b-gold">⚠ Sincronizada en parte</span>';
+  if(a.calCreado) return '<span class="badge b-blue">En calendario ✓</span>';
+  return '<span class="badge b-gold">Agendada</span>';
+}
+function audNeedsSync(a){ return !a.realizada && (a.calEstado==="pendiente"||a.calEstado==="error"||a.calEstado==="parcial"); }
 function tabAudiencia(c){
   ensureAudiencias(c);
   const cards=c.audiencias.map(a=> a.id===EDIT_AUD ? audEditForm(c,a) : audSummaryCard(c,a)).join("");
@@ -3319,6 +3348,7 @@ function audEditForm(c,a){
     <div class="alert alert-info"><span>📅</span><div>Al <b>Guardar</b>, la audiencia se registra en el panel y se carga/actualiza <b>automáticamente en TODOS</b> los calendarios de Google conectados (si ya existía, se <b>modifica</b>, no se duplica).</div></div>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn btn-primary" onclick="guardarAud('${a.id}')">💾 Guardar y sincronizar calendarios</button>
+      ${(!isNew&&audNeedsSync(a))?`<button class="btn btn-ghost" style="border-color:var(--gold);color:var(--gold)" onclick="crearEventoAud('${a.id}')">🔄 Reintentar sincronización</button>`:''}
       ${(!isNew&&!a.realizada)?`<button class="btn btn-ghost" onclick="marcarAud('${a.id}')">✓ Marcar realizada</button>`:''}
       ${!isNew?`<button class="btn btn-danger" onclick="eliminarAud('${a.id}')">🗑 Eliminar</button>`:''}
       <button class="btn btn-ghost" onclick="cancelarEditAud()">Cerrar</button>
@@ -3368,7 +3398,10 @@ async function crearEventoAud(id){
   if(!a.fecha){ toast("Cargá la fecha de la audiencia","err"); return; }
   if(c.estado==="Mediación solicitada"||c.estado==="Mediación pendiente") c.estado="Audiencia fijada";
   EDIT_AUD=a.id;
-  await persistCaso(c);
+  const yaTenia=a.calCreado;
+  if(!a.calCreado) a.calEstado="pendiente";
+  const ok1=await persistCaso(c);
+  if(!ok1){ toast("No se pudo guardar la audiencia. No se tocó el calendario. Reintentá.","err"); renderTab(); return; }
   if(!CLOUD){ window.open(buildCalUrl(c,a),"_blank"); a.calCreado=true; await persistCaso(c); toast("Abriendo Google Calendar"); renderTab(); return; }
   const fb=c.citarFacebook!==false;
   const title=`Mediación - ${clienteFull(c)} c/ Meta Platforms Inc.${fb?' y Facebook Argentina S.R.L.':''}`;
@@ -3377,20 +3410,20 @@ async function crearEventoAud(id){
   const iso=d=>{const p=n=>String(n).padStart(2,"0");return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+"T"+p(d.getHours())+":"+p(d.getMinutes())+":00";};
   const det=[`Mediador: ${DB.config.mediador}`,`Cliente: ${clienteFull(c)}`,`Requerida: META PLATFORMS INC${fb?' y FACEBOOK ARGENTINA S.R.L.':''}`,`Modalidad: ${a.modalidad||'-'}`,a.linkReunion?`Link reunión: ${a.linkReunion}`:'',c.drive&&c.drive.link?`Carpeta Drive: ${c.drive.link}`:'',`Expediente: ${c.id}`,a.obs?`Obs: ${a.obs}`:''].filter(Boolean).join("\n");
   const location=a.modalidad==="Presencial"?(a.lugar||""):(a.linkReunion||"");
-  const yaTenia=a.calCreado;
   toast(yaTenia?"Actualizando en los calendarios…":"Cargando en los calendarios…");
   try{
     const {data:{session}}=await sb.auth.getSession();
-    const r=await fetch(FUNCTIONS_URL+"/calendar-insert",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({invitados:allInvitados(),attendees:calAttendeesFijos(),title,startISO:iso(start),endISO:iso(end),details:det,location,eventos:a.eventos||{}})});
+    const r=await fetch(FUNCTIONS_URL+"/calendar-insert",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({invitados:allInvitados(),attendees:calAttendeesFijos(),title,startISO:iso(start),endISO:iso(end),details:det,location,eventos:a.eventos||{},casoId:c.id,audienciaId:a.id})});
     const j=await r.json();
-    if(j.error){ toast("Audiencia guardada, pero falló el calendario: "+j.error,"err"); renderTab(); return; }
+    if(j.error){ a.calEstado="error"; await persistCaso(c); toast("Audiencia guardada, pero falló el calendario: "+j.error,"err"); renderTab(); return; }
     a.eventos=Object.assign(a.eventos||{}, j.eventos||{}); a.calCreado=true;
     const oks=(j.results||[]).filter(x=>x.ok).length; const fails=(j.results||[]).filter(x=>!x.ok);
+    a.calEstado=fails.length?"parcial":"ok";
     logAction(c,"Audiencia "+(yaTenia?'actualizada':'cargada')+" en Google Calendar ("+oks+" agenda/s)");
     await persistCaso(c);
     if(fails.length) toast(oks+" ok · sin Google: "+fails.length,"err"); else toast((yaTenia?"Actualizado":"Cargado")+" en "+oks+" agenda/s ✓");
     renderTab();
-  }catch(e){ console.error(e); toast("Audiencia guardada; error en el calendario","err"); renderTab(); }
+  }catch(e){ console.error(e); a.calEstado="pendiente"; toast("Audiencia guardada. El calendario quedó pendiente (reintentá).","err"); renderTab(); }
 }
 // B50: botón unificado — guarda la audiencia en el panel Y la carga/actualiza en los calendarios, todo junto.
 async function guardarAud(id){
@@ -3401,7 +3434,11 @@ async function guardarAud(id){
   const yaTenia=a.calCreado;
   logAction(c,"Audiencia de mediación guardada ("+fdate(a.fecha)+")");
   EDIT_AUD=a.id;
-  await persistCaso(c);
+  // PASO 1 — Guardar la audiencia en el panel ANTES de tocar Google. Si esto falla, NO creamos
+  // eventos (así nunca quedan eventos en Google sin su audiencia en el panel = huérfanos).
+  if(!a.calCreado) a.calEstado="pendiente";
+  const ok1=await persistCaso(c);
+  if(!ok1){ toast("No se pudo guardar la audiencia. No se tocó el calendario. Reintentá.","err"); renderTab(); return; }
   if(!CLOUD){ try{ window.open(buildCalUrl(c,a),"_blank"); }catch(e){} a.calCreado=true; await persistCaso(c); EDIT_AUD=null; toast("Audiencia guardada · abriendo Google Calendar"); renderTab(); return; }
   const fb=c.citarFacebook!==false;
   const title=`Mediación - ${clienteFull(c)} c/ Meta Platforms Inc.${fb?' y Facebook Argentina S.R.L.':''}`;
@@ -3413,16 +3450,19 @@ async function guardarAud(id){
   toast(yaTenia?"Guardando y actualizando en calendarios…":"Guardando y cargando en calendarios…");
   try{
     const {data:{session}}=await sb.auth.getSession();
-    const r=await fetch(FUNCTIONS_URL+"/calendar-insert",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({invitados:allInvitados(),attendees:calAttendeesFijos(),title,startISO:iso(start),endISO:iso(end),details:det,location,eventos:a.eventos||{}})});
+    // PASO 2 — Crear/actualizar en Google. La función persiste los IDs del lado del servidor
+    // (casoId+audienciaId) con merge atómico: aunque el navegador se corte acá, el ID NO se pierde.
+    const r=await fetch(FUNCTIONS_URL+"/calendar-insert",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({invitados:allInvitados(),attendees:calAttendeesFijos(),title,startISO:iso(start),endISO:iso(end),details:det,location,eventos:a.eventos||{},casoId:c.id,audienciaId:a.id})});
     const j=await r.json();
-    if(j.error){ toast("Guardada en el panel, pero falló el calendario: "+j.error,"err"); renderTab(); return; }
+    if(j.error){ a.calEstado="error"; await persistCaso(c); toast("Guardada en el panel, pero falló el calendario: "+j.error,"err"); renderTab(); return; }
     a.eventos=Object.assign(a.eventos||{}, j.eventos||{}); a.calCreado=true;
     const oks=(j.results||[]).filter(x=>x.ok).length; const fails=(j.results||[]).filter(x=>!x.ok);
+    a.calEstado=fails.length?"parcial":"ok";
     logAction(c,"Audiencia "+(yaTenia?'actualizada':'cargada')+" en Google Calendar ("+oks+" agenda/s)");
     await persistCaso(c); EDIT_AUD=null;
     if(fails.length) toast("Guardada · "+oks+" agenda/s (sin Google en "+fails.length+")","err"); else toast("Guardada y sincronizada en "+oks+" agenda/s ✓");
     renderTab();
-  }catch(e){ console.error(e); toast("Guardada en el panel; error al sincronizar el calendario","err"); renderTab(); }
+  }catch(e){ console.error(e); a.calEstado="pendiente"; toast("Guardada en el panel. El calendario quedó pendiente (reintentá con el botón).","err"); renderTab(); }
 }
 function buildCalUrl(c,a){
   const fb=c.citarFacebook!==false;
@@ -5896,7 +5936,7 @@ async function resyncMiAgenda(){
     for(const {c,a} of pend){
       try{
         const p=_audEventPayload(c,a);
-        const r=await fetch(FUNCTIONS_URL+"/calendar-insert",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({invitados:[myId],attendees:[],title:p.title,startISO:p.startISO,endISO:p.endISO,details:p.details,location:p.location,eventos:a.eventos||{}})});
+        const r=await fetch(FUNCTIONS_URL+"/calendar-insert",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({invitados:[myId],attendees:[],title:p.title,startISO:p.startISO,endISO:p.endISO,details:p.details,location:p.location,eventos:a.eventos||{},casoId:c.id,audienciaId:a.id})});
         const j=await r.json();
         if(j && j.eventos && j.eventos[myId]){ a.eventos=Object.assign(a.eventos||{}, j.eventos); a.calCreado=true; await persistCaso(c); ok++; }
         else { const res=(j&&j.results&&j.results[0]); if(res&&res.reason==="sin-google-conectado") sinGoogle++; else fail++; }
@@ -5905,6 +5945,89 @@ async function resyncMiAgenda(){
   }catch(e){ console.error(e); toast("Error al sincronizar","err"); return; }
   if(sinGoogle>0 && ok===0){ toast("Primero conectá tu Google (botón de al lado) y volvé a intentar","err"); return; }
   toast("✓ "+ok+" audiencia/s agregadas a tu agenda"+(fail?(" · "+fail+" con error"):"")+(sinGoogle?(" · "+sinGoogle+" sin Google"):""));
+}
+// B79 — Reconciliación (solo socios). Reintenta la sincronización de las audiencias próximas
+// cuyo estado NO quedó en 'ok' (pendiente/error/parcial). Vuelve a cargar/actualizar el evento
+// en TODAS las agendas; los IDs se persisten server-side (merge atómico, no se pierde nada).
+async function sincronizarPendientes(){
+  if(!CLOUD||!sb){ toast("Disponible solo en la versión nube","err"); return; }
+  const hoy=todayISO(); const pend=[];
+  (DB.casos||[]).forEach(c=>{
+    (c.audiencias||[]).forEach(a=>{
+      if(!a.fecha || a.fecha<hoy || a.realizada) return;
+      // pendientes explícitas, o audiencias sin ningún evento creado todavía
+      const sinEventos=!a.eventos||Object.keys(a.eventos).length===0;
+      if(audNeedsSync(a) || (!a.calCreado && sinEventos)) pend.push({c,a});
+    });
+  });
+  if(!pend.length){ toast("No hay audiencias pendientes: está todo sincronizado ✓"); return; }
+  if(!confirm("Hay "+pend.length+" audiencia/s próxima/s sin sincronizar del todo. Se reintentará cargarlas/actualizarlas en todas las agendas de Google. ¿Continuar?")) return;
+  toast("Reintentando "+pend.length+" audiencia/s…");
+  let ok=0, parcial=0, err=0;
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    for(const {c,a} of pend){
+      try{
+        const p=_audEventPayload(c,a);
+        const r=await fetch(FUNCTIONS_URL+"/calendar-insert",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({invitados:allInvitados(),attendees:calAttendeesFijos(),title:p.title,startISO:p.startISO,endISO:p.endISO,details:p.details,location:p.location,eventos:a.eventos||{},casoId:c.id,audienciaId:a.id})});
+        const j=await r.json();
+        if(j.error){ a.calEstado="error"; await persistCaso(c); err++; continue; }
+        a.eventos=Object.assign(a.eventos||{}, j.eventos||{}); a.calCreado=true;
+        const fails=(j.results||[]).filter(x=>!x.ok);
+        a.calEstado=fails.length?"parcial":"ok";
+        await persistCaso(c);
+        if(fails.length) parcial++; else ok++;
+      }catch(e){ console.error("sincPend",e); try{a.calEstado="error"; await persistCaso(c);}catch(_){ } err++; }
+    }
+  }catch(e){ console.error(e); toast("Error al reintentar","err"); return; }
+  toast("✓ "+ok+" sincronizada/s"+(parcial?(" · "+parcial+" parcial"):"")+(err?(" · "+err+" con error"):""));
+  if(typeof renderConfig==="function") renderConfig();
+}
+// B79 — Detecta y limpia eventos HUÉRFANOS: eventos de mediación en Google (marcados por el panel)
+// que ya NO tienen una audiencia correspondiente en el panel (p. ej. una audiencia borrada que
+// dejó restos, o cargas viejas). Recorre la agenda de cada usuario conectado, los lista y,
+// previa CONFIRMACIÓN, los elimina de la agenda de su dueño.
+async function limpiarHuerfanos(){
+  if(!CLOUD||!sb){ toast("Disponible solo en la versión nube","err"); return; }
+  // set de claves válidas caso|audiencia y de event ids conocidos por el panel
+  const validKeys=new Set(), knownEvIds=new Set();
+  (DB.casos||[]).forEach(c=>{ (c.audiencias||[]).forEach(a=>{
+    validKeys.add(c.id+"|"+a.id);
+    if(a.eventos) Object.values(a.eventos).forEach(id=>{ if(id) knownEvIds.add(String(id)); });
+  }); });
+  toast("Revisando las agendas en busca de eventos huérfanos…");
+  const huerfanos=[]; // {userId, email, evId, summary, start}
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    for(const u of (DB.usuarios||[])){
+      try{
+        const r=await fetch(FUNCTIONS_URL+"/calendar-insert",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({action:"listcal",userId:u.id,maxDays:180})});
+        const j=await r.json();
+        if(j.error) continue;
+        (j.items||[]).forEach(it=>{
+          const key=(it.casoId||"")+"|"+(it.audienciaId||"");
+          const esConocido = (it.casoId && it.audienciaId && validKeys.has(key)) || knownEvIds.has(String(it.id));
+          if(!esConocido) huerfanos.push({userId:u.id, email:j.email||u.id, evId:it.id, summary:it.summary||"", start:it.start||""});
+        });
+      }catch(e){ console.error("listcal",u.id,e); }
+    }
+  }catch(e){ console.error(e); toast("Error al revisar agendas","err"); return; }
+  if(!huerfanos.length){ toast("No se encontraron eventos huérfanos ✓"); return; }
+  const resumen=huerfanos.slice(0,15).map(h=>"• "+(h.start?h.start.slice(0,10):"")+" "+h.summary+" ("+h.email+")").join("\n");
+  if(!confirm("Se encontraron "+huerfanos.length+" evento/s de mediación en Google SIN audiencia en el panel:\n\n"+resumen+(huerfanos.length>15?"\n… y más":"")+"\n\n¿Eliminarlos de las agendas? Esta acción no se puede deshacer.")) return;
+  toast("Eliminando "+huerfanos.length+" evento/s huérfano/s…");
+  let ok=0, fail=0;
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    for(const h of huerfanos){
+      try{
+        const r=await fetch(FUNCTIONS_URL+"/calendar-insert",{method:"POST",headers:{"Authorization":"Bearer "+session.access_token,"Content-Type":"application/json"},body:JSON.stringify({delete:true, invitados:[h.userId], eventos:{[h.userId]:h.evId}})});
+        const j=await r.json(); const r0=(j&&j.results&&j.results[0]);
+        if(r0&&r0.ok) ok++; else fail++;
+      }catch(e){ console.error("del huerfano",e); fail++; }
+    }
+  }catch(e){ console.error(e); toast("Error al eliminar","err"); return; }
+  toast("✓ "+ok+" evento/s eliminado/s"+(fail?(" · "+fail+" con error"):""));
 }
 function renderConfig(){
   setCrumb("Configuración"); topActions("");
@@ -5917,7 +6040,13 @@ function renderConfig(){
         <button class="btn btn-gold" onclick="conectarGoogle()">🔗 Conectar mi Google Calendar</button>
         <button class="btn btn-ghost" onclick="resyncMiAgenda()" title="Trae a tu Google Calendar las audiencias próximas que ya están cargadas (útil si recién conectaste tu Google o te sumaste al equipo)">🔄 Re-sincronizar mi agenda</button>
       </div>
-    </div></div>`:''}
+    </div>${isSocio()?`<div class="card-b" style="border-top:1px solid var(--line2);display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap">
+      <div style="font-size:13px;color:var(--muted)"><b>Mantenimiento (socios):</b> reintentar audiencias que no terminaron de sincronizar, o limpiar eventos de Google que ya no tienen audiencia en el panel.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="sincronizarPendientes()" title="Reintenta las audiencias próximas que quedaron pendientes o incompletas">🔁 Sincronizar pendientes</button>
+        <button class="btn btn-ghost btn-sm" onclick="limpiarHuerfanos()" title="Busca eventos de mediación en Google sin audiencia en el panel y, con tu confirmación, los elimina">🧹 Detectar y limpiar huérfanos</button>
+      </div>
+    </div>`:''}</div>`:''}
     <div class="grid g2">
       <div class="card"><div class="card-h"><h3>Datos del estudio</h3></div><div class="card-b">
         ${inp("co_nom","Nombre del estudio",E.nombre)}

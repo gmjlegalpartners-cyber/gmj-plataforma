@@ -441,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.11.12 · B79.1";
+const BUILD = "2026.11.16 · B80";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -482,7 +482,7 @@ const DEFAULT_OBJETO = "Daños y perjuicios derivados de la inhabilitación, sus
 const GASTOS_DEFAULT = ["Notificación","Honorarios iniciales del mediador","Honorarios finales del mediador"];
 // ── Términos y Condiciones que el cliente lee y ACEPTA al completar el formulario ──
 // (editable desde Configuración). Al aceptar + firmar se generan el contrato y la carta poder.
-const TYC_VERSION_DEFAULT = "1.0";
+const TYC_VERSION_DEFAULT = "1.1";
 const TC_TEXT_DEFAULT = `TÉRMINOS Y CONDICIONES · CONSENTIMIENTO, CONTRATO DE SERVICIOS Y CARTA PODER
 
 1. OBJETO. Al aceptar estos términos y firmar electrónicamente, usted (el "CLIENTE") celebra con GMJ LEGAL PARTNERS (el "ESTUDIO") el Contrato de Prestación de Servicios Profesionales para la gestión de rehabilitación de su/s cuenta/s digital/es, y autoriza a los profesionales del ESTUDIO a representarlo —exclusivamente para esta gestión— mediante una carta poder simple. Ambos documentos se generan con los datos que usted proporciona en este formulario y quedan a su disposición para descarga inmediata; usted puede leerlos completos antes de firmar desde los enlaces que acompañan la casilla de aceptación.
@@ -500,6 +500,8 @@ const TC_TEXT_DEFAULT = `TÉRMINOS Y CONDICIONES · CONSENTIMIENTO, CONTRATO DE 
 7. CONSTANCIA Y VALOR PROBATORIO. El CLIENTE reconoce que, al aceptar y firmar, el sistema registra como constancia la fecha y hora, la dirección IP, el dispositivo utilizado, la versión de estos términos y una copia de su firma, todo lo cual constituye prueba de la operación y de su autoría.
 
 8. VIGENCIA. Esta autorización se otorga únicamente para esta gestión y queda sin efecto en forma automática al finalizar el reclamo, sin necesidad de ningún trámite adicional.
+
+9. AUTORIZACIÓN DE USO DE IMAGEN Y DIFUSIÓN DEL CASO CON FINES INSTITUCIONALES Y PUBLICITARIOS. El CLIENTE autoriza en forma expresa y gratuita al ESTUDIO a difundir, publicar y reproducir su caso como caso de éxito —incluyendo el resultado obtenido— en el sitio web, las redes sociales y los demás canales de comunicación del ESTUDIO, con fines institucionales, promocionales y publicitarios. Esta autorización comprende el uso de capturas de pantalla, el nombre de usuario y/o de la/s cuenta/s gestionada/s y de los datos del caso que resulten necesarios a tal fin, pudiendo el ESTUDIO editar, recortar, anonimizar o combinar dicho material con contenido propio. Se otorga en los términos del artículo 53 del Código Civil y Comercial de la Nación y del artículo 31 de la Ley 11.723, sin generar derecho a contraprestación alguna a favor del CLIENTE. El CLIENTE podrá solicitar por escrito el cese del uso hacia el futuro, sin que ello afecte las publicaciones ya realizadas.
 
 Al marcar la casilla de aceptación y firmar, usted declara haber leído, comprendido y aceptado estos Términos y Condiciones en su totalidad.`;
 // Categorías de la Caja operativa (gastos mensuales del estudio)
@@ -2006,9 +2008,9 @@ async function createCase(){
     id, estado:"Nuevo caso", fechaAlta:todayISO(),
     responsable:val("nc_resp"), abogadoPatrocinante:val("nc_ab"),
     proximaAccion:"Enviar formulario al cliente", fechaLimite:"",
-    cliente:{apellido:ap.toUpperCase(), nombre:no, dni:"", cuit:"", nacionalidad:"Argentina", fechaNac:"", estadoCivil:"", conyuge:"", domicilio:"", localidad:"", provincia:"", cp:"", tel:val("nc_tel"), email:val("nc_email")},
+    cliente:{apellido:ap.toUpperCase(), nombre:no, tipoDoc:"DNI", dni:"", cuit:"", nacionalidad:"Argentina", fechaNac:"", estadoCivil:"", conyuge:"", domicilio:"", localidad:"", provincia:"", cp:"", tel:val("nc_tel"), email:val("nc_email")},
     cuenta:{plataforma:val("nc_plat"), url:"", handle:val("nc_handle"), emailVinc:"", telVinc:"", tipo:"", pautaActiva:false, saldoRetenido:false, cuentasVinc:"", businessManager:false, metodoPago:false, campanasActivas:false, hackeo:false},
-    relato:{fechaSusp:"",mensaje:"",tipoSusp:"",apelo:false,recibioResp:false,hackeo:false,recupParcial:false,volvioSusp:false,perdida:"",original:"",sintesis:""},
+    relato:{fechaSusp:"",mensaje:"",tipoSusp:"",tipoSuspOtros:"",apelo:false,recibioResp:false,hackeo:false,recupParcial:false,volvioSusp:false,perdida:"",original:"",sintesis:""},
     finanzas:{moneda:"USD",montoTotal:"",adelanto:"",saldo:"",fechaAdelanto:"",fechaSaldo:"",devolucion:"",estadoPago:"pendiente",medioPago:"",obs:"",...finEstadosDefault(),hist:[]},
     pagos:[],
     gastos:GASTOS_DEFAULT.map(n=>({id:uid("g"),nombre:n,estado:"pendiente",importe:"",moneda:"ARS",fecha:"",medio:"",obs:"",adjunto:""})),
@@ -2138,9 +2140,9 @@ function tabResumen(c){
     <div class="card"><div class="card-h"><h3>Cuenta afectada</h3></div><div class="card-b">
       <dl class="kv">
         <dt>Plataforma</dt><dd>${esc(c.cuenta.plataforma||"—")}</dd>
-        <dt>Usuario</dt><dd>${esc(c.cuenta.handle||"—")}</dd>
+        <dt>Usuario</dt><dd>${esc(cuentaIdent(c.cuenta)||"—")}</dd>
         <dt>URL</dt><dd>${c.cuenta.url?`<a href="${esc(c.cuenta.url)}" target="_blank">ver cuenta ↗</a>`:"—"}</dd>
-        <dt>Tipo de cuenta</dt><dd>${esc(c.cuenta.tipo||"—")}</dd>
+        ${c.cuenta.tipo?`<dt>Tipo de cuenta</dt><dd>${esc(c.cuenta.tipo)}</dd>`:''}
         <dt>Pauta publicitaria</dt><dd>${c.cuenta.pautaActiva?"Sí":"No"}</dd>
         <dt>Saldo retenido</dt><dd>${c.cuenta.saldoRetenido?"Sí":"No"}</dd>
       </dl></div></div>
@@ -2236,21 +2238,28 @@ function tabAvance(c){
 /* ---------- TAB: CLIENTE ---------- */
 function tabCliente(c){
   const f=c.cliente;
-  return formCard("Datos del titular / damnificado", [
+  const campos=[
     inp("cl_ap","Apellido",f.apellido), inp("cl_no","Nombre",f.nombre),
-    inp("cl_dni","DNI",f.dni), inp("cl_cuit","CUIT / CUIL",f.cuit),
-    inp("cl_nac","Nacionalidad",f.nacionalidad), inp("cl_fnac","Fecha de nacimiento",f.fechaNac,"date"),
-    sel("cl_ec","Estado civil",["","Soltero/a","Casado/a","Divorciado/a","Viudo/a","Unión convivencial"],f.estadoCivil), inp("cl_con","Cónyuge (si corresponde)",f.conyuge),
+    sel("cl_tipodoc","Tipo de documento",TIPO_DOC,f.tipoDoc||"DNI"), inp("cl_dni","Número de documento",f.dni),
+    inp("cl_cuit","CUIT / CUIL",f.cuit), inp("cl_nac","Nacionalidad",f.nacionalidad),
+    inp("cl_fnac","Fecha de nacimiento",f.fechaNac,"date"),
+    sel("cl_ec","Estado civil",["","Soltero/a","Casado/a","Divorciado/a","Viudo/a","Unión convivencial"],f.estadoCivil)
+  ];
+  // Cónyuge: solo se muestra si el caso ya lo trae (campo retirado del formulario nuevo).
+  if(f.conyuge) campos.push(inp("cl_con","Cónyuge",f.conyuge));
+  campos.push(
     inp("cl_dom","Domicilio completo",f.domicilio), inp("cl_loc","Localidad / partido",f.localidad),
     inp("cl_prov","Provincia",f.provincia), inp("cl_cp","Código postal",f.cp),
     inp("cl_tel","Teléfono celular",f.tel), inp("cl_email","Email de contacto",f.email)
-  ], "saveCliente()");
+  );
+  return formCard("Datos del titular / damnificado", campos, "saveCliente()");
 }
 function saveCliente(){
   if(!emailOk(val("cl_email"))){ toast("El email no tiene un formato válido (ej: nombre@correo.com)","err"); return; }
   const f=CURRENT.cliente;
-  f.apellido=val("cl_ap").toUpperCase(); f.nombre=val("cl_no"); f.dni=val("cl_dni"); f.cuit=val("cl_cuit");
-  f.nacionalidad=val("cl_nac"); f.fechaNac=val("cl_fnac"); f.estadoCivil=val("cl_ec"); f.conyuge=val("cl_con");
+  f.apellido=val("cl_ap").toUpperCase(); f.nombre=val("cl_no"); f.tipoDoc=val("cl_tipodoc"); f.dni=val("cl_dni"); f.cuit=val("cl_cuit");
+  f.nacionalidad=val("cl_nac"); f.fechaNac=val("cl_fnac"); f.estadoCivil=val("cl_ec");
+  if(document.getElementById("cl_con")) f.conyuge=val("cl_con"); // solo si el campo está visible (legado)
   f.domicilio=val("cl_dom"); f.localidad=val("cl_loc"); f.provincia=val("cl_prov"); f.cp=val("cl_cp");
   f.tel=val("cl_tel"); f.email=val("cl_email");
   logAction(CURRENT,"Datos del cliente actualizados"); save(); toast("Cliente guardado"); renderCaso();
@@ -2263,11 +2272,12 @@ function tabCuenta(c){
   return `<div class="card"><div class="card-h"><h3>Cuenta principal afectada (prioridad 1)</h3></div><div class="card-b">
     <div class="frow fr2">
       ${sel("cu_plat","Plataforma",["Instagram","Facebook","Otra"],f.plataforma)}
-      ${inp("cu_handle","Usuario / handle",f.handle)}
+      ${f.handle?inp("cu_handle","Usuario / handle",f.handle):''}
     </div>
     ${inp("cu_url","URL completa de la cuenta",f.url)}
+    ${!f.handle&&cuentaIdent(f)?`<div class="hint" style="margin:-6px 0 10px">Usuario (derivado de la URL): <b>${esc(cuentaIdent(f))}</b></div>`:''}
     <div class="frow fr2">${inp("cu_em","Email vinculado",f.emailVinc)}${inp("cu_tel","Teléfono vinculado",f.telVinc)}</div>
-    <div class="frow fr2">${sel("cu_tipo","Tipo de cuenta",["",...TIPO_CUENTA],f.tipo)}${inp("cu_vinc","Cuentas vinculadas",f.cuentasVinc)}</div>
+    <div class="frow fr2">${f.tipo?sel("cu_tipo","Tipo de cuenta",["",...TIPO_CUENTA],f.tipo):''}${inp("cu_vinc","Cuentas vinculadas",f.cuentasVinc)}</div>
     <div class="section-title">Características</div>
     <div class="frow fr3">
       ${chk("cu_pauta","Tenía pauta publicitaria activa",f.pautaActiva)}
@@ -2288,8 +2298,9 @@ function tabCuenta(c){
 function saveCuenta(){
   if(!emailOk(val("cu_em"))){ toast("El email vinculado no tiene un formato válido (ej: nombre@correo.com)","err"); return; }
   const f=CURRENT.cuenta;
-  f.plataforma=val("cu_plat"); f.handle=val("cu_handle"); f.url=val("cu_url"); f.emailVinc=val("cu_em"); f.telVinc=val("cu_tel");
-  f.tipo=val("cu_tipo"); f.cuentasVinc=val("cu_vinc");
+  f.plataforma=val("cu_plat"); f.url=val("cu_url"); f.emailVinc=val("cu_em"); f.telVinc=val("cu_tel"); f.cuentasVinc=val("cu_vinc");
+  if(document.getElementById("cu_handle")) f.handle=val("cu_handle"); // solo si está visible (legado)
+  if(document.getElementById("cu_tipo")) f.tipo=val("cu_tipo");       // ídem
   f.pautaActiva=chkVal("cu_pauta"); f.saldoRetenido=chkVal("cu_saldo"); f.businessManager=chkVal("cu_bm");
   f.metodoPago=chkVal("cu_mp"); f.campanasActivas=chkVal("cu_camp"); f.hackeo=chkVal("cu_hack");
   logAction(CURRENT,"Datos de la cuenta actualizados"); save(); toast("Cuenta guardada"); renderCaso();
@@ -2303,14 +2314,14 @@ function saveCuentasAfectadas(){
 function tabRelato(c){
   const f=c.relato;
   return `<div class="card"><div class="card-h"><h3>Relato de los hechos</h3></div><div class="card-b">
-    <div class="frow fr2">${inp("re_fs","Fecha aprox. de suspensión",f.fechaSusp,"date")}${sel("re_tipo","Tipo de suspensión",["","Temporal","Definitiva"],f.tipoSusp)}</div>
+    <div class="frow fr2"><div class="field"><label>Fecha aprox. de suspensión</label><input id="re_fs" type="date" value="${esc(f.fechaSusp||'')}" max="${todayISO()}"></div>${selSuspField("re_tipo","re_tipo_otros",f.tipoSusp||"",f.tipoSuspOtros,false)}</div>
     ${inp("re_msg","Mensaje mostrado por Meta/IG/FB",f.mensaje)}
     <div class="frow fr3">
       ${chk("re_apelo","Pudo apelar",f.apelo)}
-      ${chk("re_resp","Recibió respuesta de la plataforma",f.recibioResp)}
       ${chk("re_hack","Hubo hackeo / accesos desconocidos",f.hackeo)}
       ${chk("re_recup","Recuperada parcialmente en algún momento",f.recupParcial)}
-      ${chk("re_volvio","Volvió a ser suspendida",f.volvioSusp)}
+      ${f.recibioResp?chk("re_resp","Recibió respuesta de la plataforma",f.recibioResp):''}
+      ${f.volvioSusp?chk("re_volvio","Volvió a ser suspendida",f.volvioSusp):''}
     </div>
     ${inp("re_perd","Qué perdió (mensajes, seguidores, campañas…)",f.perdida)}
     <div class="section-title">Relato original del cliente</div>
@@ -2385,7 +2396,7 @@ function aiContextoCaso(c){
   L.push("- Cuenta principal: "+(cu.handle||cu.url||"—")+" · plataforma "+(cu.plataforma||"—")+(cu.tipo?` · tipo de cuenta ${cu.tipo}`:""));
   if(adic.length) L.push("- Otras cuentas afectadas (orden de prioridad): "+adic.map(q=>`${q.plataforma||"Instagram"} ${q.url||""}`.trim()).join("; "));
   if(re.fechaSusp) L.push("- Fecha de suspensión: "+fdate(re.fechaSusp));
-  if(re.tipoSusp) L.push("- Tipo de suspensión: "+re.tipoSusp);
+  if(re.tipoSusp) L.push("- Tipo de suspensión: "+tipoSuspLabel(re));
   if(re.mensaje) L.push("- Mensaje informado por la plataforma: "+re.mensaje);
   L.push("- ¿Presentó apelación?: "+(re.apelo?"sí":"no")+" · ¿Recibió respuesta de la plataforma?: "+(re.recibioResp?"sí":"no"));
   if(re.perdida) L.push("- Qué perdió con la suspensión: "+re.perdida);
@@ -2418,7 +2429,7 @@ function aiContextoInforme(c){
   const L=[];
   L.push("Abogado interviniente: "+(ab.nombre||"—")+(ab.matricula?` (${ab.matricula}${ab.tomo?` T° ${ab.tomo} F° ${ab.folio||""}`:""})`:""));
   L.push("Titular: "+[cl.nombre,cl.apellido].filter(Boolean).join(" ")+(cl.dni?` · DNI ${cl.dni}`:"")+(cl.email?` · ${cl.email}`:"")+(cl.domicilio?` · ${cl.domicilio}${cl.localidad?", "+cl.localidad:""}${cl.provincia?", "+cl.provincia:""}`:""));
-  L.push("Cuenta principal: plataforma "+(cu.plataforma||"—")+" · URL "+(cu.url||"—")+" · usuario "+(cu.handle||"—")+" · correo asociado "+(cu.emailVinc||"—"));
+  L.push("Cuenta principal: plataforma "+(cu.plataforma||"—")+" · URL "+(cu.url||"—")+" · usuario "+(cuentaIdent(cu)||"—")+" · correo asociado "+(cu.emailVinc||"—"));
   L.push("Fecha de suspensión: "+(re.fechaSusp?fdate(re.fechaSusp):"—")+" · Tipo: "+(re.tipoSusp||"—")+" · Motivo informado: "+(re.mensaje||"no informado"));
   L.push("Cuentas adicionales afectadas (orden de prioridad): "+(adic.length?adic.map((q,i)=>`(${i+2}) ${q.plataforma||"Instagram"} ${q.url||""} ${q.emailVinc?"· "+q.emailVinc:""}`.trim()).join(" | "):"ninguna"));
   L.push("¿Apeló por las herramientas de Meta?: "+(re.apelo?"sí":"no")+" · ¿Recibió respuesta?: "+(re.recibioResp?"sí":"no"));
@@ -2517,7 +2528,7 @@ function _datosCasoTexto(c){
   L.push("── CUENTA PRINCIPAL ─────────────────────────────────────");
   L.push("Plataforma: "+S(cu.plataforma));
   L.push("URL: "+S(cu.url));
-  L.push("Usuario: "+S(cu.handle));
+  L.push("Usuario: "+S(cuentaIdent(cu)));
   L.push("Email vinculado: "+S(cu.emailVinc)+"   ·   Teléfono vinculado: "+S(cu.telVinc));
   L.push("Tipo de cuenta: "+S(cu.tipo));
   L.push("Pauta activa: "+SN(cu.pautaActiva)+"   ·   Saldo retenido: "+SN(cu.saldoRetenido)+"   ·   Business Manager: "+SN(cu.businessManager)+"   ·   Campañas activas: "+SN(cu.campanasActivas));
@@ -2525,7 +2536,7 @@ function _datosCasoTexto(c){
   if(adic.length){
     L.push("");
     L.push("   Otras cuentas afectadas (orden de prioridad):");
-    adic.forEach((q,i)=>L.push("   ("+(i+2)+") "+S(q.plataforma||"Instagram")+" · "+S(q.url)+" · "+S(q.handle)+" · "+S(q.emailVinc)));
+    adic.forEach((q,i)=>L.push("   ("+(i+2)+") "+S(q.plataforma||"Instagram")+" · "+S(q.url)+" · "+S(cuentaIdent(q))+" · "+S(q.emailVinc)));
   }
   L.push("");
   L.push("── RELATO DE LOS HECHOS ─────────────────────────────────");
@@ -2567,14 +2578,14 @@ function _datosClienteDocHtml(c){
   b+=kv("Domicilio",[cl.domicilio,cl.localidad,cl.provincia,cl.cp?("CP "+cl.cp):""].filter(Boolean).join(", "));
   b+=kv("Teléfono",cl.tel); b+=kv("Email",cl.email);
   b+=h("Cuenta principal afectada");
-  b+=kv("Plataforma",cu.plataforma); b+=kv("URL",cu.url); b+=kv("Usuario",cu.handle);
+  b+=kv("Plataforma",cu.plataforma); b+=kv("URL",cu.url); b+=kv("Usuario",cuentaIdent(cu));
   b+=kv("Email vinculado",cu.emailVinc); b+=kv("Teléfono vinculado",cu.telVinc); b+=kv("Tipo de cuenta",cu.tipo);
   b+=kv("Pauta publicitaria activa",SN(cu.pautaActiva)); b+=kv("Saldo retenido / fondos",SN(cu.saldoRetenido));
   b+=kv("Meta Business Manager",SN(cu.businessManager)); b+=kv("Campañas activas al bloqueo",SN(cu.campanasActivas));
   const adic=(Array.isArray(c.cuentasAfectadas)?c.cuentasAfectadas:[]).filter(q=>q&&(q.url||q.emailVinc||q.handle));
-  if(adic.length){ b+=h("Otras cuentas afectadas (orden de prioridad)"); adic.forEach((q,i)=>{ b+=`<p style="margin:2px 0"><b>(${i+2})</b> ${S(q.plataforma||"Instagram")} · ${S(q.url)} · ${S(q.handle)}${q.emailVinc?(" · "+S(q.emailVinc)):""}</p>`; }); }
+  if(adic.length){ b+=h("Otras cuentas afectadas (orden de prioridad)"); adic.forEach((q,i)=>{ b+=`<p style="margin:2px 0"><b>(${i+2})</b> ${S(q.plataforma||"Instagram")} · ${S(q.url)} · ${S(cuentaIdent(q))}${q.emailVinc?(" · "+S(q.emailVinc)):""}</p>`; }); }
   b+=h("Relato de los hechos");
-  b+=kv("Fecha de suspensión",re.fechaSusp); b+=kv("Tipo de suspensión",re.tipoSusp);
+  b+=kv("Fecha de suspensión",re.fechaSusp); b+=kv("Tipo de suspensión",tipoSuspLabel(re));
   b+=kv("Mensaje recibido de Meta",re.mensaje);
   b+=kv("¿Apeló por las herramientas de Meta?",SN(re.apelo)); b+=kv("¿Recibió respuesta?",SN(re.recibioResp));
   b+=kv("¿Hubo hackeo?",SN(re.hackeo)); b+=kv("¿Recuperación parcial?",SN(re.recupParcial)); b+=kv("¿Volvió a suspenderse?",SN(re.volvioSusp));
@@ -2702,9 +2713,10 @@ function importarBackup(){
 }
 function saveRelato(){
   const f=CURRENT.relato;
-  f.fechaSusp=val("re_fs"); f.tipoSusp=val("re_tipo"); f.mensaje=val("re_msg");
-  f.apelo=chkVal("re_apelo"); f.recibioResp=chkVal("re_resp"); f.hackeo=chkVal("re_hack");
-  f.recupParcial=chkVal("re_recup"); f.volvioSusp=chkVal("re_volvio"); f.perdida=val("re_perd");
+  f.fechaSusp=val("re_fs"); leerSusp(f,"re_tipo","re_tipo_otros"); f.mensaje=val("re_msg");
+  f.apelo=chkVal("re_apelo"); f.hackeo=chkVal("re_hack"); f.recupParcial=chkVal("re_recup"); f.perdida=val("re_perd");
+  if(document.getElementById("re_resp")) f.recibioResp=chkVal("re_resp");   // solo si está visible (legado)
+  if(document.getElementById("re_volvio")) f.volvioSusp=chkVal("re_volvio");
   f.original=val("re_orig"); f.sintesis=val("re_sint");
   logAction(CURRENT,"Relato de hechos actualizado"); save(); toast("Relato guardado");
 }
@@ -4063,7 +4075,7 @@ carta_poder:`<h1>LETTER OF ATTORNEY / CARTA PODER</h1>
 <p><b>{{abogado2}}</b><br>{{abogado2_domicilio}}<br>{{abogado2_tel}}<br>{{abogado2_mail}}</p>
 <p><b>Subject: Letter of Attorney for Legal Representation</b></p>
 <p>To whom it may concern,</p>
-<p>I, <b>{{nombre_cliente}}</b>, with identification No. {{dni_cliente}}, being of sound mind, hereby grant a special and limited power of attorney, exclusively for this matter, to the attorneys {{abogado1}} and {{abogado2}}, so that they may represent me and act on my behalf in the claim and in the steps necessary to obtain the rehabilitation of my Instagram and Facebook accounts ({{cuentas_afectadas}}) before the platform and in the corresponding prior instances — being able to submit requests and documentation, receive notices, negotiate a solution and carry out the acts necessary for that purpose.</p>
+<p>I, <b>{{nombre_cliente}}</b>, with identification document {{tipodoc_cliente}} No. {{dni_cliente}}, being of sound mind, hereby grant a special and limited power of attorney, exclusively for this matter, to the attorneys {{abogado1}} and {{abogado2}}, so that they may represent me and act on my behalf in the claim and in the steps necessary to obtain the rehabilitation of my Instagram and Facebook accounts ({{cuentas_afectadas}}) before the platform and in the corresponding prior instances — being able to submit requests and documentation, receive notices, negotiate a solution and carry out the acts necessary for that purpose.</p>
 <p>This power is limited to this matter, does not authorize any other act, and shall automatically cease to have effect once the claim is concluded.</p>
 <p>Sincerely, {{nombre_cliente}}</p>
 <p><b>Asunto: Carta Poder para Representación Legal</b></p>
@@ -4071,12 +4083,12 @@ carta_poder:`<h1>LETTER OF ATTORNEY / CARTA PODER</h1>
 <p>Yo, <b>{{nombre_cliente}}</b>, en pleno uso de mis facultades, otorgo un poder especial y limitado, exclusivamente para este asunto, a los abogados {{abogado1}} y {{abogado2}}, para que me representen y actúen en mi nombre en el reclamo y en las gestiones necesarias para obtener la rehabilitación de mis cuentas de Instagram y Facebook ({{cuentas_afectadas}}) ante la plataforma y en las instancias previas que correspondan, pudiendo presentar solicitudes y documentación, recibir notificaciones, negociar una solución y realizar los actos necesarios a tal fin.</p>
 <p>Este poder se limita a este asunto, no autoriza ningún otro acto y queda sin efecto en forma automática una vez concluido el reclamo.</p>
 <p>Atentamente, {{nombre_cliente}}</p>
-<div class="sig"><div>_______________________<br>{{nombre_cliente}} — DNI {{dni_cliente}}</div></div>`,
+<div class="sig"><div>_______________________<br>{{nombre_cliente}} — {{tipodoc_cliente}} {{dni_cliente}}</div></div>`,
 mediacion:`<h1>SOLICITUD DE MEDIACIÓN</h1>
 <p style="text-align:center"><b>Mediador:</b> {{mediador}}</p>
 <p><b>REQUIRENTE</b><br>
 Nombre y Apellido: {{nombre_cliente}}<br>
-Documento: DNI {{dni_cliente}}<br>
+Documento: {{tipodoc_cliente}} {{dni_cliente}}<br>
 CUIT / CUIL: {{cuit_cliente}}<br>
 Domicilio: {{domicilio_cliente}} ({{localidad_cliente}}, {{provincia_cliente}}) CP {{cp_cliente}}<br>
 Celular: {{tel_cliente}}<br>
@@ -4097,7 +4109,7 @@ Correo electrónico vinculado: {{cuenta_email}}</p>
 };
 /* ---- Variables disponibles para los modelos editables ---- */
 const DOC_VARS=[
-  ["nombre_cliente","Nombre y apellido del cliente"],["dni_cliente","DNI del cliente"],["cuit_cliente","CUIT/CUIL del cliente"],["dni_o_cuit","DNI o CUIT (el que haya)"],
+  ["nombre_cliente","Nombre y apellido del cliente"],["dni_cliente","Nº de documento del cliente"],["tipodoc_cliente","Tipo de documento (DNI/ID/Cédula/Pasaporte)"],["doc_cliente","Documento completo (tipo + número)"],["cuit_cliente","CUIT/CUIL del cliente"],["dni_o_cuit","DNI o CUIT (el que haya)"],
   ["domicilio_cliente","Domicilio del cliente"],["localidad_cliente","Localidad"],["provincia_cliente","Provincia"],["cp_cliente","Código postal"],["email_cliente","Email del cliente"],["tel_cliente","Teléfono del cliente"],["nacionalidad_cliente","Nacionalidad"],
   ["cuenta","Cuenta (usuario o URL)"],["cuenta_url","URL de la cuenta"],["cuenta_handle","Usuario de la cuenta"],["cuenta_email","Email vinculado"],["plataforma","Plataforma"],["cuentas_afectadas","Cuentas afectadas (IG/FB)"],
   ["monto_total","Monto total"],["adelanto","Adelanto"],["saldo","Saldo"],["devolucion","Devolución"],
@@ -4132,7 +4144,8 @@ function docVars(c){
   const fecha=new Date();
   const mesesEs=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
   const mesesEn=["January","February","March","April","May","June","July","August","September","October","November","December"];
-  const fb=cu.plataforma==="Facebook"?(cu.handle||""):"";
+  const _ident=cuentaIdent(cu); // usuario: del handle si existe, si no derivado de la URL
+  const fb=cu.plataforma==="Facebook"?(_ident||""):"";
   const reqBloque=reqMostrados(c).map((r,i)=>`<p><b>REQUERIDO ${i===0?'A':'B'}:</b><br>Nombre o Razón Social: ${esc(r.nombre)}<br>CUIT: ${esc(r.cuit)}<br>Domicilio: ${esc(r.domicilio)}</p>`).join("");
   // Cláusula de pago (TERCERA) condicional: si el adelanto cubre el 100% del total (pago único),
   // se usa la redacción de pago único; si hay saldo (dos cuotas), la redacción original.
@@ -4149,7 +4162,8 @@ function docVars(c){
     clausula_pago, direccion_bloque,
     nombre_cliente:`${cl.nombre||''} ${cl.apellido||''}`.trim(), dni_cliente:cl.dni||'', cuit_cliente:cl.cuit||'', dni_o_cuit:cl.dni||cl.cuit||'',
     domicilio_cliente:cl.domicilio||'', localidad_cliente:cl.localidad||'', provincia_cliente:cl.provincia||'', cp_cliente:cl.cp||'', email_cliente:cl.email||'', tel_cliente:cl.tel||'', nacionalidad_cliente:cl.nacionalidad||'Argentina',
-    cuenta:cu.handle||cu.url||'—', cuenta_url:cu.url||'', cuenta_handle:cu.handle||'', cuenta_email:cu.emailVinc||'', plataforma:cu.plataforma||'', cuentas_afectadas:`Instagram: ${cu.handle||"—"}${fb?` - Facebook: ${fb}`:""}`,
+    cuenta:_ident||cu.url||'—', cuenta_url:cu.url||'', cuenta_handle:_ident||'', cuenta_email:cu.emailVinc||'', plataforma:cu.plataforma||'', cuentas_afectadas:`${cu.plataforma||"Instagram"}: ${_ident||cu.url||"—"}${fb?` - Facebook: ${fb}`:""}`,
+    tipodoc_cliente:cl.tipoDoc||'DNI', doc_cliente:`${cl.tipoDoc||'DNI'} ${cl.dni||''}`.trim(),
     monto_total:money(f.montoTotal,m), adelanto:money(f.adelanto,m), saldo:money(f.saldo,m), devolucion:money(f.devolucion,m),
     estudio_nombre:E.nombre||'', estudio_domicilio:E.domicilio||'', estudio_mail:E.mail||'', estudio_repr:E.repr||'', jurisdiccion:E.jurisdiccion||'',
     mediador:DB.config.mediador||'', objeto:c.objeto||DB.config.objeto||'',
@@ -4423,6 +4437,7 @@ function DEFAULT_CONTRATO(hayReintegro){
   cls.push(["OBLIGACIONES Y DECLARACIONES DEL CLIENTE.","EL CLIENTE se obliga a brindar información completa, veraz y actualizada; entregar documentación, capturas, correos, notificaciones, datos de contacto, antecedentes y demás elementos necesarios; responder los requerimientos de EL ESTUDIO; y no realizar gestiones paralelas, contradictorias o perjudiciales sin aviso previo. EL CLIENTE declara ser titular, administrador legítimo, representante autorizado o persona con interés legítimo sobre la cuenta, y no ocultar antecedentes relevantes vinculados a la suspensión o bloqueo. La información falsa, incompleta o tardía, o las acciones que perjudiquen la estrategia, podrán afectar el resultado y liberar a EL ESTUDIO de responsabilidad por demoras, rechazos o imposibilidad de avanzar."]);
   cls.push(["LIMITACIÓN DE RESPONSABILIDAD.","EL ESTUDIO no responderá por decisiones de Meta, Instagram o terceros; demoras externas; cambios de políticas internas; nuevas denuncias o infracciones; acciones realizadas directamente por EL CLIENTE; pérdida de seguidores, alcance, contenido, estadísticas, monetización, publicidad, mensajes, archivos u otros elementos internos de la cuenta que la plataforma no restituya; ni por cualquier consecuencia ajena al control directo de EL ESTUDIO."]);
   cls.push(["AUTORIZACIÓN, CONFIDENCIALIDAD Y DATOS.","EL CLIENTE autoriza a EL ESTUDIO y a sus representantes a utilizar sus datos personales, documentación, información de la cuenta, capturas, correos, enlaces y demás elementos aportados exclusivamente para gestionar la rehabilitación, y a realizar presentaciones, reclamos, comunicaciones, intimaciones, solicitudes y gestiones ante Meta, Instagram, representantes legales, mediadores o terceros necesarios. EL ESTUDIO mantendrá reserva sobre la información recibida, salvo en lo necesario para cumplir el objeto contractual."]);
+  cls.push(["AUTORIZACIÓN DE USO DE IMAGEN Y DIFUSIÓN DEL CASO.","EL CLIENTE autoriza en forma expresa y gratuita a EL ESTUDIO a difundir, publicar y reproducir el presente caso como caso de éxito —incluido el resultado obtenido— en su sitio web, redes sociales y demás canales de comunicación, con fines institucionales, promocionales y publicitarios. Dicha autorización comprende el uso de capturas de pantalla, el nombre de usuario y/o de la/s cuenta/s gestionada/s y de los datos del caso necesarios a tal fin, pudiendo EL ESTUDIO editarlos, recortarlos, anonimizarlos o combinarlos con material propio, en los términos del artículo 53 del Código Civil y Comercial de la Nación y del artículo 31 de la Ley 11.723, sin derecho a contraprestación alguna a favor de EL CLIENTE. EL CLIENTE podrá solicitar por escrito el cese del uso hacia el futuro, sin que ello afecte las publicaciones ya realizadas."]);
   cls.push(["COMUNICACIONES Y JURISDICCIÓN.","Los honorarios pactados comprenden la totalidad de la prestación profesional acordada para la gestión objeto del presente contrato, no correspondiendo adicionar gastos, tasas, aranceles, costos administrativos o conceptos extras, salvo acuerdo expreso y escrito entre las partes. Las partes constituyen como medios válidos de comunicación los domicilios, correos electrónicos, teléfonos y WhatsApp indicados en el presente, reconociendo plena validez a las comunicaciones cursadas por dichos medios. Para todos los efectos derivados del presente contrato, las partes se someten a la legislación argentina y a la jurisdicción de los tribunales ordinarios competentes de la {{jurisdiccion}}, con renuncia expresa a cualquier otro fuero o jurisdicción que pudiera corresponder."]);
   const cuerpo=cls.map((x,i)=>"<p><b>"+ORD[i]+": "+x[0]+"</b> "+x[1]+"</p>").join("\n");
   return `<div style="text-align:center;border-bottom:2px solid #16294d;padding-bottom:7pt;margin-bottom:14pt"><div style="font-family:Georgia,'Times New Roman',serif;font-weight:700;letter-spacing:3px;color:#16294d;font-size:16pt">GMJ LEGAL PARTNERS</div><div style="font-size:8.5pt;color:#555">CABA - contacto@gmj-abogados.com.ar</div></div>
@@ -4454,8 +4469,10 @@ function tplCartaPoder(c){
   const abs=DB.abogados;
   const ab1=abs[0]||{}, ab2=abs[1]||{};
   const nombre=`${cl.nombre} ${cl.apellido}`.trim();
-  const ig=c.cuenta.plataforma==="Instagram"?(c.cuenta.handle||"—"):(c.cuenta.handle||"—");
-  const fb=c.cuenta.plataforma==="Facebook"?(c.cuenta.handle||""):"";
+  const _id=cuentaIdent(c.cuenta)||"—";
+  const ig=_id;
+  const fb=c.cuenta.plataforma==="Facebook"?(cuentaIdent(c.cuenta)||""):"";
+  const tdoc=cl.tipoDoc||"DNI";
   const fecha=new Date(); const meses=["January","February","March","April","May","June","July","August","September","October","November","December"];
   const mesesEs=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
   const fEn=`${meses[fecha.getMonth()]} ${fecha.getDate()}, ${fecha.getFullYear()}`;
@@ -4469,15 +4486,15 @@ function tplCartaPoder(c){
 <p><b>${esc(ab2.nombre)}</b><br>${esc(ab2.domicilio)}<br>${esc(ab2.tel)}<br>${esc(ab2.mail)}</p>
 <p><b>Subject: Letter of Attorney for Legal Representation</b></p>
 <p>To whom it may concern,</p>
-<p>I, <b>${esc(nombre)}</b>, with identification No. ${esc(cl.dni)}, being of sound mind, hereby grant a special and limited power of attorney, exclusively for this matter, to the attorneys ${esc(ab1.nombre)} and ${esc(ab2.nombre)}, so that they may represent me and act on my behalf in the claim and in the steps necessary to obtain the rehabilitation of my Instagram and Facebook accounts (${esc(cuentas)}) before the platform and in the corresponding prior instances — being able to submit requests and documentation, receive notices, negotiate a solution and carry out the acts necessary for that purpose.</p>
+<p>I, <b>${esc(nombre)}</b>, with identification document ${esc(tdoc)} No. ${esc(cl.dni)}, being of sound mind, hereby grant a special and limited power of attorney, exclusively for this matter, to the attorneys ${esc(ab1.nombre)} and ${esc(ab2.nombre)}, so that they may represent me and act on my behalf in the claim and in the steps necessary to obtain the rehabilitation of my Instagram and Facebook accounts (${esc(cuentas)}) before the platform and in the corresponding prior instances — being able to submit requests and documentation, receive notices, negotiate a solution and carry out the acts necessary for that purpose.</p>
 <p>This power is limited to this matter, does not authorize any other act, and shall automatically cease to have effect once the claim is concluded.</p>
 <p>Sincerely, ${esc(nombre)}</p>
 <p><b>Asunto: Carta Poder para Representación Legal</b></p>
 <p>Estimados,</p>
-<p>Yo, <b>${esc(nombre)}</b>, con documento N.° ${esc(cl.dni)}, en pleno uso de mis facultades, otorgo un poder especial y limitado, exclusivamente para este asunto, a los abogados ${esc(ab1.nombre)} y ${esc(ab2.nombre)}, para que me representen y actúen en mi nombre en el reclamo y en las gestiones necesarias para obtener la rehabilitación de mis cuentas de Instagram y Facebook (${esc(cuentas)}) ante la plataforma y en las instancias previas que correspondan, pudiendo presentar solicitudes y documentación, recibir notificaciones, negociar una solución y realizar los actos necesarios a tal fin.</p>
+<p>Yo, <b>${esc(nombre)}</b>, con ${esc(tdoc)} N.° ${esc(cl.dni)}, en pleno uso de mis facultades, otorgo un poder especial y limitado, exclusivamente para este asunto, a los abogados ${esc(ab1.nombre)} y ${esc(ab2.nombre)}, para que me representen y actúen en mi nombre en el reclamo y en las gestiones necesarias para obtener la rehabilitación de mis cuentas de Instagram y Facebook (${esc(cuentas)}) ante la plataforma y en las instancias previas que correspondan, pudiendo presentar solicitudes y documentación, recibir notificaciones, negociar una solución y realizar los actos necesarios a tal fin.</p>
 <p>Este poder se limita a este asunto, no autoriza ningún otro acto y queda sin efecto en forma automática una vez concluido el reclamo.</p>
 <p>Atentamente, ${esc(nombre)}</p>
-<div class="sig"><div>_______________________<br>${esc(nombre)} — DNI ${esc(cl.dni)}</div></div>`;
+<div class="sig"><div>_______________________<br>${esc(nombre)} — ${esc(tdoc)} ${esc(cl.dni)}</div></div>`;
 }
 function reqMostrados(c){ let r=(Array.isArray(DB.config.requeridos)&&DB.config.requeridos.length?DB.config.requeridos:DEFAULT_REQUERIDOS).slice(); if(c.citarFacebook===false) r=r.filter(x=>!/facebook/i.test(x.nombre)); return r; }
 function tplMediacion(c){
@@ -4503,7 +4520,7 @@ Mail: ${esc(ab.mail)}</p>
 ${req.map((r,i)=>`<p><b>REQUERIDO ${i===0?'A':'B'}:</b><br>Nombre o Razón Social: ${esc(r.nombre)}<br>CUIT: ${esc(r.cuit)}<br>Domicilio: ${esc(r.domicilio)}</p>`).join("")}
 <p><b>CUENTA AFECTADA</b><br>
 URL de la cuenta: ${esc(c.cuenta.url)}<br>
-Usuario: ${esc(c.cuenta.handle)}<br>
+Usuario: ${esc(cuentaIdent(c.cuenta))}<br>
 Correo electrónico vinculado: ${esc(c.cuenta.emailVinc)}<br>
 ${c.cuenta.telVinc?`Teléfono vinculado: ${esc(c.cuenta.telVinc)}<br>`:""}
 ${c.cuenta.cuentasVinc?`Otras cuentas vinculadas: ${esc(c.cuenta.cuentasVinc)}`:""}</p>
@@ -4545,7 +4562,7 @@ function tplInforme(c){
   const cl=c.cliente||{}, cu=c.cuenta||{}, re=c.relato||{}; const E=DB.config.estudio||{};
   const ab=(DB.abogados||[]).find(a=>a.id===c.abogadoPatrocinante)||(DB.abogados||[])[0]||{};
   const sint=(re.sintesis||re.original||"").trim();
-  const handle=cu.handle||(cu.url? cu.url.replace(/\/+$/,"").split("/").pop() : "—");
+  const handle=cuentaIdent(cu)||"—";
   const motivo=re.mensaje?`“${esc(re.mensaje)}”`:"No fue informado de manera precisa por la plataforma.";
   const adic=(Array.isArray(c.cuentasAfectadas)?c.cuentasAfectadas:[]).filter(q=>q.url||q.emailVinc);
   const adicHtml = adic.length
@@ -4707,8 +4724,7 @@ function paintForm(token,c,submitFn){
       <div class="card"><div class="card-b">
         <div class="section-title">A. Cuenta principal afectada (la más importante a recuperar)</div>
         <div class="frow fr2"><div class="field"><label>URL completa de la cuenta <span class="req">*</span></label><input id="cf_url" type="text" value="${esc(cu.url||'')}" placeholder="instagram.com/USUARIO"><div class="hint">Obligatorio. La URL es <b>instagram.com/USUARIO</b> (o <b>facebook.com/USUARIO</b>), reemplazando USUARIO por tu nombre de usuario.</div></div>${selR("cf_plat","Plataforma",["Instagram","Facebook","Otra"],cu.plataforma||"Instagram")}</div>
-        <div class="frow fr2"><div class="field"><label>Cuenta (usuario con @) <span class="req">*</span></label><input id="cf_handle" type="text" value="${esc(cu.handle||'')}" placeholder=""><div class="hint">El nombre de usuario, siempre con arroba.</div></div>${inpR("cf_em","Email vinculado a la cuenta",cu.emailVinc)}</div>
-        <div class="frow fr2">${inp("cf_tel","Teléfono vinculado",cu.telVinc)}${sel("cf_tipo","Tipo de cuenta",["",...TIPO_CUENTA],cu.tipo)}</div>
+        <div class="frow fr2">${inpR("cf_em","Email vinculado a la cuenta",cu.emailVinc)}${inp("cf_tel","Teléfono vinculado",cu.telVinc)}</div>
         <div class="frow fr2">${chk("cf_pauta","Tenía pauta publicitaria activa",cu.pautaActiva)}${chk("cf_saldo","Había saldo retenido / fondos de anuncios",cu.saldoRetenido)}</div>
         <div class="frow fr2">${chk("cf_bm","Vinculada a Meta Business Manager",cu.businessManager)}${chk("cf_camp","Tenía campañas activas al bloqueo",cu.campanasActivas)}</div>
 
@@ -4719,18 +4735,17 @@ function paintForm(token,c,submitFn){
 
         <div class="section-title">B. Datos del titular</div>
         <div class="frow fr2">${inpR("cf_ap","Apellido",cl.apellido)}${inpR("cf_no","Nombre",cl.nombre)}</div>
-        <div class="frow fr2">${inpR("cf_dni","DNI",cl.dni)}<div class="field"><label>CUIT / CUIL</label><input id="cf_cuit" type="text" value="${esc(cl.cuit||'')}"><div class="hint">Opcional. No corresponde para personas extranjeras; si no tenés, dejalo en blanco.</div></div></div>
-        <div class="frow fr2">${inpR("cf_nac","Nacionalidad",cl.nacionalidad)}${inp("cf_fnac","Fecha de nacimiento",cl.fechaNac,"date")}</div>
-        <div class="frow fr2">${sel("cf_ec","Estado civil",["","Soltero/a","Casado/a","Divorciado/a","Viudo/a","Unión convivencial"],cl.estadoCivil)}${inp("cf_con","Cónyuge (si corresponde)",cl.conyuge)}</div>
+        <div class="frow fr2"><div class="field" style="max-width:220px"><label>Tipo de documento <span class="req">*</span></label><select id="cf_tipodoc">${TIPO_DOC.map(o=>`<option ${(cl.tipoDoc||'DNI')===o?'selected':''}>${esc(o)}</option>`).join("")}</select></div><div class="field"><label>Número de documento <span class="req">*</span></label><input id="cf_dni" type="text" value="${esc(cl.dni||'')}"><div class="hint">Si sos extranjero, elegí ID / Cédula / Pasaporte y poné tu número.</div></div></div>
+        <div class="frow fr2"><div class="field"><label>CUIT / CUIL</label><input id="cf_cuit" type="text" value="${esc(cl.cuit||'')}"><div class="hint">Opcional. No corresponde para personas extranjeras; si no tenés, dejalo en blanco.</div></div>${inpR("cf_nac","Nacionalidad",cl.nacionalidad)}</div>
+        <div class="frow fr2">${inp("cf_fnac","Fecha de nacimiento",cl.fechaNac,"date")}${sel("cf_ec","Estado civil",["","Soltero/a","Casado/a","Divorciado/a","Viudo/a","Unión convivencial"],cl.estadoCivil)}</div>
         ${inpR("cf_dom","Domicilio completo",cl.domicilio)}
         <div class="frow fr3">${inpR("cf_loc","Localidad",cl.localidad)}${inpR("cf_prov","Provincia",cl.provincia)}${inp("cf_cp","Código postal",cl.cp)}</div>
         <div class="frow fr2">${inpR("cf_celular","Teléfono celular",cl.tel)}${inpR("cf_email","Email de contacto",cl.email)}</div>
 
         <div class="section-title">C. Relato de los hechos</div>
-        <div class="frow fr2">${inpR("cf_fs","Fecha aprox. de suspensión",re.fechaSusp,"date")}${selR("cf_ts","Tipo de suspensión",["","Temporal","Definitiva"],re.tipoSusp)}</div>
+        <div class="frow fr2"><div class="field"><label>Fecha aprox. de suspensión <span class="req">*</span></label><input id="cf_fs" type="date" value="${esc(re.fechaSusp||'')}" max="${todayISO()}"><div class="hint">No se puede elegir una fecha futura.</div></div>${selSuspField("cf_ts","cf_ts_otros",re.tipoSusp||"",re.tipoSuspOtros,true)}</div>
         ${inp("cf_msg","¿Qué mensaje mostró Meta/IG/FB?",re.mensaje)}
-        <div class="frow fr2">${chk("cf_apelo","Pude apelar",re.apelo)}${chk("cf_resp","Recibí respuestas de la plataforma",re.recibioResp)}</div>
-        <div class="frow fr2">${chk("cf_hack","Hubo hackeo / accesos desconocidos",re.hackeo)}${chk("cf_volvio","La cuenta volvió a ser suspendida",re.volvioSusp)}</div>
+        <div class="frow fr2">${chk("cf_apelo","Pude apelar",re.apelo)}${chk("cf_hack","Hubo hackeo / accesos desconocidos",re.hackeo)}</div>
         <div class="field"><label>Relato libre: contanos qué pasó <span class="req">*</span></label><textarea id="cf_orig" rows="5">${esc(re.original)}</textarea></div>
 
         <div class="section-title">D. Documentación (adjuntar archivos)</div>
@@ -4738,12 +4753,12 @@ function paintForm(token,c,submitFn){
         <div class="frow fr3">
           <div class="field"><label>DNI frente <span class="req">*</span></label><input type="file" id="cf_f_dnif" accept="image/*,.pdf"></div>
           <div class="field"><label>DNI dorso <span class="req">*</span></label><input type="file" id="cf_f_dnid" accept="image/*,.pdf"></div>
-          <div class="field"><label>Comprobante de pago <span class="req">*</span></label><input type="file" id="cf_f_pago" accept="image/*,.pdf"></div>
+          <div class="field"><label>Comprobante de pago del servicio <span class="req">*</span></label><input type="file" id="cf_f_pago" accept="image/*,.pdf"></div>
         </div>
         <div class="field"><label>Otros documentos / pruebas adicionales</label>
           <input type="file" id="cf_f_otros" accept="image/*,.pdf" multiple style="display:none" onchange="formOtrosAdd()">
           <div><button type="button" class="btn btn-ghost btn-sm" onclick="document.getElementById('cf_f_otros').click()">＋ Agregar archivo</button></div>
-          <div class="hint">Sumá los archivos <b>de a uno</b> (o varios a la vez). Cada uno necesita una <b>descripción</b>. Podés seguir agregando sin perder los anteriores.</div>
+          <div class="hint"><b>Lo más importante (si tenés):</b> capturas de la suspensión, de la apelación, de la comunicación con soporte (si existió) y todo otro dato de interés que consideres relevante. Sumá los archivos <b>de a uno</b> (o varios a la vez); cada uno necesita una <b>descripción</b>. Podés seguir agregando sin perder los anteriores.</div>
         </div>
         <div id="cf_otros_list"></div>
 
@@ -4790,6 +4805,37 @@ function formDelCuenta(i){ FORM_CUENTAS.splice(i,1); formRenderCuentas(); }
 function formMoveCuenta(i,d){ const j=i+d; if(j<0||j>=FORM_CUENTAS.length)return; const t=FORM_CUENTAS[i]; FORM_CUENTAS[i]=FORM_CUENTAS[j]; FORM_CUENTAS[j]=t; formRenderCuentas(); }
 function formCuentasLimpias(){ return FORM_CUENTAS.map(q=>({plataforma:q.plataforma||"Instagram",url:(q.url||"").trim(),emailVinc:(q.emailVinc||"").trim()})).filter(q=>q.url||q.emailVinc); }
 function normHandle(v){ v=(v||"").trim(); if(v && !v.startsWith("@")) v="@"+v; return v; }
+// B80 — Tipos de documento y motivos de suspensión (Normas Comunitarias).
+const TIPO_DOC=["DNI","ID","Cédula","Pasaporte"];
+const TIPOS_SUSP=["Fraude o engaño","Integridad de la cuenta","Propiedad intelectual","Sexualización de menores","Sexualización de adultos","Explotación sexual, maltrato y desnudo de menores","Suplantación de identidad","No estoy seguro","Otros"];
+// Identificador de la cuenta: usa el handle si existe; si no, lo deriva de la URL (instagram.com/USUARIO → @USUARIO).
+function cuentaIdent(cu){
+  if(!cu) return "";
+  if(cu.handle) return cu.handle;
+  const u=(cu.url||"").trim(); if(!u) return "";
+  const m=u.replace(/[?#].*$/,"").replace(/\/+$/,"").match(/([^\/]+)$/);
+  return m&&m[1]?("@"+m[1].replace(/^@+/,"")):"";
+}
+// Etiqueta del tipo de suspensión para mostrar (si es "Otros", usa el texto libre).
+function tipoSuspLabel(re){ if(!re) return ""; return re.tipoSusp==="Otros"?(re.tipoSuspOtros||"Otros"):(re.tipoSusp||""); }
+// Campo "Tipo de suspensión": select con las 9 opciones (+ valor anterior si el caso traía otro),
+// y campo libre que aparece al elegir "Otros". Sirve para el formulario y para el panel.
+function selSuspField(selId, otrosId, current, otrosVal, req){
+  const esc2=esc;
+  const inList=TIPOS_SUSP.includes(current);
+  const legacy=(current&&!inList)?`<option value="${esc2(current)}" selected>${esc2(current)}</option>`:"";
+  const opts=TIPOS_SUSP.map(o=>`<option ${current===o?'selected':''}>${esc2(o)}</option>`).join("");
+  const show=current==="Otros";
+  return `<div class="field"><label>Tipo de suspensión ${req?'<span class="req">*</span>':''}</label>
+    <select id="${selId}" onchange="var w=document.getElementById('${otrosId}_wrap');if(w)w.style.display=this.value==='Otros'?'block':'none'">
+      <option value="">Infracción a las normas comunitarias sobre…</option>
+      ${opts}${legacy}
+    </select>
+    <div id="${otrosId}_wrap" style="display:${show?'block':'none'};margin-top:8px"><input type="text" id="${otrosId}" value="${esc2(otrosVal||'')}" placeholder="Especificá el motivo"></div>
+  </div>`;
+}
+// Lee el tipo de suspensión (y el texto de "Otros") desde el formulario/panel hacia el objeto relato.
+function leerSusp(re, selId, otrosId){ re.tipoSusp=val(selId); re.tipoSuspOtros = (val(selId)==="Otros") ? (val(otrosId)||"") : ""; }
 /* ---- Otros archivos: lista acumulativa (se agregan de a uno sin perder los previos) ---- */
 let FORM_OTROS=[];
 function formOtrosReset(){ FORM_OTROS=[]; formOtrosRender(); }
@@ -4874,8 +4920,8 @@ function _docScopedStyle(){
 }
 function _casoTempDelForm(c){
   const tmp=JSON.parse(JSON.stringify(c));
-  tmp.cliente=Object.assign({},tmp.cliente,{apellido:(val("cf_ap")||"").toUpperCase(),nombre:val("cf_no"),dni:val("cf_dni"),cuit:val("cf_cuit"),nacionalidad:val("cf_nac"),fechaNac:val("cf_fnac"),estadoCivil:val("cf_ec"),conyuge:val("cf_con"),domicilio:val("cf_dom"),localidad:val("cf_loc"),provincia:val("cf_prov"),cp:val("cf_cp"),tel:val("cf_celular"),email:val("cf_email")});
-  tmp.cuenta=Object.assign({},tmp.cuenta,{url:val("cf_url"),plataforma:val("cf_plat"),handle:normHandle(val("cf_handle")),emailVinc:val("cf_em")});
+  tmp.cliente=Object.assign({},tmp.cliente,{apellido:(val("cf_ap")||"").toUpperCase(),nombre:val("cf_no"),tipoDoc:val("cf_tipodoc"),dni:val("cf_dni"),cuit:val("cf_cuit"),nacionalidad:val("cf_nac"),fechaNac:val("cf_fnac"),estadoCivil:val("cf_ec"),domicilio:val("cf_dom"),localidad:val("cf_loc"),provincia:val("cf_prov"),cp:val("cf_cp"),tel:val("cf_celular"),email:val("cf_email")});
+  tmp.cuenta=Object.assign({},tmp.cuenta,{url:val("cf_url"),plataforma:val("cf_plat"),emailVinc:val("cf_em")});
   // OJO: NO se toca tmp.finanzas → el contrato refleja saldos/adelantos/reintegro reales del caso.
   return tmp;
 }
@@ -4974,12 +5020,12 @@ function submitClientForm(token){
   const _eb=document.getElementById("cf_formerr"); if(_eb) _eb.style.display="none";
   const cl=c.cliente, cu=c.cuenta, re=c.relato;
   const miss=formMissing(FORM_REQ); if(miss.length){ formFocusMissing(miss); return; }
-  cu.url=val("cf_url"); cu.plataforma=val("cf_plat"); cu.handle=normHandle(val("cf_handle")); cu.emailVinc=val("cf_em"); cu.telVinc=val("cf_tel"); cu.tipo=val("cf_tipo");
+  cu.url=val("cf_url"); cu.plataforma=val("cf_plat"); cu.emailVinc=val("cf_em"); cu.telVinc=val("cf_tel");
   c.cuentasAfectadas=formCuentasLimpias();
   cu.pautaActiva=chkVal("cf_pauta"); cu.saldoRetenido=chkVal("cf_saldo"); cu.businessManager=chkVal("cf_bm"); cu.campanasActivas=chkVal("cf_camp");
-  cl.apellido=val("cf_ap").toUpperCase(); cl.nombre=val("cf_no"); cl.dni=val("cf_dni"); cl.cuit=val("cf_cuit"); cl.nacionalidad=val("cf_nac"); cl.fechaNac=val("cf_fnac");
-  cl.estadoCivil=val("cf_ec"); cl.conyuge=val("cf_con"); cl.domicilio=val("cf_dom"); cl.localidad=val("cf_loc"); cl.provincia=val("cf_prov"); cl.cp=val("cf_cp"); cl.tel=val("cf_celular"); cl.email=val("cf_email");
-  re.fechaSusp=val("cf_fs"); re.tipoSusp=val("cf_ts"); re.mensaje=val("cf_msg"); re.apelo=chkVal("cf_apelo"); re.recibioResp=chkVal("cf_resp"); re.hackeo=chkVal("cf_hack"); re.volvioSusp=chkVal("cf_volvio"); re.original=val("cf_orig");
+  cl.apellido=val("cf_ap").toUpperCase(); cl.nombre=val("cf_no"); cl.tipoDoc=val("cf_tipodoc"); cl.dni=val("cf_dni"); cl.cuit=val("cf_cuit"); cl.nacionalidad=val("cf_nac"); cl.fechaNac=val("cf_fnac");
+  cl.estadoCivil=val("cf_ec"); cl.domicilio=val("cf_dom"); cl.localidad=val("cf_loc"); cl.provincia=val("cf_prov"); cl.cp=val("cf_cp"); cl.tel=val("cf_celular"); cl.email=val("cf_email");
+  re.fechaSusp=val("cf_fs"); leerSusp(re,"cf_ts","cf_ts_otros"); re.mensaje=val("cf_msg"); re.apelo=chkVal("cf_apelo"); re.hackeo=chkVal("cf_hack"); re.original=val("cf_orig");
   // adjuntos por archivo (obligatorios DNI frente/dorso + comprobante de pago)
   const hoy=todayISO();
   const fileEl=id=>document.getElementById(id);
@@ -5019,10 +5065,10 @@ async function submitClientFormCloud(token){
   const miss=formMissing(FORM_REQ); if(miss.length){ formFocusMissing(miss); return; }
   if(!emailOk(val("cf_email"))){ toast("El email de contacto no tiene un formato válido (ej: nombre@correo.com)","err"); return; }
   if(!emailOk(val("cf_em"))){ toast("El email vinculado a la cuenta no tiene un formato válido","err"); return; }
-  const cliente={apellido:val("cf_ap").toUpperCase(),nombre:val("cf_no"),dni:val("cf_dni"),cuit:val("cf_cuit"),nacionalidad:val("cf_nac"),fechaNac:val("cf_fnac"),estadoCivil:val("cf_ec"),conyuge:val("cf_con"),domicilio:val("cf_dom"),localidad:val("cf_loc"),provincia:val("cf_prov"),cp:val("cf_cp"),tel:val("cf_celular"),email:val("cf_email")};
-  const cuenta={url:val("cf_url"),plataforma:val("cf_plat"),handle:normHandle(val("cf_handle")),emailVinc:val("cf_em"),telVinc:val("cf_tel"),tipo:val("cf_tipo"),pautaActiva:chkVal("cf_pauta"),saldoRetenido:chkVal("cf_saldo"),businessManager:chkVal("cf_bm"),campanasActivas:chkVal("cf_camp")};
+  const cliente={apellido:val("cf_ap").toUpperCase(),nombre:val("cf_no"),tipoDoc:val("cf_tipodoc"),dni:val("cf_dni"),cuit:val("cf_cuit"),nacionalidad:val("cf_nac"),fechaNac:val("cf_fnac"),estadoCivil:val("cf_ec"),domicilio:val("cf_dom"),localidad:val("cf_loc"),provincia:val("cf_prov"),cp:val("cf_cp"),tel:val("cf_celular"),email:val("cf_email")};
+  const cuenta={url:val("cf_url"),plataforma:val("cf_plat"),emailVinc:val("cf_em"),telVinc:val("cf_tel"),pautaActiva:chkVal("cf_pauta"),saldoRetenido:chkVal("cf_saldo"),businessManager:chkVal("cf_bm"),campanasActivas:chkVal("cf_camp")};
   const cuentasAfectadas=formCuentasLimpias();
-  const relato={fechaSusp:val("cf_fs"),tipoSusp:val("cf_ts"),mensaje:val("cf_msg"),apelo:chkVal("cf_apelo"),recibioResp:chkVal("cf_resp"),hackeo:chkVal("cf_hack"),volvioSusp:chkVal("cf_volvio"),original:val("cf_orig")};
+  const relato={fechaSusp:val("cf_fs"),tipoSusp:val("cf_ts"),tipoSuspOtros:(val("cf_ts")==="Otros"?val("cf_ts_otros"):""),mensaje:val("cf_msg"),apelo:chkVal("cf_apelo"),hackeo:chkVal("cf_hack"),original:val("cf_orig")};
   const fe=id=>document.getElementById(id); const tiene=el=>el&&el.files&&el.files.length>0;
   const faltan=[]; if(!tiene(fe("cf_f_dnif")))faltan.push("DNI frente"); if(!tiene(fe("cf_f_dnid")))faltan.push("DNI dorso"); if(!tiene(fe("cf_f_pago")))faltan.push("Comprobante de pago");
   if(faltan.length){ toast("Faltan adjuntos obligatorios: "+faltan.join(", "),"err"); return; }
@@ -6556,7 +6602,7 @@ function selR(id,label,opts,v){ return `<div class="field"><label>${esc(label)} 
 // Devuelve los campos obligatorios vacíos [[id,label],...]
 function formMissing(reqs){ const m=[]; for(const [id,lab] of reqs){ const el=document.getElementById(id); if(!el||!String(el.value||"").trim()) m.push([id,lab]); } return m; }
 function formFocusMissing(miss){ const msg="Faltan campos obligatorios: "+miss.map(x=>x[1]).join(", "); const box=document.getElementById("cf_formerr"); if(box){ box.innerHTML="<span>⚠</span><div>"+esc(msg)+"</div>"; box.style.display="flex"; } toast(msg,"err"); const el=document.getElementById(miss[0][0]); if(el){ el.focus(); el.scrollIntoView({behavior:"smooth",block:"center"}); el.style.outline="2px solid var(--red)"; setTimeout(()=>{el.style.outline="";},2500);} }
-const FORM_REQ=[["cf_url","URL de la cuenta"],["cf_handle","Cuenta (usuario con @)"],["cf_em","Email vinculado a la cuenta"],["cf_ap","Apellido"],["cf_no","Nombre"],["cf_dni","DNI"],["cf_nac","Nacionalidad"],["cf_dom","Domicilio"],["cf_loc","Localidad"],["cf_prov","Provincia"],["cf_celular","Teléfono celular"],["cf_email","Email de contacto"],["cf_fs","Fecha de suspensión"],["cf_ts","Tipo de suspensión"],["cf_orig","Relato de los hechos"]];
+const FORM_REQ=[["cf_url","URL de la cuenta"],["cf_em","Email vinculado a la cuenta"],["cf_ap","Apellido"],["cf_no","Nombre"],["cf_dni","Número de documento"],["cf_nac","Nacionalidad"],["cf_dom","Domicilio"],["cf_loc","Localidad"],["cf_prov","Provincia"],["cf_celular","Teléfono celular"],["cf_email","Email de contacto"],["cf_fs","Fecha de suspensión"],["cf_ts","Tipo de suspensión"],["cf_orig","Relato de los hechos"]];
 function chk(id,label,v){ return `<div class="check"><input type="checkbox" id="${id}" ${v?'checked':''}><label for="${id}" style="margin:0;font-weight:500">${esc(label)}</label></div>`; }
 function formCard(title, fields, onsave){
   return `<div class="card"><div class="card-h"><h3>${esc(title)}</h3></div><div class="card-b">

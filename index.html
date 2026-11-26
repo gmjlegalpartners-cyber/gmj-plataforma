@@ -441,7 +441,7 @@ function clientFormLink(token){
   if(CLIENT_FORM_BASE) return CLIENT_FORM_BASE.replace(/\/+$/,"") + "/" + token;
   return location.href.split("#")[0] + "#form=" + token;
 }
-const BUILD = "2026.11.16 · B80";
+const BUILD = "2026.11.25 · B81";
 // Envío automático de mail por Gmail (backend send-mail). En pausa por ahora:
 // el mail funciona en modo manual (descarga el PDF + abre el correo para adjuntar).
 const MAIL_AUTO_SEND = false;
@@ -3422,9 +3422,18 @@ async function eliminarAud(id){
       logAction(c,"Evento de audiencia eliminado de Google Calendar ("+oks+" agenda/s)");
     }catch(e){ console.error(e); toast("No se pudo borrar en Google (se elimina igual del panel)","err"); }
   }
-  c.audiencias=c.audiencias.filter(x=>x.id!==id);
+  // B81: borrado ATÓMICO en la base. Es imprescindible: el guardado normal del caso vuelve a
+  // fusionar las audiencias desde la nube (anti-pisado concurrente) y, sin esto, repondría la
+  // audiencia recién eliminada. Al quitarla primero de la base, la fusión ya no la encuentra.
+  let borradoDB=true;
+  if(CLOUD && typeof sb!=="undefined" && sb){
+    try{ const {error}=await sb.rpc("gmj_delete_aud",{p_caso:c.id,p_aud:id}); borradoDB=!error; if(error) console.error("gmj_delete_aud",error); }
+    catch(e){ console.error("gmj_delete_aud",e); borradoDB=false; }
+  }
+  c.audiencias=(c.audiencias||[]).filter(x=>x.id!==id);
   logAction(c,"Audiencia eliminada");
-  await persistCaso(c); EDIT_AUD=null; toast("Audiencia eliminada"); renderTab();
+  await persistCaso(c); EDIT_AUD=null; renderTab();
+  if(borradoDB) toast("Audiencia eliminada"); else toast("Eliminada del panel; verificá la nube","err");
 }
 async function crearEventoAud(id){
   const c=CURRENT; ensureAudiencias(c); const a=resolveAud(c,id); if(!a) return;
